@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { getAuthUser } from "@/lib/auth";
+import { toTimestamp } from "@/lib/utils";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -35,13 +36,22 @@ export default async function DateDetailPage({
     .order("sort_order")
     .order("created_at");
 
+  // Compute timezone-aware day boundaries so evening slots aren't
+  // excluded when their UTC representation crosses into the next day.
+  const nextDay = new Date(date + "T12:00:00");
+  nextDay.setDate(nextDay.getDate() + 1);
+  const nextDayStr = nextDay.toISOString().split("T")[0];
+
+  const dayStart = toTimestamp(date, "00:00:00", org.timezone);
+  const dayEnd = toTimestamp(nextDayStr, "00:00:00", org.timezone);
+
   // Get all slots for this date
   const { data: allSlots } = await supabase
     .from("bay_schedule_slots")
     .select("id, start_time, end_time, price_cents, status, bay_schedule_id")
     .eq("org_id", org.id)
-    .gte("start_time", `${date}T00:00:00`)
-    .lte("start_time", `${date}T23:59:59`)
+    .gte("start_time", dayStart)
+    .lt("start_time", dayEnd)
     .order("start_time");
 
   // Get bay_schedule records to map slots to bays
