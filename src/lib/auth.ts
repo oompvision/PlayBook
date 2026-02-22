@@ -26,11 +26,8 @@ export async function getAuthUser(): Promise<{
 
   if (!user) return null;
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single();
+  // Use RPC to bypass RLS — server already verified auth via getUser()
+  const { data: profile } = await supabase.rpc("get_my_profile");
 
   if (!profile) return null;
 

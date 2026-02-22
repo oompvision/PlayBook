@@ -10,6 +10,19 @@ create policy "profiles_self_insert"
   on public.profiles for insert
   with check (auth.uid() = id);
 
+-- Function to get the current user's profile, bypassing RLS.
+-- Used by server components that already verified auth via getUser().
+create or replace function public.get_my_profile()
+returns json as $$
+begin
+  return (
+    select row_to_json(p)
+    from public.profiles p
+    where p.id = auth.uid()
+  );
+end;
+$$ language plpgsql security definer;
+
 -- Function to claim super_admin role.
 -- Creates profile if missing, promotes to super_admin.
 -- Returns false if a super_admin already exists.

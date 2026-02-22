@@ -26,12 +26,8 @@ export default async function SuperAdminDashboardLayout({
     redirect("/auth/login?role=super_admin&redirect=/super-admin");
   }
 
-  // Logged in — check for profile
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single();
+  // Use RPC to bypass RLS — the server already verified auth via getUser()
+  const { data: profile } = await supabase.rpc("get_my_profile");
 
   // Authenticated but no profile (or not super_admin) → send to setup
   if (!profile || (profile as Profile).role !== "super_admin") {
