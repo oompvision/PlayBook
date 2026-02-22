@@ -3,7 +3,7 @@ import { updateSession } from "@/lib/supabase/middleware";
 
 // Domains that should NOT be treated as facility subdomains
 const RESERVED_SUBDOMAINS = ["www", "admin", "api"];
-const PLATFORM_HOSTS = ["playbook.com", "localhost", "127.0.0.1"];
+const PLATFORM_HOSTS = ["ezbooker.app", "playbook.com", "localhost", "127.0.0.1"];
 
 function extractFacilitySlug(hostname: string): string | null {
   // Remove port if present
