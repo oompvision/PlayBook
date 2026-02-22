@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SignOutButton } from "@/components/sign-out-button";
+import { getTodayInTimezone } from "@/lib/utils";
 
 export default async function BookPage() {
   const slug = await getFacilitySlug();
@@ -16,17 +17,17 @@ export default async function BookPage() {
 
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug")
+    .select("id, name, slug, timezone")
     .eq("slug", slug)
     .single();
 
   if (!org) redirect("/");
 
-  // Build next 14 days
-  const today = new Date();
+  // Build next 14 days using the facility's timezone
+  const todayStr = getTodayInTimezone(org.timezone);
   const dates: string[] = [];
   for (let i = 0; i < 14; i++) {
-    const d = new Date(today);
+    const d = new Date(todayStr + "T12:00:00");
     d.setDate(d.getDate() + i);
     dates.push(d.toISOString().split("T")[0]);
   }
@@ -40,11 +41,13 @@ export default async function BookPage() {
     .gte("start_time", `${dates[0]}T00:00:00`)
     .lte("start_time", `${dates[dates.length - 1]}T23:59:59`);
 
-  // Count available slots per date
+  // Count available slots per date (extract date in facility timezone)
   const availByDate: Record<string, number> = {};
   if (slots) {
     for (const slot of slots) {
-      const slotDate = new Date(slot.start_time).toISOString().split("T")[0];
+      const slotDate = new Date(slot.start_time).toLocaleDateString("en-CA", {
+        timeZone: org.timezone,
+      }); // en-CA gives YYYY-MM-DD format
       availByDate[slotDate] = (availByDate[slotDate] || 0) + 1;
     }
   }

@@ -44,6 +44,18 @@ export function toTimestamp(
   return `${date}T${time}${sign}${offsetHours}:${offsetMins}`;
 }
 
+/**
+ * Get today's date string (YYYY-MM-DD) in the given IANA timezone.
+ * Avoids the common bug of using new Date().toISOString() which returns UTC.
+ */
+export function getTodayInTimezone(timezone: string): string {
+  const parts = getDateParts(new Date(), timezone);
+  const y = String(parts.year);
+  const m = String(parts.month).padStart(2, "0");
+  const d = String(parts.day).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 function getDateParts(date: Date, timezone: string) {
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,

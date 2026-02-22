@@ -13,7 +13,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { toTimestamp } from "@/lib/utils";
+import { toTimestamp, getTodayInTimezone } from "@/lib/utils";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -47,8 +47,8 @@ export default async function ScheduleManagerPage({
 
   const supabase = await createClient();
 
-  // Default to today
-  const today = new Date().toISOString().split("T")[0];
+  // Default to today (in the facility's timezone)
+  const today = getTodayInTimezone(org.timezone);
   const selectedDate = params.date || today;
 
   // Get a week of dates starting from selected date

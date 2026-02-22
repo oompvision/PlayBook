@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { toTimestamp, formatTimeInZone } from "@/lib/utils";
+import { toTimestamp, formatTimeInZone, getTodayInTimezone } from "@/lib/utils";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -52,7 +52,7 @@ export default async function DayEditorPage({
   if (!org) redirect("/");
 
   const supabase = await createClient();
-  const today = new Date().toISOString().split("T")[0];
+  const today = getTodayInTimezone(org.timezone);
   const date = params.date || today;
 
   // Get bays and templates
