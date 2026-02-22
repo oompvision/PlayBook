@@ -287,8 +287,28 @@ export function DailySchedule({
                 }
               }
 
-              // Render active bookings + orphan cancelled as positioned cards
-              const visibleBookings = [...activeBookings, ...orphanCancelled];
+              // Group overlapping orphan cancelled into clusters
+              const orphanClusters: DailyBooking[][] = [];
+              for (const oc of orphanCancelled) {
+                const ocStart = getHourInTimezone(oc.start_time, timezone);
+                const ocEnd = getHourInTimezone(oc.end_time, timezone);
+                let added = false;
+                for (const cluster of orphanClusters) {
+                  const overlaps = cluster.some((cb) => {
+                    const cbStart = getHourInTimezone(cb.start_time, timezone);
+                    const cbEnd = getHourInTimezone(cb.end_time, timezone);
+                    return ocStart < cbEnd && ocEnd > cbStart;
+                  });
+                  if (overlaps) {
+                    cluster.push(oc);
+                    added = true;
+                    break;
+                  }
+                }
+                if (!added) {
+                  orphanClusters.push([oc]);
+                }
+              }
 
               return (
                 <div
@@ -305,13 +325,12 @@ export function DailySchedule({
                     />
                   ))}
 
-                  {/* Booking cards */}
-                  {visibleBookings.map((booking) => {
+                  {/* Active booking cards */}
+                  {activeBookings.map((booking) => {
                     const bStart = getHourInTimezone(booking.start_time, timezone);
                     const bEnd = getHourInTimezone(booking.end_time, timezone);
                     const top = ((bStart - startHour) / totalHours) * 100;
                     const height = ((bEnd - bStart) / totalHours) * 100;
-                    const isCancelled = booking.status === "cancelled";
                     const isExpanded = expandedId === booking.id;
                     const customer = customerMap[booking.customer_id];
                     const name = customer?.full_name || customer?.email || "Unknown";
@@ -322,11 +341,7 @@ export function DailySchedule({
                     return (
                       <div
                         key={booking.id}
-                        className={`absolute left-1 right-1 cursor-pointer overflow-hidden rounded-md border px-2 py-1 text-xs shadow-sm transition-colors ${
-                          isCancelled
-                            ? "border-muted bg-muted/50 text-muted-foreground line-through opacity-60"
-                            : "border-primary/20 bg-primary/10 hover:bg-primary/15"
-                        } ${isExpanded ? "z-20 ring-2 ring-primary" : hasCancelledExpanded ? "z-30" : "z-10"}`}
+                        className={`absolute left-1 right-1 cursor-pointer overflow-hidden rounded-md border border-primary/20 bg-primary/10 px-2 py-1 text-xs shadow-sm transition-colors hover:bg-primary/15 ${isExpanded ? "z-20 ring-2 ring-primary" : hasCancelledExpanded ? "z-30" : "z-10"}`}
                         style={{
                           top: `${top}%`,
                           height: needsAutoHeight ? "auto" : `${height}%`,
@@ -441,10 +456,7 @@ export function DailySchedule({
                               </p>
                               <p>
                                 <span className="text-muted-foreground">Status:</span>{" "}
-                                <Badge
-                                  variant={isCancelled ? "secondary" : "default"}
-                                  className="ml-1"
-                                >
+                                <Badge variant="default" className="ml-1">
                                   {booking.status}
                                 </Badge>
                               </p>
@@ -458,24 +470,22 @@ export function DailySchedule({
                               )}
                             </div>
                             <div className="flex items-center gap-2">
-                              {!isCancelled && (
-                                <form action={cancelAction}>
-                                  <input
-                                    type="hidden"
-                                    name="booking_id"
-                                    value={booking.id}
-                                  />
-                                  <Button
-                                    type="submit"
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-6 text-[10px] text-destructive hover:bg-destructive/10"
-                                  >
-                                    <X className="mr-1 h-3 w-3" />
-                                    Cancel Booking
-                                  </Button>
-                                </form>
-                              )}
+                              <form action={cancelAction}>
+                                <input
+                                  type="hidden"
+                                  name="booking_id"
+                                  value={booking.id}
+                                />
+                                <Button
+                                  type="submit"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-[10px] text-destructive hover:bg-destructive/10"
+                                >
+                                  <X className="mr-1 h-3 w-3" />
+                                  Cancel Booking
+                                </Button>
+                              </form>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -484,6 +494,82 @@ export function DailySchedule({
                               >
                                 Close
                               </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Orphan cancelled booking clusters */}
+                  {orphanClusters.map((cluster, idx) => {
+                    const clusterKey = `orphan-${bay.id}-${idx}`;
+                    const earliestStart = Math.min(
+                      ...cluster.map((c) =>
+                        getHourInTimezone(c.start_time, timezone)
+                      )
+                    );
+                    const top =
+                      ((earliestStart - startHour) / totalHours) * 100;
+                    const isOpen = showCancelledForId === clusterKey;
+
+                    return (
+                      <div
+                        key={clusterKey}
+                        className={`absolute left-1 right-1 ${isOpen ? "z-30" : "z-[5]"}`}
+                        style={{ top: `${top}%` }}
+                      >
+                        <button
+                          className="w-full cursor-pointer rounded border border-red-300 bg-red-50 py-0.5 text-center text-[10px] font-medium text-red-600 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-950/80"
+                          onClick={() =>
+                            setShowCancelledForId(
+                              isOpen ? null : clusterKey
+                            )
+                          }
+                        >
+                          {cluster.length} Cancelled{" "}
+                          {isOpen ? "▲" : "▼"}
+                        </button>
+                        {isOpen && (
+                          <div className="mt-1 overflow-hidden rounded-lg border border-red-200 bg-popover text-[10px] shadow-xl dark:border-red-900">
+                            <div className="border-b border-red-200 bg-red-50 px-2.5 py-1 font-medium text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400">
+                              Cancelled Bookings
+                            </div>
+                            <div className="divide-y divide-border/50">
+                              {cluster.map((cb) => {
+                                const cbCustomer =
+                                  customerMap[cb.customer_id];
+                                const cbName =
+                                  cbCustomer?.full_name ||
+                                  cbCustomer?.email ||
+                                  "Unknown";
+                                return (
+                                  <div
+                                    key={cb.id}
+                                    className="px-2.5 py-1.5"
+                                  >
+                                    <p className="truncate font-medium text-foreground">
+                                      {cbName}
+                                    </p>
+                                    <div className="mt-0.5 flex items-center gap-2 text-muted-foreground">
+                                      <span>
+                                        {formatTime(cb.start_time, timezone)}{" "}
+                                        –{" "}
+                                        {formatTime(cb.end_time, timezone)}
+                                      </span>
+                                      <span className="font-mono">
+                                        {cb.confirmation_code}
+                                      </span>
+                                      <span>
+                                        $
+                                        {(
+                                          cb.total_price_cents / 100
+                                        ).toFixed(2)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         )}
