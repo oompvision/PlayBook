@@ -420,6 +420,7 @@ create policy "booking_slots_customer_insert"
 -- ============================================================
 -- Atomic booking function with row-level locking
 -- Prevents double-bookings using SELECT ... FOR UPDATE
+-- Groups non-consecutive slots into separate bookings.
 -- ============================================================
 
 create or replace function public.create_booking(
@@ -433,14 +434,17 @@ create or replace function public.create_booking(
 returns json as $$
 declare
   v_slot record;
-  v_total_price integer := 0;
-  v_start_time timestamptz;
-  v_end_time timestamptz;
+  v_locked_slots uuid[];
+  v_group_start timestamptz;
+  v_group_end timestamptz;
+  v_group_price integer;
+  v_group_slot_ids uuid[];
   v_confirmation_code text;
   v_booking_id uuid;
-  v_locked_slots uuid[];
+  v_results json[] := '{}';
 begin
   -- Lock the requested slots with FOR UPDATE to prevent concurrent bookings
+  v_locked_slots := '{}';
   for v_slot in
     select id, start_time, end_time, price_cents, status
     from public.bay_schedule_slots
@@ -448,64 +452,118 @@ begin
     order by start_time
     for update
   loop
-    -- Check each slot is still available
     if v_slot.status != 'available' then
       raise exception 'Slot % is no longer available (status: %)', v_slot.id, v_slot.status;
     end if;
-
-    v_total_price := v_total_price + v_slot.price_cents;
-
-    if v_start_time is null or v_slot.start_time < v_start_time then
-      v_start_time := v_slot.start_time;
-    end if;
-
-    if v_end_time is null or v_slot.end_time > v_end_time then
-      v_end_time := v_slot.end_time;
-    end if;
-
     v_locked_slots := array_append(v_locked_slots, v_slot.id);
   end loop;
 
   -- Verify we found all requested slots
-  if array_length(v_locked_slots, 1) != array_length(p_slot_ids, 1) then
+  if array_length(v_locked_slots, 1) is distinct from array_length(p_slot_ids, 1) then
     raise exception 'Some requested slots were not found';
   end if;
 
-  -- Generate unique confirmation code
+  -- Iterate ordered slots, grouping consecutive ones into separate bookings
+  v_group_start := null;
+  v_group_end := null;
+  v_group_price := 0;
+  v_group_slot_ids := '{}';
+
+  for v_slot in
+    select id, start_time, end_time, price_cents
+    from public.bay_schedule_slots
+    where id = any(p_slot_ids)
+    order by start_time
   loop
-    v_confirmation_code := public.generate_confirmation_code();
-    exit when not exists (
-      select 1 from public.bookings where confirmation_code = v_confirmation_code
-    );
+    -- If this slot is not consecutive with the current group, flush the group
+    if v_group_end is not null and v_slot.start_time > v_group_end then
+      loop
+        v_confirmation_code := public.generate_confirmation_code();
+        exit when not exists (
+          select 1 from public.bookings where confirmation_code = v_confirmation_code
+        );
+      end loop;
+
+      insert into public.bookings (
+        org_id, customer_id, bay_id, date,
+        start_time, end_time, total_price_cents,
+        status, confirmation_code, notes
+      ) values (
+        p_org_id, p_customer_id, p_bay_id, p_date,
+        v_group_start, v_group_end, v_group_price,
+        'confirmed', v_confirmation_code, p_notes
+      ) returning id into v_booking_id;
+
+      insert into public.booking_slots (booking_id, bay_schedule_slot_id)
+      select v_booking_id, unnest(v_group_slot_ids);
+
+      update public.bay_schedule_slots
+      set status = 'booked', updated_at = now()
+      where id = any(v_group_slot_ids);
+
+      v_results := array_append(v_results, json_build_object(
+        'booking_id', v_booking_id,
+        'confirmation_code', v_confirmation_code,
+        'total_price_cents', v_group_price,
+        'start_time', v_group_start,
+        'end_time', v_group_end
+      ));
+
+      v_group_start := null;
+      v_group_end := null;
+      v_group_price := 0;
+      v_group_slot_ids := '{}';
+    end if;
+
+    if v_group_start is null then
+      v_group_start := v_slot.start_time;
+    end if;
+    v_group_end := v_slot.end_time;
+    v_group_price := v_group_price + v_slot.price_cents;
+    v_group_slot_ids := array_append(v_group_slot_ids, v_slot.id);
   end loop;
 
-  -- Create the booking
-  insert into public.bookings (
-    org_id, customer_id, bay_id, date,
-    start_time, end_time, total_price_cents,
-    status, confirmation_code, notes
-  ) values (
-    p_org_id, p_customer_id, p_bay_id, p_date,
-    v_start_time, v_end_time, v_total_price,
-    'confirmed', v_confirmation_code, p_notes
-  ) returning id into v_booking_id;
+  -- Flush the last group
+  if v_group_start is not null then
+    loop
+      v_confirmation_code := public.generate_confirmation_code();
+      exit when not exists (
+        select 1 from public.bookings where confirmation_code = v_confirmation_code
+      );
+    end loop;
 
-  -- Link slots to the booking
-  insert into public.booking_slots (booking_id, bay_schedule_slot_id)
-  select v_booking_id, unnest(p_slot_ids);
+    insert into public.bookings (
+      org_id, customer_id, bay_id, date,
+      start_time, end_time, total_price_cents,
+      status, confirmation_code, notes
+    ) values (
+      p_org_id, p_customer_id, p_bay_id, p_date,
+      v_group_start, v_group_end, v_group_price,
+      'confirmed', v_confirmation_code, p_notes
+    ) returning id into v_booking_id;
 
-  -- Mark slots as booked
-  update public.bay_schedule_slots
-  set status = 'booked', updated_at = now()
-  where id = any(p_slot_ids);
+    insert into public.booking_slots (booking_id, bay_schedule_slot_id)
+    select v_booking_id, unnest(v_group_slot_ids);
 
-  return json_build_object(
-    'booking_id', v_booking_id,
-    'confirmation_code', v_confirmation_code,
-    'total_price_cents', v_total_price,
-    'start_time', v_start_time,
-    'end_time', v_end_time
-  );
+    update public.bay_schedule_slots
+    set status = 'booked', updated_at = now()
+    where id = any(v_group_slot_ids);
+
+    v_results := array_append(v_results, json_build_object(
+      'booking_id', v_booking_id,
+      'confirmation_code', v_confirmation_code,
+      'total_price_cents', v_group_price,
+      'start_time', v_group_start,
+      'end_time', v_group_end
+    ));
+  end if;
+
+  -- Return single object for backwards compat when 1 group, array otherwise
+  if array_length(v_results, 1) = 1 then
+    return v_results[1];
+  else
+    return array_to_json(v_results);
+  end if;
 end;
 $$ language plpgsql security definer;
 

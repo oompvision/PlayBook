@@ -153,17 +153,23 @@ export default async function BookingConfirmPage({
         );
       }
 
-      const result = data as {
-        booking_id: string;
-        confirmation_code: string;
-        total_price_cents: number;
-      };
       const bayName =
         (formData.get(`bay_name_${bayId}`) as string) || "Bay";
-      results.push({
-        confirmation_code: result.confirmation_code,
-        bay_name: bayName,
-      });
+
+      // The RPC may return a single object or an array when non-consecutive
+      // slots are split into separate bookings
+      const bookings = Array.isArray(data) ? data : [data];
+      for (const result of bookings) {
+        const r = result as {
+          booking_id: string;
+          confirmation_code: string;
+          total_price_cents: number;
+        };
+        results.push({
+          confirmation_code: r.confirmation_code,
+          bay_name: bayName,
+        });
+      }
     }
 
     revalidatePath("/book");

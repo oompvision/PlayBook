@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { formatTimeInZone } from "@/lib/utils";
+import { formatTimeInZone, getTodayInTimezone } from "@/lib/utils";
+import { DailySchedule } from "@/components/daily-schedule";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -25,6 +26,7 @@ export default async function BookingsListPage({
   searchParams,
 }: {
   searchParams: Promise<{
+    view?: string;
     from?: string;
     to?: string;
     status?: string;
@@ -41,12 +43,14 @@ export default async function BookingsListPage({
   await requireAdmin(org.id);
 
   const supabase = await createClient();
+  const activeView = params.view === "daily" ? "daily" : "list";
 
-  // Load bays for filter dropdown
+  // Load bays for filter dropdown + daily view columns
   const { data: bays } = await supabase
     .from("bays")
     .select("id, name")
     .eq("org_id", org.id)
+    .eq("is_active", true)
     .order("sort_order")
     .order("created_at");
 
@@ -60,17 +64,19 @@ export default async function BookingsListPage({
     .order("date", { ascending: false })
     .order("start_time", { ascending: false });
 
-  if (params.from) {
-    query = query.gte("date", params.from);
-  }
-  if (params.to) {
-    query = query.lte("date", params.to);
-  }
-  if (params.status && params.status !== "all") {
-    query = query.eq("status", params.status);
-  }
-  if (params.bay) {
-    query = query.eq("bay_id", params.bay);
+  if (activeView === "list") {
+    if (params.from) {
+      query = query.gte("date", params.from);
+    }
+    if (params.to) {
+      query = query.lte("date", params.to);
+    }
+    if (params.status && params.status !== "all") {
+      query = query.eq("status", params.status);
+    }
+    if (params.bay) {
+      query = query.eq("bay_id", params.bay);
+    }
   }
 
   const { data: bookings, error: bookingsError } = await query;
@@ -148,6 +154,8 @@ export default async function BookingsListPage({
     return `/admin/bookings?${p.toString()}`;
   }
 
+  const today = getTodayInTimezone(org.timezone);
+
   return (
     <div>
       <div className="flex items-center justify-between">
@@ -157,7 +165,11 @@ export default async function BookingsListPage({
             View, filter, and manage all bookings.
           </p>
         </div>
-        <Badge variant="secondary">{filtered.length} result{filtered.length !== 1 ? "s" : ""}</Badge>
+        {activeView === "list" && (
+          <Badge variant="secondary">
+            {filtered.length} result{filtered.length !== 1 ? "s" : ""}
+          </Badge>
+        )}
       </div>
 
       {bookingsError && (
@@ -176,148 +188,189 @@ export default async function BookingsListPage({
         </div>
       )}
 
-      {/* Filters */}
-      <form className="mt-6 flex flex-wrap items-end gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">From</Label>
-          <Input
-            type="date"
-            name="from"
-            defaultValue={params.from ?? ""}
-            className="h-8 w-36 text-xs"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">To</Label>
-          <Input
-            type="date"
-            name="to"
-            defaultValue={params.to ?? ""}
-            className="h-8 w-36 text-xs"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Status</Label>
-          <select
-            name="status"
-            defaultValue={params.status ?? "all"}
-            className="h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            <option value="all">All</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Bay</Label>
-          <select
-            name="bay"
-            defaultValue={params.bay ?? ""}
-            className="h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            <option value="">All bays</option>
-            {bays?.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Customer</Label>
-          <Input
-            name="q"
-            placeholder="Name or email..."
-            defaultValue={params.q ?? ""}
-            className="h-8 w-40 text-xs"
-          />
-        </div>
-        <Button type="submit" variant="outline" size="sm">
-          Filter
-        </Button>
-        <a href="/admin/bookings">
-          <Button type="button" variant="ghost" size="sm">
-            Clear
-          </Button>
+      {/* View tabs */}
+      <div className="mt-6 flex gap-1 border-b">
+        <a
+          href="/admin/bookings?view=list"
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeView === "list"
+              ? "border-b-2 border-primary text-primary"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          List View
         </a>
-      </form>
-
-      {/* Bookings list */}
-      <div className="mt-6 space-y-2">
-        {filtered.length === 0 && (
-          <p className="py-12 text-center text-muted-foreground">
-            No bookings found.
-          </p>
-        )}
-
-        {filtered.map((booking) => {
-          const customer = customerMap[booking.customer_id];
-          const timeStr = `${formatTimeInZone(booking.start_time, org!.timezone)} – ${formatTimeInZone(booking.end_time, org!.timezone)}`;
-
-          return (
-            <div
-              key={booking.id}
-              className="flex items-center justify-between rounded-lg border p-4"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium">
-                    {customer?.full_name || customer?.email || "Unknown"}
-                  </p>
-                  <Badge
-                    variant={
-                      booking.status === "confirmed"
-                        ? "default"
-                        : "secondary"
-                    }
-                  >
-                    {booking.status}
-                  </Badge>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {booking.confirmation_code}
-                  </span>
-                </div>
-                <p className="mt-0.5 text-sm text-muted-foreground">
-                  {new Date(booking.date).toLocaleDateString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                  })}
-                  {" · "}
-                  {timeStr}
-                  {" · "}
-                  {bayMap[booking.bay_id] ?? "Unknown bay"}
-                  {" · "}${(booking.total_price_cents / 100).toFixed(2)}
-                </p>
-                {booking.notes && (
-                  <p className="mt-1 text-xs text-muted-foreground italic">
-                    {booking.notes}
-                  </p>
-                )}
-              </div>
-              <div className="ml-4 flex items-center gap-2">
-                {booking.status === "confirmed" && (
-                  <form action={cancelBooking}>
-                    <input
-                      type="hidden"
-                      name="booking_id"
-                      value={booking.id}
-                    />
-                    <Button
-                      type="submit"
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:bg-destructive/10"
-                    >
-                      Cancel
-                    </Button>
-                  </form>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        <a
+          href="/admin/bookings?view=daily"
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeView === "daily"
+              ? "border-b-2 border-primary text-primary"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Daily View
+        </a>
       </div>
+
+      {activeView === "list" ? (
+        <>
+          {/* Filters */}
+          <form className="mt-6 flex flex-wrap items-end gap-3">
+            <input type="hidden" name="view" value="list" />
+            <div className="space-y-1">
+              <Label className="text-xs">From</Label>
+              <Input
+                type="date"
+                name="from"
+                defaultValue={params.from ?? ""}
+                className="h-8 w-36 text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">To</Label>
+              <Input
+                type="date"
+                name="to"
+                defaultValue={params.to ?? ""}
+                className="h-8 w-36 text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Status</Label>
+              <select
+                name="status"
+                defaultValue={params.status ?? "all"}
+                className="h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="all">All</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Bay</Label>
+              <select
+                name="bay"
+                defaultValue={params.bay ?? ""}
+                className="h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="">All bays</option>
+                {bays?.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Customer</Label>
+              <Input
+                name="q"
+                placeholder="Name or email..."
+                defaultValue={params.q ?? ""}
+                className="h-8 w-40 text-xs"
+              />
+            </div>
+            <Button type="submit" variant="outline" size="sm">
+              Filter
+            </Button>
+            <a href="/admin/bookings?view=list">
+              <Button type="button" variant="ghost" size="sm">
+                Clear
+              </Button>
+            </a>
+          </form>
+
+          {/* Bookings list */}
+          <div className="mt-6 space-y-2">
+            {filtered.length === 0 && (
+              <p className="py-12 text-center text-muted-foreground">
+                No bookings found.
+              </p>
+            )}
+
+            {filtered.map((booking) => {
+              const customer = customerMap[booking.customer_id];
+              const timeStr = `${formatTimeInZone(booking.start_time, org!.timezone)} – ${formatTimeInZone(booking.end_time, org!.timezone)}`;
+
+              return (
+                <div
+                  key={booking.id}
+                  className="flex items-center justify-between rounded-lg border p-4"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">
+                        {customer?.full_name || customer?.email || "Unknown"}
+                      </p>
+                      <Badge
+                        variant={
+                          booking.status === "confirmed"
+                            ? "default"
+                            : "secondary"
+                        }
+                      >
+                        {booking.status}
+                      </Badge>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {booking.confirmation_code}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      {new Date(booking.date).toLocaleDateString("en-US", {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                      {" · "}
+                      {timeStr}
+                      {" · "}
+                      {bayMap[booking.bay_id] ?? "Unknown bay"}
+                      {" · "}${(booking.total_price_cents / 100).toFixed(2)}
+                    </p>
+                    {booking.notes && (
+                      <p className="mt-1 text-xs text-muted-foreground italic">
+                        {booking.notes}
+                      </p>
+                    )}
+                  </div>
+                  <div className="ml-4 flex items-center gap-2">
+                    {booking.status === "confirmed" && (
+                      <form action={cancelBooking}>
+                        <input
+                          type="hidden"
+                          name="booking_id"
+                          value={booking.id}
+                        />
+                        <Button
+                          type="submit"
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hover:bg-destructive/10"
+                        >
+                          Cancel
+                        </Button>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        /* Daily View */
+        <div className="mt-6">
+          <DailySchedule
+            bookings={bookings ?? []}
+            bays={bays ?? []}
+            customerMap={customerMap}
+            timezone={org.timezone}
+            initialDate={today}
+            cancelAction={cancelBooking}
+          />
+        </div>
+      )}
     </div>
   );
 }
