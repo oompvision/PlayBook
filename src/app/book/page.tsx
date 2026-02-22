@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SignOutButton } from "@/components/sign-out-button";
+import { getTodayInTimezone, toTimestamp } from "@/lib/utils";
 
 export default async function BookPage() {
   const slug = await getFacilitySlug();
@@ -16,35 +17,45 @@ export default async function BookPage() {
 
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug")
+    .select("id, name, slug, timezone")
     .eq("slug", slug)
     .single();
 
   if (!org) redirect("/");
 
-  // Build next 14 days
-  const today = new Date();
+  // Build next 14 days using the facility's timezone
+  const todayStr = getTodayInTimezone(org.timezone);
   const dates: string[] = [];
   for (let i = 0; i < 14; i++) {
-    const d = new Date(today);
+    const d = new Date(todayStr + "T12:00:00");
     d.setDate(d.getDate() + i);
     dates.push(d.toISOString().split("T")[0]);
   }
 
-  // Get available slot counts per date
+  // Get available slot counts per date using timezone-aware bounds
+  // so that evening slots don't bleed into the next day's count
+  const lastDay = new Date(dates[dates.length - 1] + "T12:00:00");
+  lastDay.setDate(lastDay.getDate() + 1);
+  const dayAfterLastStr = lastDay.toISOString().split("T")[0];
+
+  const rangeStart = toTimestamp(dates[0], "00:00:00", org.timezone);
+  const rangeEnd = toTimestamp(dayAfterLastStr, "00:00:00", org.timezone);
+
   const { data: slots } = await supabase
     .from("bay_schedule_slots")
     .select("id, start_time, status, bay_schedule_id")
     .eq("org_id", org.id)
     .eq("status", "available")
-    .gte("start_time", `${dates[0]}T00:00:00`)
-    .lte("start_time", `${dates[dates.length - 1]}T23:59:59`);
+    .gte("start_time", rangeStart)
+    .lt("start_time", rangeEnd);
 
-  // Count available slots per date
+  // Count available slots per date (extract date in facility timezone)
   const availByDate: Record<string, number> = {};
   if (slots) {
     for (const slot of slots) {
-      const slotDate = new Date(slot.start_time).toISOString().split("T")[0];
+      const slotDate = new Date(slot.start_time).toLocaleDateString("en-CA", {
+        timeZone: org.timezone,
+      }); // en-CA gives YYYY-MM-DD format
       availByDate[slotDate] = (availByDate[slotDate] || 0) + 1;
     }
   }

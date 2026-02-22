@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { formatTimeInZone } from "@/lib/utils";
+import { formatTimeInZone, getTodayInTimezone } from "@/lib/utils";
 import { SignOutButton } from "@/components/sign-out-button";
 
 async function getOrg() {
@@ -63,8 +63,8 @@ export default async function MyBookingsPage({
     }
   }
 
-  // Split into upcoming and past
-  const today = new Date().toISOString().split("T")[0];
+  // Split into upcoming and past (using facility timezone)
+  const today = getTodayInTimezone(org.timezone);
   const upcoming = bookings?.filter(
     (b) => b.date >= today && b.status === "confirmed"
   ) ?? [];

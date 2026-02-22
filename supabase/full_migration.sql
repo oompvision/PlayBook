@@ -950,6 +950,297 @@ create policy "booking_slots_super_admin_all"
 
 
 -- ===========================================================
+-- FILE: 00012_super_admin_setup.sql
+-- ===========================================================
+
+-- ============================================================
+-- Super admin first-time setup
+-- Allows the first authenticated user to claim super_admin role.
+-- Only works when no super_admin exists yet.
+-- ============================================================
+
+-- Allow users to insert their own profile (handles case where
+-- the on_auth_user_created trigger didn't fire)
+create policy "profiles_self_insert"
+  on public.profiles for insert
+  with check (auth.uid() = id);
+
+-- Function to get the current user's profile, bypassing RLS.
+-- Used by server components that already verified auth via getUser().
+create or replace function public.get_my_profile()
+returns json as $$
+begin
+  return (
+    select row_to_json(p)
+    from public.profiles p
+    where p.id = auth.uid()
+  );
+end;
+$$ language plpgsql security definer;
+
+-- Function to claim super_admin role.
+-- Creates profile if missing, promotes to super_admin.
+-- Returns false if a super_admin already exists.
+create or replace function public.claim_super_admin()
+returns boolean as $$
+declare
+  _has_super_admin boolean;
+  _user_email text;
+begin
+  -- Check if any super_admin already exists
+  select exists(
+    select 1 from public.profiles where role = 'super_admin'
+  ) into _has_super_admin;
+
+  if _has_super_admin then
+    return false;
+  end if;
+
+  -- Get the current user's email
+  select email into _user_email from auth.users where id = auth.uid();
+
+  -- Upsert profile with super_admin role
+  insert into public.profiles (id, email, role)
+  values (auth.uid(), _user_email, 'super_admin')
+  on conflict (id) do update set role = 'super_admin';
+
+  return true;
+end;
+$$ language plpgsql security definer;
+
+
+-- ===========================================================
+-- FILE: 00013_fix_super_admin_rls.sql
+-- ===========================================================
+
+-- ============================================================
+-- Fix super_admin RLS policies
+--
+-- The existing super_admin policies check profiles.role inside
+-- RLS USING clauses, but that inner query is also subject to
+-- RLS on the profiles table, creating a circular failure.
+--
+-- Fix: create a SECURITY DEFINER helper that bypasses RLS,
+-- then add new working policies for all tables.
+-- ============================================================
+
+-- Helper function that bypasses RLS to check super_admin role
+create or replace function public.is_super_admin()
+returns boolean as $$
+begin
+  return exists (
+    select 1 from public.profiles
+    where id = auth.uid()
+    and role = 'super_admin'
+  );
+end;
+$$ language plpgsql security definer stable;
+
+-- organizations
+create policy "organizations_super_admin_all_v2"
+  on public.organizations for all
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
+
+-- profiles
+create policy "profiles_super_admin_all_v2"
+  on public.profiles for all
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
+
+-- bays
+create policy "bays_super_admin_all_v2"
+  on public.bays for all
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
+
+-- schedule_templates
+create policy "schedule_templates_super_admin_all_v2"
+  on public.schedule_templates for all
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
+
+-- template_slots
+create policy "template_slots_super_admin_all_v2"
+  on public.template_slots for all
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
+
+-- bay_schedules
+create policy "bay_schedules_super_admin_all_v2"
+  on public.bay_schedules for all
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
+
+-- bay_schedule_slots
+create policy "bay_schedule_slots_super_admin_all_v2"
+  on public.bay_schedule_slots for all
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
+
+-- bookings
+create policy "bookings_super_admin_all_v2"
+  on public.bookings for all
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
+
+-- booking_slots
+create policy "booking_slots_super_admin_all_v2"
+  on public.booking_slots for all
+  using (public.is_super_admin())
+  with check (public.is_super_admin());
+
+
+-- ===========================================================
+-- FILE: 00014_drop_broken_rls_policies.sql
+-- ===========================================================
+
+-- ============================================================
+-- Drop old RLS policies that cause infinite recursion
+-- ============================================================
+
+-- profiles (self-referential -> infinite recursion)
+drop policy if exists "profiles_admin_org_read" on public.profiles;
+drop policy if exists "profiles_super_admin_read" on public.profiles;
+drop policy if exists "profiles_super_admin_insert" on public.profiles;
+drop policy if exists "profiles_super_admin_update" on public.profiles;
+
+-- organizations
+drop policy if exists "organizations_super_admin_insert" on public.organizations;
+drop policy if exists "organizations_super_admin_update" on public.organizations;
+
+-- bays
+drop policy if exists "bays_admin_read" on public.bays;
+drop policy if exists "bays_admin_insert" on public.bays;
+drop policy if exists "bays_admin_update" on public.bays;
+drop policy if exists "bays_super_admin_all" on public.bays;
+
+-- schedule_templates
+drop policy if exists "schedule_templates_admin_read" on public.schedule_templates;
+drop policy if exists "schedule_templates_admin_insert" on public.schedule_templates;
+drop policy if exists "schedule_templates_admin_update" on public.schedule_templates;
+drop policy if exists "schedule_templates_admin_delete" on public.schedule_templates;
+drop policy if exists "schedule_templates_super_admin_all" on public.schedule_templates;
+
+-- template_slots
+drop policy if exists "template_slots_admin_read" on public.template_slots;
+drop policy if exists "template_slots_admin_insert" on public.template_slots;
+drop policy if exists "template_slots_admin_update" on public.template_slots;
+drop policy if exists "template_slots_admin_delete" on public.template_slots;
+drop policy if exists "template_slots_super_admin_all" on public.template_slots;
+
+-- bay_schedules
+drop policy if exists "bay_schedules_admin_insert" on public.bay_schedules;
+drop policy if exists "bay_schedules_admin_update" on public.bay_schedules;
+drop policy if exists "bay_schedules_admin_delete" on public.bay_schedules;
+drop policy if exists "bay_schedules_super_admin_all" on public.bay_schedules;
+
+-- bay_schedule_slots
+drop policy if exists "bay_schedule_slots_admin_insert" on public.bay_schedule_slots;
+drop policy if exists "bay_schedule_slots_admin_update" on public.bay_schedule_slots;
+drop policy if exists "bay_schedule_slots_admin_delete" on public.bay_schedule_slots;
+drop policy if exists "bay_schedule_slots_super_admin_all" on public.bay_schedule_slots;
+
+-- bookings
+drop policy if exists "bookings_admin_read" on public.bookings;
+drop policy if exists "bookings_admin_insert" on public.bookings;
+drop policy if exists "bookings_admin_update" on public.bookings;
+drop policy if exists "bookings_super_admin_all" on public.bookings;
+
+-- booking_slots
+drop policy if exists "booking_slots_admin_read" on public.booking_slots;
+drop policy if exists "booking_slots_super_admin_all" on public.booking_slots;
+
+-- ============================================================
+-- Re-create admin policies using SECURITY DEFINER helpers
+-- ============================================================
+
+-- Helper: check if user is admin for a given org_id
+create or replace function public.is_org_admin(_org_id uuid)
+returns boolean as $$
+begin
+  return exists (
+    select 1 from public.profiles
+    where id = auth.uid()
+    and role = 'admin'
+    and org_id = _org_id
+  );
+end;
+$$ language plpgsql security definer stable;
+
+-- profiles: admins can read profiles in their org
+create policy "profiles_admin_org_read_v2"
+  on public.profiles for select
+  using (public.is_org_admin(org_id));
+
+-- bays: admins can CRUD bays in their org
+create policy "bays_admin_all_v2"
+  on public.bays for all
+  using (public.is_org_admin(org_id))
+  with check (public.is_org_admin(org_id));
+
+-- schedule_templates
+create policy "schedule_templates_admin_all_v2"
+  on public.schedule_templates for all
+  using (public.is_org_admin(org_id))
+  with check (public.is_org_admin(org_id));
+
+-- template_slots (join through schedule_templates to get org_id)
+create policy "template_slots_admin_all_v2"
+  on public.template_slots for all
+  using (
+    exists (
+      select 1 from public.schedule_templates st
+      where st.id = template_slots.template_id
+      and public.is_org_admin(st.org_id)
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.schedule_templates st
+      where st.id = template_slots.template_id
+      and public.is_org_admin(st.org_id)
+    )
+  );
+
+-- bay_schedules
+create policy "bay_schedules_admin_all_v2"
+  on public.bay_schedules for all
+  using (public.is_org_admin(org_id))
+  with check (public.is_org_admin(org_id));
+
+-- bay_schedule_slots
+create policy "bay_schedule_slots_admin_all_v2"
+  on public.bay_schedule_slots for all
+  using (public.is_org_admin(org_id))
+  with check (public.is_org_admin(org_id));
+
+-- bookings
+create policy "bookings_admin_all_v2"
+  on public.bookings for all
+  using (public.is_org_admin(org_id))
+  with check (public.is_org_admin(org_id));
+
+-- booking_slots (join through bookings to get org_id)
+create policy "booking_slots_admin_all_v2"
+  on public.booking_slots for all
+  using (
+    exists (
+      select 1 from public.bookings b
+      where b.id = booking_slots.booking_id
+      and public.is_org_admin(b.org_id)
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.bookings b
+      where b.id = booking_slots.booking_id
+      and public.is_org_admin(b.org_id)
+    )
+  );
+
+
+-- ===========================================================
 -- SEED DATA
 -- ===========================================================
 
