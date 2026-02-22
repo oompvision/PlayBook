@@ -1,22 +1,32 @@
+import { createClient } from "@/lib/supabase/server";
+import { cookies } from "next/headers";
+import { redirect, notFound } from "next/navigation";
+
 export default async function EnterOrgPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const supabase = await createClient();
 
-  return (
-    <div>
-      <h1 className="text-3xl font-bold tracking-tight">
-        Entering Organization
-      </h1>
-      <p className="mt-2 text-muted-foreground">
-        Switching into org {id} admin dashboard...
-      </p>
-      {/* Org switching logic — Phase 2 */}
-      <div className="mt-8 rounded-lg border border-dashed p-12 text-center text-muted-foreground">
-        Org switching coming soon
-      </div>
-    </div>
-  );
+  // Look up the org to get its slug
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("slug, name")
+    .eq("id", id)
+    .single();
+
+  if (!org) notFound();
+
+  // Set cookie so middleware can inject the facility slug
+  const cookieStore = await cookies();
+  cookieStore.set("playbook-admin-org", org.slug, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: 60 * 60 * 8, // 8 hours
+  });
+
+  redirect("/admin");
 }

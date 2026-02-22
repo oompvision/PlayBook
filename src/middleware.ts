@@ -58,6 +58,11 @@ export async function middleware(request: NextRequest) {
     facilitySlug = request.nextUrl.searchParams.get("facility");
   }
 
+  // Fallback: check cookie (set by super admin "Enter as Admin" flow)
+  if (!facilitySlug) {
+    facilitySlug = request.cookies.get("playbook-admin-org")?.value || null;
+  }
+
   // Set facility slug as a header so server components can access it
   if (facilitySlug) {
     response.headers.set("x-facility-slug", facilitySlug);
