@@ -311,29 +311,20 @@ export function DailySchedule({
                   {bayActive.map((booking) => {
                     const bStart = getHourInTimezone(booking.start_time, timezone);
                     const bEnd = getHourInTimezone(booking.end_time, timezone);
-                    const top = ((bStart - startHour) / totalHours) * 100;
-                    const height = ((bEnd - bStart) / totalHours) * 100;
+                    const topPx = (bStart - startHour) * HOUR_HEIGHT;
+                    const heightPx = (bEnd - bStart) * HOUR_HEIGHT;
                     const isExpanded = expandedId === booking.id;
                     const customer = customerMap[booking.customer_id];
                     const name = customer?.full_name || customer?.email || "Unknown";
-
-                    // Find overlapping cancelled bookings for this active card
-                    const overlappingCancelled = showCancelled
-                      ? bayCancelled.filter((c) => {
-                          const cStart = getHourInTimezone(c.start_time, timezone);
-                          const cEnd = getHourInTimezone(c.end_time, timezone);
-                          return cStart < bEnd && cEnd > bStart;
-                        })
-                      : [];
 
                     return (
                       <div
                         key={booking.id}
                         className={`absolute left-1 right-1 cursor-pointer overflow-hidden rounded-md border border-primary/20 bg-primary/10 px-2 py-1 text-xs shadow-sm transition-colors hover:bg-primary/15 ${isExpanded ? "z-20 ring-2 ring-primary" : "z-10"}`}
                         style={{
-                          top: `${top}%`,
-                          height: isExpanded ? "auto" : `${height}%`,
-                          minHeight: isExpanded ? `${height}%` : undefined,
+                          top: topPx,
+                          height: isExpanded ? "auto" : heightPx,
+                          minHeight: isExpanded ? heightPx : undefined,
                         }}
                         onClick={() =>
                           setExpandedId(isExpanded ? null : booking.id)
@@ -350,63 +341,6 @@ export function DailySchedule({
                         <p className="text-[10px] font-medium">
                           ${(booking.total_price_cents / 100).toFixed(2)}
                         </p>
-
-                        {/* "N Cancelled" link for overlapping cancelled bookings */}
-                        {overlappingCancelled.length > 0 && (
-                          <div className="relative">
-                            <button
-                              className="text-[10px] text-red-600 underline decoration-red-400/50 hover:decoration-red-600 dark:text-red-400 dark:decoration-red-500/50 dark:hover:decoration-red-400"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setCancelledDropdownId(
-                                  cancelledDropdownId === booking.id
-                                    ? null
-                                    : booking.id
-                                );
-                              }}
-                            >
-                              {overlappingCancelled.length} Cancelled
-                            </button>
-                            {cancelledDropdownId === booking.id && (
-                              <div
-                                className="absolute left-0 top-full z-40 mt-1 w-56 rounded-md border bg-popover p-1 text-popover-foreground shadow-lg"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {overlappingCancelled.map((c) => {
-                                  const cCustomer =
-                                    customerMap[c.customer_id];
-                                  return (
-                                    <div
-                                      key={c.id}
-                                      className="space-y-0.5 border-b border-border/50 px-2 py-1.5 last:border-0"
-                                    >
-                                      <p className="truncate font-medium text-red-700 dark:text-red-400">
-                                        {cCustomer?.full_name ||
-                                          cCustomer?.email ||
-                                          "Unknown"}
-                                      </p>
-                                      <p className="text-[10px] text-muted-foreground">
-                                        {formatTime(c.start_time, timezone)} –{" "}
-                                        {formatTime(c.end_time, timezone)}
-                                      </p>
-                                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                                        <span className="font-mono">
-                                          {c.confirmation_code}
-                                        </span>
-                                        <span>
-                                          $
-                                          {(c.total_price_cents / 100).toFixed(
-                                            2
-                                          )}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )}
 
                         {isExpanded && (
                           <div
@@ -490,34 +424,96 @@ export function DailySchedule({
                     );
                   })}
 
-                  {/* Unattached cancelled bookings (no overlapping active) — small indicator */}
+                  {/* "N Cancelled" thin cards — positioned directly below overlapping active cards */}
+                  {showCancelled &&
+                    bayActive.map((booking) => {
+                      const bStart = getHourInTimezone(booking.start_time, timezone);
+                      const bEnd = getHourInTimezone(booking.end_time, timezone);
+                      const overlapping = bayCancelled.filter((c) => {
+                        const cStart = getHourInTimezone(c.start_time, timezone);
+                        const cEnd = getHourInTimezone(c.end_time, timezone);
+                        return cStart < bEnd && cEnd > bStart;
+                      });
+                      if (overlapping.length === 0) return null;
+
+                      const bottomPx = (bEnd - startHour) * HOUR_HEIGHT;
+                      const isOpen = cancelledDropdownId === booking.id;
+
+                      return (
+                        <div
+                          key={`cancelled-for-${booking.id}`}
+                          className="absolute left-1 right-1 z-10"
+                          style={{ top: bottomPx + 2 }}
+                        >
+                          <button
+                            className="w-full cursor-pointer rounded border border-red-300 bg-red-50 py-0.5 text-center text-[10px] text-red-600 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-950/80"
+                            onClick={() =>
+                              setCancelledDropdownId(
+                                isOpen ? null : booking.id
+                              )
+                            }
+                          >
+                            {overlapping.length} Cancelled
+                          </button>
+                          {isOpen && (
+                            <div className="mt-0.5 rounded-md border bg-popover p-1 text-xs text-popover-foreground shadow-lg">
+                              {overlapping.map((c) => {
+                                const cCustomer = customerMap[c.customer_id];
+                                return (
+                                  <div
+                                    key={c.id}
+                                    className="space-y-0.5 border-b border-border/50 px-2 py-1.5 last:border-0"
+                                  >
+                                    <p className="truncate font-medium text-red-700 dark:text-red-400">
+                                      {cCustomer?.full_name ||
+                                        cCustomer?.email ||
+                                        "Unknown"}
+                                    </p>
+                                    <p className="text-[10px] text-muted-foreground">
+                                      {formatTime(c.start_time, timezone)} –{" "}
+                                      {formatTime(c.end_time, timezone)}
+                                    </p>
+                                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                      <span className="font-mono">
+                                        {c.confirmation_code}
+                                      </span>
+                                      <span>
+                                        $
+                                        {(c.total_price_cents / 100).toFixed(2)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                  {/* Unattached cancelled bookings (no overlapping active) */}
                   {unattachedCancelled.map((c) => {
                     const cStart = getHourInTimezone(c.start_time, timezone);
-                    const cEnd = getHourInTimezone(c.end_time, timezone);
-                    const top = ((cStart - startHour) / totalHours) * 100;
-                    const height = ((cEnd - cStart) / totalHours) * 100;
+                    const topPx = (cStart - startHour) * HOUR_HEIGHT;
                     const cCustomer = customerMap[c.customer_id];
-                    const isDropdownOpen = cancelledDropdownId === c.id;
+                    const isOpen = cancelledDropdownId === c.id;
 
                     return (
                       <div
                         key={c.id}
-                        className="absolute left-1 right-1 z-0 flex items-start justify-center"
-                        style={{
-                          top: `${top}%`,
-                          height: `${height}%`,
-                        }}
+                        className="absolute left-1 right-1 z-0"
+                        style={{ top: topPx }}
                       >
                         <button
-                          className="mt-1 rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-[10px] text-red-600 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-950/80"
+                          className="w-full cursor-pointer rounded border border-red-300 bg-red-50 py-0.5 text-center text-[10px] text-red-600 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-950/80"
                           onClick={() =>
-                            setCancelledDropdownId(isDropdownOpen ? null : c.id)
+                            setCancelledDropdownId(isOpen ? null : c.id)
                           }
                         >
                           1 Cancelled
                         </button>
-                        {isDropdownOpen && (
-                          <div className="absolute left-0 top-8 z-40 w-56 rounded-md border bg-popover p-1 text-xs text-popover-foreground shadow-lg">
+                        {isOpen && (
+                          <div className="mt-0.5 rounded-md border bg-popover p-1 text-xs text-popover-foreground shadow-lg">
                             <div className="space-y-0.5 px-2 py-1.5">
                               <p className="truncate font-medium text-red-700 dark:text-red-400">
                                 {cCustomer?.full_name ||
