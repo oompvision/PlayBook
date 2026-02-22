@@ -175,3 +175,7 @@ src/
 - **No ORM**: Direct Supabase query builder (`.from().select().eq()`)
 - **Confirmation codes**: Format `PB-XXXXXX` (alphanumeric, excludes ambiguous chars 0/I/O)
 - **Environment variables**: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `GEMINI_API_KEY`
+
+## Deployment
+
+- **Database migrations**: The user does not have direct CLI access to run Supabase migrations. When a new SQL migration is added, always provide the full SQL query in the chat so the user can run it manually in the Supabase SQL Editor.
