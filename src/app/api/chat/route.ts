@@ -64,7 +64,7 @@ const toolDeclarations: FunctionDeclaration[] = [
   {
     name: "create_booking",
     description:
-      "Create a booking for the customer. Requires slot_ids from a previous get_available_slots call. IMPORTANT: Always confirm the booking details with the customer BEFORE calling this tool.",
+      "Create a booking for the customer. Provide EITHER slot_ids from a previous get_available_slots call OR the date, bay_name, and start_time so the system can find the correct slot. IMPORTANT: Always confirm the booking details with the customer BEFORE calling this tool.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -72,14 +72,28 @@ const toolDeclarations: FunctionDeclaration[] = [
           type: Type.ARRAY,
           items: { type: Type.STRING },
           description:
-            "Array of slot IDs to book. These must come from a prior get_available_slots response.",
+            "Array of slot IDs to book. These come from a prior get_available_slots response. If you don't have valid slot_ids, provide date + bay_name + start_time instead.",
+        },
+        date: {
+          type: Type.STRING,
+          description:
+            "The booking date in YYYY-MM-DD format. Used when slot_ids are not available.",
+        },
+        bay_name: {
+          type: Type.STRING,
+          description:
+            'The bay name (e.g., "Bay 1"). Used when slot_ids are not available.',
+        },
+        start_time: {
+          type: Type.STRING,
+          description:
+            'The desired start time in 12-hour format (e.g., "6:00 PM"). Used when slot_ids are not available.',
         },
         notes: {
           type: Type.STRING,
           description: "Optional notes from the customer about the booking.",
         },
       },
-      required: ["slot_ids"],
     },
   },
   {
@@ -331,34 +345,103 @@ async function executeGetMyBookings(
 async function executeCreateBooking(
   org: OrgContext,
   customerId: string | null,
-  args: { slot_ids: string[] | string; notes?: string }
+  args: {
+    slot_ids?: string[] | string;
+    date?: string;
+    bay_name?: string;
+    start_time?: string;
+    notes?: string;
+  }
 ) {
   if (!customerId) {
     return { error: "You need to be signed in to make a booking. Please log in first." };
   }
 
+  const supabase = await createClient();
+
   // Normalize slot_ids — Gemini may pass a single string instead of an array
-  const slotIds: string[] = Array.isArray(args.slot_ids)
+  let slotIds: string[] = Array.isArray(args.slot_ids)
     ? args.slot_ids
     : args.slot_ids
       ? [args.slot_ids]
       : [];
 
-  if (slotIds.length === 0) {
-    return { error: "No slots selected. Please choose time slots first." };
+  // Try to look up slots by ID first
+  let slots: { id: string; bay_schedule_id: string }[] | null = null;
+  if (slotIds.length > 0) {
+    const { data } = await supabase
+      .from("bay_schedule_slots")
+      .select("id, bay_schedule_id")
+      .in("id", slotIds)
+      .eq("org_id", org.id);
+    slots = data;
   }
 
-  const supabase = await createClient();
+  // Fallback: resolve slots from date + bay_name + start_time
+  if ((!slots || slots.length === 0) && args.date && args.bay_name && args.start_time) {
+    const { data: bays } = await supabase
+      .from("bays")
+      .select("id, name")
+      .eq("org_id", org.id)
+      .eq("is_active", true);
 
-  // Look up slot → bay_schedule → bay mapping (needed for the RPC call)
-  const { data: slots } = await supabase
-    .from("bay_schedule_slots")
-    .select("id, bay_schedule_id")
-    .in("id", slotIds)
-    .eq("org_id", org.id);
+    const matchedBay = bays?.find((b) =>
+      b.name.toLowerCase().includes(args.bay_name!.toLowerCase())
+    );
+
+    if (!matchedBay) {
+      return { error: `No bay matching "${args.bay_name}" found.` };
+    }
+
+    // Get the bay_schedule for this date
+    const { data: schedules } = await supabase
+      .from("bay_schedules")
+      .select("id")
+      .eq("bay_id", matchedBay.id)
+      .eq("org_id", org.id)
+      .eq("date", args.date);
+
+    if (!schedules || schedules.length === 0) {
+      return { error: `No schedule found for ${matchedBay.name} on ${args.date}.` };
+    }
+
+    const scheduleIds = schedules.map((s) => s.id);
+
+    // Get available slots for this bay/date
+    const { data: availableSlots } = await supabase
+      .from("bay_schedule_slots")
+      .select("id, start_time, bay_schedule_id")
+      .in("bay_schedule_id", scheduleIds)
+      .eq("org_id", org.id)
+      .eq("status", "available")
+      .order("start_time");
+
+    if (!availableSlots || availableSlots.length === 0) {
+      return { error: `No available slots for ${matchedBay.name} on ${args.date}.` };
+    }
+
+    // Match by formatted start_time
+    const requestedTime = args.start_time.toLowerCase().replace(/\s+/g, " ").trim();
+    const matched = availableSlots.filter((s) => {
+      const formatted = formatTimeInZone(s.start_time, org.timezone)
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .trim();
+      return formatted === requestedTime;
+    });
+
+    if (matched.length === 0) {
+      return {
+        error: `No available slot at ${args.start_time} for ${matchedBay.name} on ${args.date}. Available times: ${availableSlots.map((s) => formatTimeInZone(s.start_time, org.timezone)).join(", ")}`,
+      };
+    }
+
+    slots = matched;
+    slotIds = matched.map((s) => s.id);
+  }
 
   if (!slots || slots.length === 0) {
-    return { error: "Could not find the selected slots. Please check availability and try again." };
+    return { error: "No slots identified. Please provide either slot_ids or date + bay_name + start_time." };
   }
 
   const scheduleIds = [...new Set(slots.map((s) => s.bay_schedule_id))];
@@ -563,7 +646,7 @@ Booking guidelines:
 - BEFORE calling cancel_booking, you MUST confirm the cancellation with the customer. Tell them which booking will be cancelled and that the action cannot be undone.
 - When a booking is created, share the confirmation code with the customer.
 - Use get_my_bookings to look up a customer's existing bookings when they ask.
-- The slot_ids for create_booking come from the get_available_slots response. Always look up availability first.
+- For create_booking, you can provide EITHER slot_ids (from get_available_slots) OR date + bay_name + start_time. When confirming a booking the customer already discussed, prefer passing date, bay_name, and start_time directly — this is simpler and more reliable.
 
 Quick reply buttons:
 - ALWAYS call suggest_quick_replies to offer clickable buttons when the customer needs to make a choice.
@@ -672,7 +755,13 @@ Quick reply buttons:
             result = await executeCreateBooking(
               org as OrgContext,
               customerId,
-              call.args as { slot_ids: string[]; notes?: string }
+              call.args as {
+                slot_ids?: string[];
+                date?: string;
+                bay_name?: string;
+                start_time?: string;
+                notes?: string;
+              }
             );
             break;
           case "cancel_booking":
