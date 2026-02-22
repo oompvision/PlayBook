@@ -442,7 +442,7 @@ export function DailySchedule({
                       return (
                         <div
                           key={`cancelled-for-${booking.id}`}
-                          className="absolute left-1 right-1 z-10"
+                          className={`absolute left-1 right-1 ${isOpen ? "z-30" : "z-10"}`}
                           style={{ top: bottomPx + 2 }}
                         >
                           <button
@@ -456,35 +456,39 @@ export function DailySchedule({
                             {overlapping.length} Cancelled
                           </button>
                           {isOpen && (
-                            <div className="mt-0.5 rounded-md border bg-popover p-1 text-xs text-popover-foreground shadow-lg">
-                              {overlapping.map((c) => {
-                                const cCustomer = customerMap[c.customer_id];
-                                return (
-                                  <div
-                                    key={c.id}
-                                    className="space-y-0.5 border-b border-border/50 px-2 py-1.5 last:border-0"
-                                  >
-                                    <p className="truncate font-medium text-red-700 dark:text-red-400">
-                                      {cCustomer?.full_name ||
-                                        cCustomer?.email ||
-                                        "Unknown"}
-                                    </p>
-                                    <p className="text-[10px] text-muted-foreground">
-                                      {formatTime(c.start_time, timezone)} –{" "}
-                                      {formatTime(c.end_time, timezone)}
-                                    </p>
-                                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                                      <span className="font-mono">
-                                        {c.confirmation_code}
-                                      </span>
-                                      <span>
-                                        $
-                                        {(c.total_price_cents / 100).toFixed(2)}
-                                      </span>
+                            <div className="mt-1 overflow-hidden rounded-lg border bg-popover text-xs text-popover-foreground shadow-xl">
+                              <div className="border-b bg-red-50 px-3 py-1.5 font-medium text-red-700 dark:bg-red-950/40 dark:text-red-400">
+                                Cancelled Bookings
+                              </div>
+                              <div className="divide-y divide-border/50">
+                                {overlapping.map((c) => {
+                                  const cCustomer = customerMap[c.customer_id];
+                                  return (
+                                    <div
+                                      key={c.id}
+                                      className="px-3 py-2"
+                                    >
+                                      <p className="truncate font-medium">
+                                        {cCustomer?.full_name ||
+                                          cCustomer?.email ||
+                                          "Unknown"}
+                                      </p>
+                                      <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+                                        <span>
+                                          {formatTime(c.start_time, timezone)} –{" "}
+                                          {formatTime(c.end_time, timezone)}
+                                        </span>
+                                        <span className="font-mono">
+                                          {c.confirmation_code}
+                                        </span>
+                                        <span>
+                                          ${(c.total_price_cents / 100).toFixed(2)}
+                                        </span>
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -501,7 +505,7 @@ export function DailySchedule({
                     return (
                       <div
                         key={c.id}
-                        className="absolute left-1 right-1 z-0"
+                        className={`absolute left-1 right-1 ${isOpen ? "z-30" : "z-0"}`}
                         style={{ top: topPx }}
                       >
                         <button
@@ -513,18 +517,21 @@ export function DailySchedule({
                           1 Cancelled
                         </button>
                         {isOpen && (
-                          <div className="mt-0.5 rounded-md border bg-popover p-1 text-xs text-popover-foreground shadow-lg">
-                            <div className="space-y-0.5 px-2 py-1.5">
-                              <p className="truncate font-medium text-red-700 dark:text-red-400">
+                          <div className="mt-1 overflow-hidden rounded-lg border bg-popover text-xs text-popover-foreground shadow-xl">
+                            <div className="border-b bg-red-50 px-3 py-1.5 font-medium text-red-700 dark:bg-red-950/40 dark:text-red-400">
+                              Cancelled Bookings
+                            </div>
+                            <div className="px-3 py-2">
+                              <p className="truncate font-medium">
                                 {cCustomer?.full_name ||
                                   cCustomer?.email ||
                                   "Unknown"}
                               </p>
-                              <p className="text-[10px] text-muted-foreground">
-                                {formatTime(c.start_time, timezone)} –{" "}
-                                {formatTime(c.end_time, timezone)}
-                              </p>
-                              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                              <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+                                <span>
+                                  {formatTime(c.start_time, timezone)} –{" "}
+                                  {formatTime(c.end_time, timezone)}
+                                </span>
                                 <span className="font-mono">
                                   {c.confirmation_code}
                                 </span>
