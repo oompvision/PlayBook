@@ -13,6 +13,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import { toTimestamp } from "@/lib/utils";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -179,12 +180,12 @@ export default async function ScheduleManagerPage({
           .delete()
           .eq("bay_schedule_id", schedule.id);
 
-        // Create concrete slots from template
+        // Create concrete slots from template (timezone-aware)
         const concreteSlots = templateSlots.map((ts) => ({
           bay_schedule_id: schedule.id,
           org_id: org.id,
-          start_time: `${date}T${ts.start_time}`,
-          end_time: `${date}T${ts.end_time}`,
+          start_time: toTimestamp(date, ts.start_time, org.timezone),
+          end_time: toTimestamp(date, ts.end_time, org.timezone),
           price_cents: ts.price_cents || 0,
           status: "available" as const,
         }));

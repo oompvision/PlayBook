@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { toTimestamp, formatTimeInZone } from "@/lib/utils";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -18,15 +19,6 @@ async function getOrg() {
     .eq("slug", slug)
     .single();
   return data;
-}
-
-function formatTime(ts: string) {
-  const d = new Date(ts);
-  return d.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
 }
 
 function formatDateHeading(dateStr: string) {
@@ -148,12 +140,12 @@ export default async function DayEditorPage({
       .delete()
       .eq("bay_schedule_id", schedule.id);
 
-    // Insert new
+    // Insert new (timezone-aware)
     const concreteSlots = templateSlots.map((ts) => ({
       bay_schedule_id: schedule.id,
       org_id: org.id,
-      start_time: `${date}T${ts.start_time}`,
-      end_time: `${date}T${ts.end_time}`,
+      start_time: toTimestamp(date, ts.start_time, org.timezone),
+      end_time: toTimestamp(date, ts.end_time, org.timezone),
       price_cents: ts.price_cents || 0,
       status: "available" as const,
     }));
@@ -202,8 +194,8 @@ export default async function DayEditorPage({
     const { error } = await supabase.from("bay_schedule_slots").insert({
       bay_schedule_id: schedule.id,
       org_id: org.id,
-      start_time: `${date}T${startTime}`,
-      end_time: `${date}T${endTime}`,
+      start_time: toTimestamp(date, startTime, org.timezone),
+      end_time: toTimestamp(date, endTime, org.timezone),
       price_cents: Math.round(price * 100),
       status: "available",
     });
@@ -442,8 +434,8 @@ export default async function DayEditorPage({
                       >
                         <div className="flex items-center gap-4">
                           <span className="font-mono text-sm">
-                            {formatTime(slot.start_time)} –{" "}
-                            {formatTime(slot.end_time)}
+                            {formatTimeInZone(slot.start_time, org.timezone)} –{" "}
+                            {formatTimeInZone(slot.end_time, org.timezone)}
                           </span>
                           <span className="text-sm text-muted-foreground">
                             ${(slot.price_cents / 100).toFixed(2)}

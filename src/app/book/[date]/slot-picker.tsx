@@ -19,16 +19,26 @@ type Bay = {
   resource_type: string | null;
 };
 
+function formatTime(timestamp: string, timezone: string) {
+  return new Date(timestamp).toLocaleTimeString("en-US", {
+    timeZone: timezone,
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export default function SlotPicker({
   date,
   bays,
   slotsByBay,
   isAuthenticated,
+  timezone,
 }: {
   date: string;
   bays: Bay[];
   slotsByBay: Record<string, Slot[]>;
   isAuthenticated: boolean;
+  timezone: string;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<
@@ -112,15 +122,7 @@ export default function SlotPicker({
 
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
               {slots.map((slot) => {
-                const start = new Date(slot.start_time);
-                const end = new Date(slot.end_time);
-                const timeStr = `${start.toLocaleTimeString("en-US", {
-                  hour: "numeric",
-                  minute: "2-digit",
-                })} – ${end.toLocaleTimeString("en-US", {
-                  hour: "numeric",
-                  minute: "2-digit",
-                })}`;
+                const timeStr = `${formatTime(slot.start_time, timezone)} – ${formatTime(slot.end_time, timezone)}`;
                 const price = `$${(slot.price_cents / 100).toFixed(2)}`;
                 const isSelected = baySelection?.slotIds.includes(slot.id);
                 const isAvailable = slot.status === "available";

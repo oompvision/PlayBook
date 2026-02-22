@@ -20,7 +20,7 @@ export default async function DateDetailPage({
 
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug")
+    .select("id, name, slug, timezone")
     .eq("slug", slug)
     .single();
 
@@ -136,6 +136,7 @@ export default async function DateDetailPage({
           bays={bays ?? []}
           slotsByBay={slotsByBay}
           isAuthenticated={!!auth}
+          timezone={org.timezone}
         />
       </div>
     </div>

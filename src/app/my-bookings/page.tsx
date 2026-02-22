@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { formatTimeInZone } from "@/lib/utils";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -13,7 +14,7 @@ async function getOrg() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("organizations")
-    .select("id, name, slug")
+    .select("id, name, slug, timezone")
     .eq("slug", slug)
     .single();
   return data;
@@ -127,21 +128,13 @@ export default async function MyBookingsPage({
           )}
           <div className="mt-3 space-y-2">
             {upcoming.map((booking) => {
-              const start = new Date(booking.start_time);
-              const end = new Date(booking.end_time);
               const d = new Date(booking.date + "T12:00:00");
               const dateStr = d.toLocaleDateString("en-US", {
                 weekday: "short",
                 month: "short",
                 day: "numeric",
               });
-              const timeStr = `${start.toLocaleTimeString("en-US", {
-                hour: "numeric",
-                minute: "2-digit",
-              })} – ${end.toLocaleTimeString("en-US", {
-                hour: "numeric",
-                minute: "2-digit",
-              })}`;
+              const timeStr = `${formatTimeInZone(booking.start_time, org!.timezone)} – ${formatTimeInZone(booking.end_time, org!.timezone)}`;
 
               return (
                 <div
@@ -193,21 +186,13 @@ export default async function MyBookingsPage({
             <h2 className="text-lg font-semibold">Past & Cancelled</h2>
             <div className="mt-3 space-y-2">
               {past.map((booking) => {
-                const start = new Date(booking.start_time);
-                const end = new Date(booking.end_time);
                 const d = new Date(booking.date + "T12:00:00");
                 const dateStr = d.toLocaleDateString("en-US", {
                   weekday: "short",
                   month: "short",
                   day: "numeric",
                 });
-                const timeStr = `${start.toLocaleTimeString("en-US", {
-                  hour: "numeric",
-                  minute: "2-digit",
-                })} – ${end.toLocaleTimeString("en-US", {
-                  hour: "numeric",
-                  minute: "2-digit",
-                })}`;
+                const timeStr = `${formatTimeInZone(booking.start_time, org!.timezone)} – ${formatTimeInZone(booking.end_time, org!.timezone)}`;
 
                 return (
                   <div

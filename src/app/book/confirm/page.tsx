@@ -14,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { formatTimeInZone } from "@/lib/utils";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -21,7 +22,7 @@ async function getOrg() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("organizations")
-    .select("id, name, slug")
+    .select("id, name, slug, timezone")
     .eq("slug", slug)
     .single();
   return data;
@@ -279,31 +280,21 @@ export default async function BookingConfirmPage({
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {baySlots.map((slot) => {
-                      const start = new Date(slot.start_time);
-                      const end = new Date(slot.end_time);
-                      return (
+                    {baySlots.map((slot) => (
                         <div
                           key={slot.start_time}
                           className="flex items-center justify-between text-sm"
                         >
                           <span>
-                            {start.toLocaleTimeString("en-US", {
-                              hour: "numeric",
-                              minute: "2-digit",
-                            })}{" "}
+                            {formatTimeInZone(slot.start_time, org!.timezone)}{" "}
                             –{" "}
-                            {end.toLocaleTimeString("en-US", {
-                              hour: "numeric",
-                              minute: "2-digit",
-                            })}
+                            {formatTimeInZone(slot.end_time, org!.timezone)}
                           </span>
                           <span className="text-muted-foreground">
                             ${(slot.price_cents / 100).toFixed(2)}
                           </span>
                         </div>
-                      );
-                    })}
+                    ))}
                     <div className="border-t pt-2 text-sm font-medium">
                       <div className="flex justify-between">
                         <span>Subtotal</span>

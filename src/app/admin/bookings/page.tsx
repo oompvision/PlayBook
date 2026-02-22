@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { formatTimeInZone } from "@/lib/utils";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -13,7 +14,7 @@ async function getOrg() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("organizations")
-    .select("id, name, slug")
+    .select("id, name, slug, timezone")
     .eq("slug", slug)
     .single();
   return data;
@@ -239,15 +240,7 @@ export default async function BookingsListPage({
 
         {filtered.map((booking) => {
           const customer = customerMap[booking.customer_id];
-          const startDate = new Date(booking.start_time);
-          const endDate = new Date(booking.end_time);
-          const timeStr = `${startDate.toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-          })} – ${endDate.toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-          })}`;
+          const timeStr = `${formatTimeInZone(booking.start_time, org!.timezone)} – ${formatTimeInZone(booking.end_time, org!.timezone)}`;
 
           return (
             <div
