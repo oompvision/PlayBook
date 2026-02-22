@@ -79,9 +79,9 @@ export default async function OrgDetailPage({
           <p className="mt-1 text-muted-foreground">{org.slug}.playbook.com</p>
         </div>
         <div className="flex gap-2">
-          <Link href={`/super-admin/orgs/${id}/enter`}>
+          <a href={`/api/admin/enter/${id}`}>
             <Button variant="outline">Enter as Admin</Button>
-          </Link>
+          </a>
         </div>
       </div>
 
