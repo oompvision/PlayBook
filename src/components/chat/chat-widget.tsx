@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChatMessage, TypingIndicator, type Message } from "./chat-message";
 import { SendHorizontal, MessageSquare } from "lucide-react";
 
+const QUICK_REPLIES_DELIMITER = "\n\n<<QUICK_REPLIES>>\n";
+
 type ChatWidgetProps = {
   facilitySlug: string;
   orgName: string;
@@ -32,84 +34,125 @@ export function ChatWidget({
     scrollToBottom();
   }, [messages, isLoading, scrollToBottom]);
 
-  async function handleSubmit(e: React.FormEvent) {
+  const sendMessage = useCallback(
+    async (text: string, currentMessages: Message[]) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+
+      const userMessage: Message = { role: "user", content: trimmed };
+      const updatedMessages = [...currentMessages, userMessage];
+      setMessages(updatedMessages);
+      setInput("");
+      setIsLoading(true);
+
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            facilitySlug,
+            // Strip quickReplies from messages sent to the API
+            messages: updatedMessages.map(({ role, content }) => ({
+              role,
+              content,
+            })),
+          }),
+        });
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => null);
+          throw new Error(err?.error ?? "Failed to get response");
+        }
+
+        // Read streamed response
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("No response body");
+
+        const decoder = new TextDecoder();
+        let assistantText = "";
+
+        // Add an empty assistant message that we'll update progressively
+        setMessages((prev) => [...prev, { role: "model", content: "" }]);
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          assistantText += decoder.decode(value, { stream: true });
+          // Strip quick replies delimiter from display during streaming
+          const displayText = assistantText.split(QUICK_REPLIES_DELIMITER)[0];
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              role: "model",
+              content: displayText,
+            };
+            return updated;
+          });
+        }
+
+        // Parse quick replies from the final text
+        if (assistantText.includes(QUICK_REPLIES_DELIMITER)) {
+          const delimIndex = assistantText.indexOf(QUICK_REPLIES_DELIMITER);
+          const displayText = assistantText.slice(0, delimIndex);
+          const repliesJson = assistantText.slice(
+            delimIndex + QUICK_REPLIES_DELIMITER.length
+          );
+          try {
+            const quickReplies = JSON.parse(repliesJson);
+            if (Array.isArray(quickReplies)) {
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = {
+                  role: "model",
+                  content: displayText,
+                  quickReplies,
+                };
+                return updated;
+              });
+            }
+          } catch {
+            // JSON parse failed — just show the text without buttons
+          }
+        } else if (!assistantText.trim()) {
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              role: "model",
+              content:
+                "I'm sorry, I couldn't generate a response. Please try again.",
+            };
+            return updated;
+          });
+        }
+      } catch (error) {
+        setMessages((prev) => [
+          ...prev.filter((m) => m.content !== ""),
+          {
+            role: "model",
+            content:
+              error instanceof Error
+                ? error.message
+                : "Something went wrong. Please try again.",
+          },
+        ]);
+      } finally {
+        setIsLoading(false);
+        inputRef.current?.focus();
+      }
+    },
+    [facilitySlug]
+  );
+
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const trimmed = input.trim();
-    if (!trimmed || isLoading) return;
+    if (isLoading) return;
+    sendMessage(input, messages);
+  }
 
-    const userMessage: Message = { role: "user", content: trimmed };
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
-    setInput("");
-    setIsLoading(true);
-
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          facilitySlug,
-          messages: updatedMessages,
-        }),
-      });
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => null);
-        throw new Error(err?.error ?? "Failed to get response");
-      }
-
-      // Read streamed response
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("No response body");
-
-      const decoder = new TextDecoder();
-      let assistantText = "";
-
-      // Add an empty assistant message that we'll update progressively
-      setMessages((prev) => [...prev, { role: "model", content: "" }]);
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        assistantText += decoder.decode(value, { stream: true });
-        // Update the last message with accumulated text
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
-            role: "model",
-            content: assistantText,
-          };
-          return updated;
-        });
-      }
-
-      // If no text was received, show a fallback
-      if (!assistantText.trim()) {
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
-            role: "model",
-            content: "I'm sorry, I couldn't generate a response. Please try again.",
-          };
-          return updated;
-        });
-      }
-    } catch (error) {
-      setMessages((prev) => [
-        ...prev.filter((m) => m.content !== ""),
-        {
-          role: "model",
-          content:
-            error instanceof Error
-              ? error.message
-              : "Something went wrong. Please try again.",
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-      inputRef.current?.focus();
-    }
+  function handleQuickReply(text: string) {
+    if (isLoading) return;
+    sendMessage(text, messages);
   }
 
   const containerClass = inline
@@ -144,18 +187,15 @@ export function ChatWidget({
               </p>
               <div className="mt-1 flex flex-wrap justify-center gap-1.5">
                 {[
-                  "What bays do you have?",
                   "Any slots open today?",
+                  "Show my bookings",
                   "What are your prices?",
                 ].map((suggestion) => (
                   <button
                     key={suggestion}
                     type="button"
                     className="rounded-full border px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    onClick={() => {
-                      setInput(suggestion);
-                      inputRef.current?.focus();
-                    }}
+                    onClick={() => handleQuickReply(suggestion)}
                   >
                     {suggestion}
                   </button>
@@ -164,7 +204,17 @@ export function ChatWidget({
             </div>
           )}
           {messages.map((msg, i) => (
-            <ChatMessage key={i} message={msg} />
+            <ChatMessage
+              key={i}
+              message={msg}
+              onQuickReply={
+                i === messages.length - 1 &&
+                msg.role === "model" &&
+                !isLoading
+                  ? handleQuickReply
+                  : undefined
+              }
+            />
           ))}
           {isLoading && messages[messages.length - 1]?.role !== "model" && (
             <TypingIndicator />
