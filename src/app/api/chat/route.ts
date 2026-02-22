@@ -299,7 +299,7 @@ Guidelines:
     // Tool call loop — up to 5 rounds to prevent infinite loops
     for (let i = 0; i < 5; i++) {
       const response = await getGenAI().models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.5-flash",
         contents: currentMessages,
         config: {
           systemInstruction,
