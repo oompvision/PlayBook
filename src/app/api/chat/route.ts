@@ -221,6 +221,14 @@ export async function POST(request: Request) {
     return Response.json({ error: "Missing facilitySlug or messages" }, { status: 400 });
   }
 
+  if (!process.env.GEMINI_API_KEY) {
+    console.error("GEMINI_API_KEY environment variable is not set");
+    return Response.json(
+      { error: "Chat is not configured yet. Please add your GEMINI_API_KEY." },
+      { status: 503 }
+    );
+  }
+
   // Resolve org
   const supabase = await createClient();
   const { data: org } = await supabase
@@ -396,6 +404,15 @@ Guidelines:
     });
   } catch (error) {
     console.error("Chat API error:", error);
+    const message =
+      error instanceof Error ? error.message : "Unknown error";
+    // Surface specific Gemini errors to help debugging
+    if (message.includes("API key")) {
+      return Response.json(
+        { error: "Invalid Gemini API key. Please check your GEMINI_API_KEY." },
+        { status: 401 }
+      );
+    }
     return Response.json(
       { error: "Failed to generate response. Please try again." },
       { status: 500 }
