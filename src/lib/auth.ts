@@ -81,3 +81,24 @@ export async function requireAdmin(orgId?: string) {
   }
   return auth;
 }
+
+/**
+ * Ensure a customer profile is associated with the given org.
+ * Called on facility-scoped pages so customers get linked on first visit.
+ */
+export async function ensureCustomerOrg(orgId: string) {
+  const auth = await getAuthUser();
+  if (!auth) return null;
+
+  // Only update customer profiles that don't yet have an org
+  if (auth.profile.role === "customer" && !auth.profile.org_id) {
+    const supabase = await createClient();
+    await supabase
+      .from("profiles")
+      .update({ org_id: orgId })
+      .eq("id", auth.profile.id);
+    auth.profile.org_id = orgId;
+  }
+
+  return auth;
+}
