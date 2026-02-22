@@ -27,60 +27,10 @@ create trigger set_bay_schedules_updated_at
   before update on public.bay_schedules
   for each row execute function public.handle_updated_at();
 
--- ============================================================
--- RLS Policies for bay_schedules
--- ============================================================
-
+-- Enable RLS (role-based policies added in 00011)
 alter table public.bay_schedules enable row level security;
 
--- Public can read schedules (needed for availability display)
+-- Public can read schedules (no profiles dependency)
 create policy "bay_schedules_public_read"
   on public.bay_schedules for select
   using (true);
-
--- Admins can insert schedules in their org
-create policy "bay_schedules_admin_insert"
-  on public.bay_schedules for insert
-  with check (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bay_schedules.org_id
-    )
-  );
-
--- Admins can update schedules in their org
-create policy "bay_schedules_admin_update"
-  on public.bay_schedules for update
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bay_schedules.org_id
-    )
-  );
-
--- Admins can delete schedules in their org
-create policy "bay_schedules_admin_delete"
-  on public.bay_schedules for delete
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bay_schedules.org_id
-    )
-  );
-
--- Super admins: full access
-create policy "bay_schedules_super_admin_all"
-  on public.bay_schedules for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
-    )
-  );

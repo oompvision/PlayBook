@@ -18,14 +18,10 @@ create index if not exists idx_booking_slots_slot_id on public.booking_slots (ba
 alter table public.booking_slots
   add constraint booking_slots_slot_unique unique (bay_schedule_slot_id);
 
--- ============================================================
--- RLS Policies for booking_slots
--- Inherits access from the parent booking
--- ============================================================
-
+-- Enable RLS (role-based policies added in 00011)
 alter table public.booking_slots enable row level security;
 
--- Customers can read their own booking slots
+-- Customer self-referencing policies (looks up bookings, not profiles)
 create policy "booking_slots_customer_read"
   on public.booking_slots for select
   using (
@@ -36,7 +32,6 @@ create policy "booking_slots_customer_read"
     )
   );
 
--- Customers can insert booking slots (during booking creation)
 create policy "booking_slots_customer_insert"
   on public.booking_slots for insert
   with check (
@@ -44,29 +39,5 @@ create policy "booking_slots_customer_insert"
       select 1 from public.bookings
       where bookings.id = booking_slots.booking_id
       and bookings.customer_id = auth.uid()
-    )
-  );
-
--- Admins can read booking slots in their org
-create policy "booking_slots_admin_read"
-  on public.booking_slots for select
-  using (
-    exists (
-      select 1 from public.bookings b
-      join public.profiles p on p.org_id = b.org_id
-      where b.id = booking_slots.booking_id
-      and p.id = auth.uid()
-      and p.role = 'admin'
-    )
-  );
-
--- Super admins: full access
-create policy "booking_slots_super_admin_all"
-  on public.booking_slots for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
     )
   );

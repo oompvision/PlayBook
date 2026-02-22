@@ -14,53 +14,70 @@ function extractFacilitySlug(hostname: string): string | null {
     return null;
   }
 
-  // Extract subdomain from hostname
-  // e.g., "aceindoor.playbook.com" → "aceindoor"
-  // e.g., "aceindoor.playbook-app.vercel.app" → "aceindoor"
   const parts = host.split(".");
 
-  // Need at least 3 parts for a subdomain (slug.domain.tld)
-  // or 4+ for vercel (slug.project.vercel.app)
-  if (parts.length >= 3) {
-    const subdomain = parts[0];
-
-    // Skip reserved subdomains
-    if (RESERVED_SUBDOMAINS.includes(subdomain)) {
-      return null;
-    }
-
-    // Check if the remaining parts form a known platform host
-    const remainingHost = parts.slice(1).join(".");
-    const isPlatformDomain =
-      PLATFORM_HOSTS.some((ph) => remainingHost.includes(ph)) ||
-      remainingHost.includes("vercel.app");
-
-    if (isPlatformDomain) {
+  // Custom domain: slug.playbook.com → 3 parts
+  // e.g., "aceindoor.playbook.com" → "aceindoor"
+  for (const ph of PLATFORM_HOSTS) {
+    const phParts = ph.split(".");
+    // If the trailing parts match a known platform host
+    if (
+      parts.length > phParts.length &&
+      parts.slice(-phParts.length).join(".") === ph
+    ) {
+      const subdomain = parts[0];
+      if (RESERVED_SUBDOMAINS.includes(subdomain)) return null;
       return subdomain;
     }
+  }
+
+  // Vercel: slug.project-name.vercel.app → 4+ parts
+  // But project-name.vercel.app → 3 parts (no facility subdomain)
+  if (host.endsWith(".vercel.app") && parts.length >= 4) {
+    const subdomain = parts[0];
+    if (RESERVED_SUBDOMAINS.includes(subdomain)) return null;
+    return subdomain;
   }
 
   return null;
 }
 
 export async function middleware(request: NextRequest) {
-  // First, handle Supabase session refresh
-  const response = await updateSession(request);
-
   const hostname = request.headers.get("host") || "";
   const { pathname } = request.nextUrl;
 
   // Extract facility slug from subdomain
   let facilitySlug = extractFacilitySlug(hostname);
 
-  // Fallback: check for ?facility= query param (for local dev)
-  if (!facilitySlug) {
-    facilitySlug = request.nextUrl.searchParams.get("facility");
+  // Fallback: check for ?facility= query param and persist via cookie
+  const facilityParam = request.nextUrl.searchParams.get("facility");
+  if (!facilitySlug && facilityParam) {
+    facilitySlug = facilityParam;
   }
 
-  // Set facility slug as a header so server components can access it
+  // Fallback: check cookie (set by ?facility= param or super admin "Enter as Admin" flow)
+  if (!facilitySlug) {
+    facilitySlug = request.cookies.get("playbook-facility")?.value ||
+      request.cookies.get("playbook-admin-org")?.value || null;
+  }
+
+  // Pass facility slug as a REQUEST header so server components read it
+  const customHeaders: Record<string, string> = {};
   if (facilitySlug) {
-    response.headers.set("x-facility-slug", facilitySlug);
+    customHeaders["x-facility-slug"] = facilitySlug;
+  }
+
+  // Handle Supabase session refresh + inject custom request headers
+  const response = await updateSession(request, customHeaders);
+
+  // Persist ?facility= param as a cookie so it sticks across navigations
+  if (facilityParam) {
+    response.cookies.set("playbook-facility", facilityParam, {
+      path: "/",
+      maxAge: 60 * 60 * 8, // 8 hours
+      httpOnly: true,
+      sameSite: "lax",
+    });
   }
 
   // Super admin routes — no facility context needed
@@ -71,10 +88,8 @@ export async function middleware(request: NextRequest) {
   // Admin routes — require facility context
   if (pathname.startsWith("/admin")) {
     if (!facilitySlug) {
-      // No facility context — redirect to root
       return NextResponse.redirect(new URL("/", request.url));
     }
-    response.headers.set("x-facility-slug", facilitySlug);
     return response;
   }
 

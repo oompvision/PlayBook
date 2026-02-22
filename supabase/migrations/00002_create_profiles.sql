@@ -45,63 +45,14 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- ============================================================
--- RLS Policies for profiles
--- ============================================================
-
+-- Enable RLS (policies added in 00011 after all tables exist)
 alter table public.profiles enable row level security;
 
--- Users can read their own profile
+-- Self-referencing policies are safe here (no cross-table dependency)
 create policy "profiles_self_read"
   on public.profiles for select
   using (auth.uid() = id);
 
--- Users can update their own profile (name, phone only — role/org_id protected by app logic)
 create policy "profiles_self_update"
   on public.profiles for update
   using (auth.uid() = id);
-
--- Admins can read all profiles in their org
-create policy "profiles_admin_org_read"
-  on public.profiles for select
-  using (
-    exists (
-      select 1 from public.profiles as p
-      where p.id = auth.uid()
-      and p.role = 'admin'
-      and p.org_id = profiles.org_id
-    )
-  );
-
--- Super admins can read all profiles
-create policy "profiles_super_admin_read"
-  on public.profiles for select
-  using (
-    exists (
-      select 1 from public.profiles as p
-      where p.id = auth.uid()
-      and p.role = 'super_admin'
-    )
-  );
-
--- Super admins can insert profiles (for admin provisioning)
-create policy "profiles_super_admin_insert"
-  on public.profiles for insert
-  with check (
-    exists (
-      select 1 from public.profiles as p
-      where p.id = auth.uid()
-      and p.role = 'super_admin'
-    )
-  );
-
--- Super admins can update any profile
-create policy "profiles_super_admin_update"
-  on public.profiles for update
-  using (
-    exists (
-      select 1 from public.profiles as p
-      where p.id = auth.uid()
-      and p.role = 'super_admin'
-    )
-  );
