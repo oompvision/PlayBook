@@ -326,7 +326,7 @@ export function DailySchedule({
                           isCancelled
                             ? "border-muted bg-muted/50 text-muted-foreground line-through opacity-60"
                             : "border-primary/20 bg-primary/10 hover:bg-primary/15"
-                        } ${isExpanded ? "z-20 ring-2 ring-primary" : hasCancelledExpanded ? "z-20" : "z-10"}`}
+                        } ${isExpanded ? "z-20 ring-2 ring-primary" : hasCancelledExpanded ? "z-30" : "z-10"}`}
                         style={{
                           top: `${top}%`,
                           height: needsAutoHeight ? "auto" : `${height}%`,
@@ -366,29 +366,43 @@ export function DailySchedule({
                         )}
 
                         {/* Inline cancelled bookings list */}
-                        {hasCancelledExpanded &&
-                          associatedCancelled?.map((cb) => {
-                            const cbCustomer = customerMap[cb.customer_id];
-                            const cbName =
-                              cbCustomer?.full_name ||
-                              cbCustomer?.email ||
-                              "Unknown";
-                            return (
-                              <div
-                                key={cb.id}
-                                className="mt-1 rounded border border-red-200 bg-red-50 px-1.5 py-1 text-[10px] text-muted-foreground line-through dark:border-red-900 dark:bg-red-950/50"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <p className="truncate font-medium">{cbName}</p>
-                                <p className="font-mono">
-                                  {cb.confirmation_code}
-                                </p>
-                                <p>
-                                  ${(cb.total_price_cents / 100).toFixed(2)}
-                                </p>
-                              </div>
-                            );
-                          })}
+                        {hasCancelledExpanded && associatedCancelled && (
+                          <div
+                            className="mt-1.5 overflow-hidden rounded-lg border border-red-200 bg-popover text-[10px] shadow-md dark:border-red-900"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="border-b border-red-200 bg-red-50 px-2.5 py-1 font-medium text-red-700 no-underline dark:border-red-900 dark:bg-red-950/40 dark:text-red-400">
+                              Cancelled Bookings
+                            </div>
+                            <div className="divide-y divide-border/50">
+                              {associatedCancelled.map((cb) => {
+                                const cbCustomer = customerMap[cb.customer_id];
+                                const cbName =
+                                  cbCustomer?.full_name ||
+                                  cbCustomer?.email ||
+                                  "Unknown";
+                                return (
+                                  <div
+                                    key={cb.id}
+                                    className="px-2.5 py-1.5 no-underline"
+                                  >
+                                    <p className="truncate font-medium text-foreground">
+                                      {cbName}
+                                    </p>
+                                    <div className="mt-0.5 flex items-center gap-2 text-muted-foreground">
+                                      <span className="font-mono">
+                                        {cb.confirmation_code}
+                                      </span>
+                                      <span>
+                                        ${(cb.total_price_cents / 100).toFixed(2)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
 
                         {isExpanded && (
                           <div
