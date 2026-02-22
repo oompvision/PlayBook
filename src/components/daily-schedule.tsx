@@ -106,6 +106,7 @@ export function DailySchedule({
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [showCancelled, setShowCancelled] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showCancelledForId, setShowCancelledForId] = useState<string | null>(null);
   const [now, setNow] = useState(() => getNowInTimezone(timezone));
 
   // Update current time every 2 minutes
@@ -252,6 +253,43 @@ export function DailySchedule({
               const bayBookings = dayBookings.filter(
                 (b) => b.bay_id === bay.id
               );
+
+              // Separate active vs cancelled, group overlapping cancelled with their active counterpart
+              const activeBookings = bayBookings.filter(
+                (b) => b.status !== "cancelled"
+              );
+              const cancelledBookings = showCancelled
+                ? bayBookings.filter((b) => b.status === "cancelled")
+                : [];
+
+              const cancelledByActiveId = new Map<string, DailyBooking[]>();
+              const orphanCancelled: DailyBooking[] = [];
+
+              for (const cb of cancelledBookings) {
+                const cbStart = getHourInTimezone(cb.start_time, timezone);
+                const cbEnd = getHourInTimezone(cb.end_time, timezone);
+                let matched = false;
+                for (const ab of activeBookings) {
+                  const abStart = getHourInTimezone(ab.start_time, timezone);
+                  const abEnd = getHourInTimezone(ab.end_time, timezone);
+                  // Check time overlap
+                  if (cbStart < abEnd && cbEnd > abStart) {
+                    if (!cancelledByActiveId.has(ab.id)) {
+                      cancelledByActiveId.set(ab.id, []);
+                    }
+                    cancelledByActiveId.get(ab.id)!.push(cb);
+                    matched = true;
+                    break;
+                  }
+                }
+                if (!matched) {
+                  orphanCancelled.push(cb);
+                }
+              }
+
+              // Render active bookings + orphan cancelled as positioned cards
+              const visibleBookings = [...activeBookings, ...orphanCancelled];
+
               return (
                 <div
                   key={bay.id}
@@ -268,7 +306,7 @@ export function DailySchedule({
                   ))}
 
                   {/* Booking cards */}
-                  {bayBookings.map((booking) => {
+                  {visibleBookings.map((booking) => {
                     const bStart = getHourInTimezone(booking.start_time, timezone);
                     const bEnd = getHourInTimezone(booking.end_time, timezone);
                     const top = ((bStart - startHour) / totalHours) * 100;
@@ -277,6 +315,9 @@ export function DailySchedule({
                     const isExpanded = expandedId === booking.id;
                     const customer = customerMap[booking.customer_id];
                     const name = customer?.full_name || customer?.email || "Unknown";
+                    const associatedCancelled = cancelledByActiveId.get(booking.id);
+                    const hasCancelledExpanded = showCancelledForId === booking.id;
+                    const needsAutoHeight = isExpanded || hasCancelledExpanded;
 
                     return (
                       <div
@@ -285,11 +326,11 @@ export function DailySchedule({
                           isCancelled
                             ? "border-muted bg-muted/50 text-muted-foreground line-through opacity-60"
                             : "border-primary/20 bg-primary/10 hover:bg-primary/15"
-                        } ${isExpanded ? "z-20 ring-2 ring-primary" : "z-10"}`}
+                        } ${isExpanded ? "z-20 ring-2 ring-primary" : hasCancelledExpanded ? "z-20" : "z-10"}`}
                         style={{
                           top: `${top}%`,
-                          height: isExpanded ? "auto" : `${height}%`,
-                          minHeight: isExpanded ? `${height}%` : undefined,
+                          height: needsAutoHeight ? "auto" : `${height}%`,
+                          minHeight: needsAutoHeight ? `${height}%` : undefined,
                         }}
                         onClick={() =>
                           setExpandedId(isExpanded ? null : booking.id)
@@ -306,6 +347,48 @@ export function DailySchedule({
                         <p className="text-[10px] font-medium">
                           ${(booking.total_price_cents / 100).toFixed(2)}
                         </p>
+
+                        {/* Cancelled bookings indicator */}
+                        {associatedCancelled && associatedCancelled.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowCancelledForId(
+                                hasCancelledExpanded ? null : booking.id
+                              );
+                            }}
+                            className="mt-0.5 block text-[10px] font-medium text-red-600 no-underline hover:text-red-700 hover:underline dark:text-red-400 dark:hover:text-red-300"
+                          >
+                            {associatedCancelled.length} Cancelled{" "}
+                            {hasCancelledExpanded ? "▲" : "▼"}
+                          </button>
+                        )}
+
+                        {/* Inline cancelled bookings list */}
+                        {hasCancelledExpanded &&
+                          associatedCancelled?.map((cb) => {
+                            const cbCustomer = customerMap[cb.customer_id];
+                            const cbName =
+                              cbCustomer?.full_name ||
+                              cbCustomer?.email ||
+                              "Unknown";
+                            return (
+                              <div
+                                key={cb.id}
+                                className="mt-1 rounded border border-red-200 bg-red-50 px-1.5 py-1 text-[10px] text-muted-foreground line-through dark:border-red-900 dark:bg-red-950/50"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <p className="truncate font-medium">{cbName}</p>
+                                <p className="font-mono">
+                                  {cb.confirmation_code}
+                                </p>
+                                <p>
+                                  ${(cb.total_price_cents / 100).toFixed(2)}
+                                </p>
+                              </div>
+                            );
+                          })}
 
                         {isExpanded && (
                           <div
