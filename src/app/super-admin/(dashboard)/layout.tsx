@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { requireSuperAdmin } from "@/lib/auth";
+import { getAuthUser } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { SignOutButton } from "@/components/sign-out-button";
 
 const superAdminNav = [
@@ -9,12 +10,18 @@ const superAdminNav = [
   { label: "Settings", href: "/super-admin/settings" },
 ];
 
-export default async function SuperAdminLayout({
+export default async function SuperAdminDashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { profile } = await requireSuperAdmin();
+  const auth = await getAuthUser();
+  if (!auth) {
+    redirect("/auth/login?role=super_admin&redirect=/super-admin");
+  }
+  if (auth.profile.role !== "super_admin") {
+    redirect("/");
+  }
 
   return (
     <div className="flex min-h-screen">
@@ -36,7 +43,7 @@ export default async function SuperAdminLayout({
           ))}
         </nav>
         <div className="border-t pt-4">
-          <p className="truncate text-sm font-medium">{profile.email}</p>
+          <p className="truncate text-sm font-medium">{auth.profile.email}</p>
           <p className="text-xs text-muted-foreground">Super Admin</p>
           <SignOutButton />
         </div>

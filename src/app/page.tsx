@@ -21,7 +21,7 @@ export default async function FacilityHomePage() {
               <Button size="lg">Go to Dashboard</Button>
             </Link>
           ) : (
-            <Link href="/super-admin/auth/login">
+            <Link href="/auth/login?role=super_admin&redirect=/super-admin">
               <Button size="lg">Super Admin Login</Button>
             </Link>
           )}
