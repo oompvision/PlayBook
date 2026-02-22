@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { SignOutButton } from "@/components/sign-out-button";
 
 export default async function BookPage() {
   const slug = await getFacilitySlug();
@@ -67,6 +68,7 @@ export default async function BookPage() {
                   My Bookings
                 </Button>
               </Link>
+              <SignOutButton variant="outline" size="sm" className="" />
             </div>
           ) : (
             <Link href="/auth/login?redirect=/book">

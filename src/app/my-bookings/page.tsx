@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatTimeInZone } from "@/lib/utils";
+import { SignOutButton } from "@/components/sign-out-button";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -99,9 +100,12 @@ export default async function MyBookingsPage({
               View your upcoming and past bookings.
             </p>
           </div>
-          <Link href="/book">
-            <Button>Book a Session</Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/book">
+              <Button>Book a Session</Button>
+            </Link>
+            <SignOutButton variant="outline" size="sm" className="" />
+          </div>
         </div>
 
         {params.error && (

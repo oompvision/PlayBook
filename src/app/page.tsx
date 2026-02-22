@@ -2,6 +2,7 @@ import { getFacilitySlug } from "@/lib/facility";
 import { getAuthUser } from "@/lib/auth";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { SignOutButton } from "@/components/sign-out-button";
 
 export default async function FacilityHomePage() {
   const slug = await getFacilitySlug();
@@ -27,9 +28,12 @@ export default async function FacilityHomePage() {
           )}
         </div>
         {auth && (
-          <p className="mt-4 text-sm text-muted-foreground">
-            Signed in as {auth.profile.email}
-          </p>
+          <div className="mt-4 flex flex-col items-center gap-1">
+            <p className="text-sm text-muted-foreground">
+              Signed in as {auth.profile.email}
+            </p>
+            <SignOutButton variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" />
+          </div>
         )}
       </div>
     );
@@ -63,9 +67,12 @@ export default async function FacilityHomePage() {
         )}
       </div>
       {auth && (
-        <p className="mt-4 text-sm text-muted-foreground">
-          Signed in as {auth.profile.email}
-        </p>
+        <div className="mt-4 flex flex-col items-center gap-1">
+          <p className="text-sm text-muted-foreground">
+            Signed in as {auth.profile.email}
+          </p>
+          <SignOutButton variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" />
+        </div>
       )}
     </div>
   );
