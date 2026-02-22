@@ -167,7 +167,7 @@ export function ChatWidget({
           Availability Assistant
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Ask about available times, bays, or pricing
+          Ask about available times, facilities, or pricing
         </p>
       </CardHeader>
       <CardContent className="flex flex-col gap-3 pt-0">

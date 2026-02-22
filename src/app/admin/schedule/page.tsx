@@ -217,7 +217,7 @@ export default async function ScheduleManagerPage({
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Schedule</h1>
           <p className="mt-2 text-muted-foreground">
-            Apply templates to bays and manage daily schedules.
+            Apply templates to facilities and manage daily schedules.
           </p>
         </div>
       </div>
@@ -238,7 +238,7 @@ export default async function ScheduleManagerPage({
         <CardHeader>
           <CardTitle className="text-base">Apply Template</CardTitle>
           <CardDescription>
-            Apply a schedule template to one or more bays for a date range.
+            Apply a schedule template to one or more facilities for a date range.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -251,9 +251,9 @@ export default async function ScheduleManagerPage({
             </p>
           ) : bays.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No active bays.{" "}
+              No active facilities.{" "}
               <a href="/admin/bays" className="text-primary hover:underline">
-                Add bays first.
+                Add facilities first.
               </a>
             </p>
           ) : (
@@ -307,7 +307,7 @@ export default async function ScheduleManagerPage({
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Bays</Label>
+                <Label>Facilities</Label>
                 <div className="flex flex-wrap gap-3">
                   {bays.map((bay) => (
                     <label
@@ -351,7 +351,7 @@ export default async function ScheduleManagerPage({
       {/* Weekly schedule grid */}
       {bays.length === 0 ? (
         <div className="mt-4 rounded-lg border border-dashed p-12 text-center text-muted-foreground">
-          No active bays. Add bays first to manage schedules.
+          No active facilities. Add facilities first to manage schedules.
         </div>
       ) : (
         <div className="mt-4 overflow-x-auto">
@@ -359,7 +359,7 @@ export default async function ScheduleManagerPage({
             <thead>
               <tr>
                 <th className="border p-2 text-left text-sm font-medium text-muted-foreground">
-                  Bay
+                  Facility
                 </th>
                 {weekDates.map((date) => (
                   <th

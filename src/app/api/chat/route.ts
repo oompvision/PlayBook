@@ -15,7 +15,7 @@ const toolDeclarations: FunctionDeclaration[] = [
   {
     name: "get_facility_info",
     description:
-      "Get information about this facility including its bays, resource types, and pricing. Call this when the customer asks general questions about the facility.",
+      "Get information about this facility including its bookable resources, types, and pricing. Call this when the customer asks general questions about the facility.",
     parameters: {
       type: Type.OBJECT,
       properties: {},
@@ -24,7 +24,7 @@ const toolDeclarations: FunctionDeclaration[] = [
   {
     name: "get_available_slots",
     description:
-      "Look up available time slots for a specific date. Returns slots grouped by bay with times and prices. Always call this to answer availability questions — never guess.",
+      "Look up available time slots for a specific date. Returns slots grouped by facility with times and prices. Always call this to answer availability questions — never guess.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -35,7 +35,7 @@ const toolDeclarations: FunctionDeclaration[] = [
         bay_name: {
           type: Type.STRING,
           description:
-            "Optional bay name filter. Only return slots for bays whose name contains this string (case-insensitive).",
+            "Optional facility name filter. Only return slots for facilities whose name contains this string (case-insensitive).",
         },
         resource_type: {
           type: Type.STRING,
@@ -49,7 +49,7 @@ const toolDeclarations: FunctionDeclaration[] = [
   {
     name: "get_my_bookings",
     description:
-      "Get the current customer's bookings. Returns upcoming and recent bookings with confirmation codes, times, bay names, and status. Only works for authenticated users.",
+      "Get the current customer's bookings. Returns upcoming and recent bookings with confirmation codes, times, facility names, and status. Only works for authenticated users.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -82,7 +82,7 @@ const toolDeclarations: FunctionDeclaration[] = [
         bay_name: {
           type: Type.STRING,
           description:
-            'The bay name (e.g., "Bay 1"). Used when slot_ids are not available.',
+            'The facility name (e.g., "Facility 1"). Used when slot_ids are not available.',
         },
         start_time: {
           type: Type.STRING,
@@ -115,7 +115,7 @@ const toolDeclarations: FunctionDeclaration[] = [
   {
     name: "suggest_quick_replies",
     description:
-      "Suggest clickable quick-reply buttons for the customer. Call this alongside your text response to give the customer easy tap-to-reply options. Use for confirmations, bay/time selection, and follow-up actions.",
+      "Suggest clickable quick-reply buttons for the customer. Call this alongside your text response to give the customer easy tap-to-reply options. Use for confirmations, facility/time selection, and follow-up actions.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -206,7 +206,7 @@ async function executeAvailableSlots(
   const { data: bays } = await bayQuery.order("sort_order").order("created_at");
 
   if (!bays || bays.length === 0) {
-    return { error: "No matching bays found.", slots: [] };
+    return { error: "No matching facilities found.", slots: [] };
   }
 
   // Further filter by bay_name if provided
@@ -217,7 +217,7 @@ async function executeAvailableSlots(
     : bays;
 
   if (filteredBays.length === 0) {
-    return { error: `No bays matching "${args.bay_name}" found.`, slots: [] };
+    return { error: `No facilities matching "${args.bay_name}" found.`, slots: [] };
   }
 
   // Compute timezone-aware day boundaries
@@ -282,7 +282,7 @@ async function executeAvailableSlots(
 
   if (Object.keys(grouped).length === 0) {
     return {
-      message: `No available slots on ${args.date} for the requested bays.`,
+      message: `No available slots on ${args.date} for the requested facilities.`,
       slots: [],
     };
   }
@@ -390,7 +390,7 @@ async function executeCreateBooking(
     );
 
     if (!matchedBay) {
-      return { error: `No bay matching "${args.bay_name}" found.` };
+      return { error: `No facility matching "${args.bay_name}" found.` };
     }
 
     // Get the bay_schedule for this date
@@ -608,7 +608,7 @@ export async function POST(request: Request) {
               `- ${b.name} (${b.resource_type ?? "General"}) — $${(b.hourly_rate_cents / 100).toFixed(2)}/hr`
           )
           .join("\n")
-      : "No bays configured yet.";
+      : "No facilities configured yet.";
 
   const today = getTodayInTimezone(org.timezone);
 
@@ -624,7 +624,7 @@ ${org.address ? `Address: ${org.address}` : ""}
 ${org.phone ? `Phone: ${org.phone}` : ""}
 Timezone: ${org.timezone}
 
-Available bays:
+Available facilities:
 ${bayList}
 
 Today's date is ${today}.
@@ -634,15 +634,15 @@ Authentication: ${authStatus}
 
 Guidelines:
 - Always use the get_available_slots tool to look up real-time availability. Never guess or make up availability.
-- Use get_facility_info when the customer asks general questions about the facility or bays.
+- Use get_facility_info when the customer asks general questions about the facility or its offerings.
 - Format times in 12-hour format (e.g., "9:00 AM").
 - Format prices as dollars (e.g., "$45.00").
 - Be concise and helpful. Use short paragraphs, not walls of text.
 - If the customer asks about a date more than 14 days away, let them know you can only show the next 14 days.
-- When listing available slots, organize them clearly by bay name and time.
+- When listing available slots, organize them clearly by facility name and time.
 
 Booking guidelines:
-- BEFORE calling create_booking, you MUST summarize the booking details (bay, date, time, price) and ask the customer to confirm. Only call the tool after they explicitly agree.
+- BEFORE calling create_booking, you MUST summarize the booking details (facility, date, time, price) and ask the customer to confirm. Only call the tool after they explicitly agree.
 - BEFORE calling cancel_booking, you MUST confirm the cancellation with the customer. Tell them which booking will be cancelled and that the action cannot be undone.
 - When a booking is created, share the confirmation code with the customer.
 - Use get_my_bookings to look up a customer's existing bookings when they ask.
@@ -651,7 +651,7 @@ Booking guidelines:
 Quick reply buttons:
 - ALWAYS call suggest_quick_replies to offer clickable buttons when the customer needs to make a choice.
 - When to use quick replies:
-  - After showing availability → offer bay names or times to pick from.
+  - After showing availability → offer facility names or times to pick from.
   - When asking for booking confirmation → "Confirm booking" and "No, cancel".
   - When asking for cancellation confirmation → "Yes, cancel it" and "No, keep it".
   - After a successful booking → "Show my bookings" and "Book another slot".

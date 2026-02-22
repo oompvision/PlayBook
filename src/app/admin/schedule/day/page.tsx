@@ -274,7 +274,7 @@ export default async function DayEditorPage({
             {formatDateHeading(date)}
           </h1>
           <p className="mt-1 text-muted-foreground">
-            Edit schedules for each bay on this day.
+            Edit schedules for each facility on this day.
           </p>
         </div>
       </div>
@@ -328,7 +328,7 @@ export default async function DayEditorPage({
       <div className="mt-6 space-y-6">
         {bays.length === 0 && (
           <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground">
-            No active bays.
+            No active facilities.
           </div>
         )}
 

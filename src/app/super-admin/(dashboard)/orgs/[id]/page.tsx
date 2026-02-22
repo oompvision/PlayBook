@@ -164,12 +164,12 @@ export default async function OrgDetailPage({
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Bays</CardTitle>
+              <CardTitle className="text-base">Facilities</CardTitle>
               <CardDescription>{bays.length} resources</CardDescription>
             </CardHeader>
             <CardContent>
               {bays.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No bays yet</p>
+                <p className="text-sm text-muted-foreground">No facilities yet</p>
               ) : (
                 <ul className="space-y-2">
                   {bays.map((bay) => (

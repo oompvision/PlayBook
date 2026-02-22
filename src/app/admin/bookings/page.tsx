@@ -248,13 +248,13 @@ export default async function BookingsListPage({
               </select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Bay</Label>
+              <Label className="text-xs">Facility</Label>
               <select
                 name="bay"
                 defaultValue={params.bay ?? ""}
                 className="h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
-                <option value="">All bays</option>
+                <option value="">All facilities</option>
                 {bays?.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
@@ -325,7 +325,7 @@ export default async function BookingsListPage({
                       {" · "}
                       {timeStr}
                       {" · "}
-                      {bayMap[booking.bay_id] ?? "Unknown bay"}
+                      {bayMap[booking.bay_id] ?? "Unknown facility"}
                       {" · "}${(booking.total_price_cents / 100).toFixed(2)}
                     </p>
                     {booking.notes && (

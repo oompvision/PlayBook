@@ -4,7 +4,7 @@ import Link from "next/link";
 
 const adminNav = [
   { label: "Dashboard", href: "/admin" },
-  { label: "Bays", href: "/admin/bays" },
+  { label: "Facilities", href: "/admin/bays" },
   { label: "Schedule", href: "/admin/schedule" },
   { label: "Templates", href: "/admin/templates" },
   { label: "Bookings", href: "/admin/bookings" },

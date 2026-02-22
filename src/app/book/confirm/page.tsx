@@ -154,7 +154,7 @@ export default async function BookingConfirmPage({
       }
 
       const bayName =
-        (formData.get(`bay_name_${bayId}`) as string) || "Bay";
+        (formData.get(`bay_name_${bayId}`) as string) || "Facility";
 
       // The RPC may return a single object or an array when non-consecutive
       // slots are split into separate bookings
@@ -277,7 +277,7 @@ export default async function BookingConfirmPage({
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base">
-                      {bay?.name || "Bay"}
+                      {bay?.name || "Facility"}
                     </CardTitle>
                     {bay?.resource_type && (
                       <Badge variant="outline">{bay.resource_type}</Badge>
@@ -335,7 +335,7 @@ export default async function BookingConfirmPage({
                   <input
                     type="hidden"
                     name={`bay_name_${bayId}`}
-                    value={bayMap[bayId]?.name || "Bay"}
+                    value={bayMap[bayId]?.name || "Facility"}
                   />
                 </div>
               ))}

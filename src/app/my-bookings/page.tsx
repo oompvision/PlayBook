@@ -165,7 +165,7 @@ export default async function MyBookingsPage({
                       <Badge variant="default">Confirmed</Badge>
                     </div>
                     <p className="mt-0.5 text-sm text-muted-foreground">
-                      {timeStr} · {bayMap[booking.bay_id] || "Bay"} · $
+                      {timeStr} · {bayMap[booking.bay_id] || "Facility"} · $
                       {(booking.total_price_cents / 100).toFixed(2)}
                     </p>
                     <p className="mt-0.5 font-mono text-xs text-muted-foreground">
@@ -233,7 +233,7 @@ export default async function MyBookingsPage({
                         </Badge>
                       </div>
                       <p className="mt-0.5 text-sm text-muted-foreground">
-                        {timeStr} · {bayMap[booking.bay_id] || "Bay"} · $
+                        {timeStr} · {bayMap[booking.bay_id] || "Facility"} · $
                         {(booking.total_price_cents / 100).toFixed(2)}
                       </p>
                       <p className="mt-0.5 font-mono text-xs text-muted-foreground">

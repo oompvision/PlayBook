@@ -8,7 +8,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "PlayBook — Sports Facility Booking",
   description:
-    "Book simulator bays, tennis courts, and more at your favorite sports facility.",
+    "Book simulator facilities, tennis courts, and more at your favorite sports facility.",
 };
 
 export default function RootLayout({
