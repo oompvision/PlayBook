@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatTimeInZone, getTodayInTimezone } from "@/lib/utils";
 import { SignOutButton } from "@/components/sign-out-button";
+import { OrgHeader } from "@/components/org-header";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -15,7 +16,7 @@ async function getOrg() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("organizations")
-    .select("id, name, slug, timezone")
+    .select("id, name, slug, timezone, logo_url")
     .eq("slug", slug)
     .single();
   return data;
@@ -94,18 +95,20 @@ export default async function MyBookingsPage({
     <div className="min-h-screen p-8">
       <div className="mx-auto max-w-2xl">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">My Bookings</h1>
-            <p className="mt-2 text-muted-foreground">
-              View your upcoming and past bookings.
-            </p>
-          </div>
+          <OrgHeader name={org.name} logoUrl={org.logo_url} />
           <div className="flex items-center gap-2">
             <Link href="/book">
               <Button>Book a Session</Button>
             </Link>
             <SignOutButton variant="outline" size="sm" className="" />
           </div>
+        </div>
+
+        <div className="mt-4">
+          <h1 className="text-3xl font-bold tracking-tight">My Bookings</h1>
+          <p className="mt-2 text-muted-foreground">
+            View your upcoming and past bookings.
+          </p>
         </div>
 
         {params.error && (
