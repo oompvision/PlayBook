@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { getAuthUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import type { Profile } from "@/lib/auth";
 import { SignOutButton } from "@/components/sign-out-button";
 
 const superAdminNav = [
@@ -15,13 +16,29 @@ export default async function SuperAdminDashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const auth = await getAuthUser();
-  if (!auth) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Not logged in at all → send to login
+  if (!user) {
     redirect("/auth/login?role=super_admin&redirect=/super-admin");
   }
-  if (auth.profile.role !== "super_admin") {
-    redirect("/");
+
+  // Logged in — check for profile
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", user.id)
+    .single();
+
+  // Authenticated but no profile (or not super_admin) → send to setup
+  if (!profile || (profile as Profile).role !== "super_admin") {
+    redirect("/super-admin/setup");
   }
+
+  const auth = { user: { id: user.id, email: user.email! }, profile: profile as Profile };
 
   return (
     <div className="flex min-h-screen">

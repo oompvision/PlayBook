@@ -59,10 +59,10 @@ export async function requireSuperAdmin() {
   if (!auth) {
     redirect("/super-admin/auth/login");
   }
-  if (auth.profile.role !== "super_admin") {
-    redirect("/");
+  if (auth.profile?.role !== "super_admin") {
+    redirect("/super-admin/setup");
   }
-  return auth;
+  return auth as { user: { id: string; email: string }; profile: NonNullable<typeof auth.profile> };
 }
 
 /**
