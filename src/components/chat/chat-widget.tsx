@@ -144,8 +144,8 @@ export function ChatWidget({
               </p>
               <div className="mt-1 flex flex-wrap justify-center gap-1.5">
                 {[
-                  "What bays do you have?",
                   "Any slots open today?",
+                  "Show my bookings",
                   "What are your prices?",
                 ].map((suggestion) => (
                   <button
