@@ -7,13 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -347,80 +340,94 @@ export default async function DayEditorPage({
           </div>
         )}
 
-        {bays.map((bay) => {
+        {bays.map((bay, index) => {
           const schedule = scheduleByBay.get(bay.id);
           const slots = schedule?.bay_schedule_slots || [];
           const sortedSlots = [...slots].sort((a, b) =>
             a.start_time.localeCompare(b.start_time)
           );
           const isFocused = focusedBayId === bay.id;
+          const isOpen = isFocused || (!focusedBayId && index === 0);
 
           return (
-            <Card
+            <details
               key={bay.id}
               id={`bay-${bay.id}`}
-              className={isFocused ? "ring-2 ring-primary" : ""}
+              open={isOpen || undefined}
+              className={`group rounded-lg border ${isFocused ? "ring-2 ring-primary" : ""}`}
             >
-              <CardHeader>
-                <div className="flex items-center justify-between">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-6 py-4 [&::-webkit-details-marker]:hidden">
+                <div className="flex items-center gap-3">
+                  <svg
+                    className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
                   <div>
-                    <CardTitle>{bay.name}</CardTitle>
-                    <CardDescription>
+                    <p className="font-semibold leading-none tracking-tight">
+                      {bay.name}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
                       {schedule
                         ? `${sortedSlots.length} slots · Template: ${(schedule as { schedule_templates: { name: string } | null }).schedule_templates?.name || "Custom"}`
                         : "No schedule set for this day"}
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {/* Apply template to this bay */}
-                    {templates.length > 0 && (
-                      <form
-                        action={applyTemplateToDay}
-                        className="flex items-center gap-2"
-                      >
-                        <input type="hidden" name="bay_id" value={bay.id} />
-                        <input type="hidden" name="date" value={date} />
-                        <select
-                          name="template_id"
-                          required
-                          className="h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        >
-                          <option value="">Template...</option>
-                          {templates.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.name}
-                            </option>
-                          ))}
-                        </select>
-                        <Button type="submit" variant="outline" size="sm">
-                          Apply
-                        </Button>
-                      </form>
-                    )}
-                    {/* Clear schedule */}
-                    {schedule && (
-                      <form action={clearDaySchedule}>
-                        <input
-                          type="hidden"
-                          name="schedule_id"
-                          value={schedule.id}
-                        />
-                        <input type="hidden" name="bay_id" value={bay.id} />
-                        <input type="hidden" name="date" value={date} />
-                        <Button
-                          type="submit"
-                          variant="outline"
-                          size="sm"
-                          className="text-destructive hover:bg-destructive/10"
-                        >
-                          Clear All
-                        </Button>
-                      </form>
-                    )}
+                    </p>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent>
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  {templates.length > 0 && (
+                    <form
+                      action={applyTemplateToDay}
+                      className="flex items-center gap-2"
+                    >
+                      <input type="hidden" name="bay_id" value={bay.id} />
+                      <input type="hidden" name="date" value={date} />
+                      <select
+                        name="template_id"
+                        required
+                        className="h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      >
+                        <option value="">Template...</option>
+                        {templates.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                      <Button type="submit" variant="outline" size="sm">
+                        Apply
+                      </Button>
+                    </form>
+                  )}
+                  {schedule && (
+                    <form action={clearDaySchedule}>
+                      <input
+                        type="hidden"
+                        name="schedule_id"
+                        value={schedule.id}
+                      />
+                      <input type="hidden" name="bay_id" value={bay.id} />
+                      <input type="hidden" name="date" value={date} />
+                      <Button
+                        type="submit"
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:bg-destructive/10"
+                      >
+                        Clear All
+                      </Button>
+                    </form>
+                  )}
+                </div>
+              </summary>
+              <div className="border-t px-6 py-4">
                 {/* Slot list */}
                 {sortedSlots.length === 0 ? (
                   <p className="py-4 text-center text-sm text-muted-foreground">
@@ -449,7 +456,6 @@ export default async function DayEditorPage({
                           </Badge>
                         </div>
                         <div className="flex items-center gap-2">
-                          {/* Inline edit: price + status */}
                           <form
                             action={updateSlot}
                             className="flex items-center gap-2"
@@ -494,7 +500,6 @@ export default async function DayEditorPage({
                               Save
                             </Button>
                           </form>
-                          {/* Remove slot */}
                           {slot.status !== "booked" && (
                             <form action={removeSlot}>
                               <input
@@ -568,8 +573,8 @@ export default async function DayEditorPage({
                     Add Slot
                   </Button>
                 </form>
-              </CardContent>
-            </Card>
+              </div>
+            </details>
           );
         })}
       </div>
