@@ -14,30 +14,29 @@ function extractFacilitySlug(hostname: string): string | null {
     return null;
   }
 
-  // Extract subdomain from hostname
-  // e.g., "aceindoor.playbook.com" → "aceindoor"
-  // e.g., "aceindoor.playbook-app.vercel.app" → "aceindoor"
   const parts = host.split(".");
 
-  // Need at least 3 parts for a subdomain (slug.domain.tld)
-  // or 4+ for vercel (slug.project.vercel.app)
-  if (parts.length >= 3) {
-    const subdomain = parts[0];
-
-    // Skip reserved subdomains
-    if (RESERVED_SUBDOMAINS.includes(subdomain)) {
-      return null;
-    }
-
-    // Check if the remaining parts form a known platform host
-    const remainingHost = parts.slice(1).join(".");
-    const isPlatformDomain =
-      PLATFORM_HOSTS.some((ph) => remainingHost.includes(ph)) ||
-      remainingHost.includes("vercel.app");
-
-    if (isPlatformDomain) {
+  // Custom domain: slug.playbook.com → 3 parts
+  // e.g., "aceindoor.playbook.com" → "aceindoor"
+  for (const ph of PLATFORM_HOSTS) {
+    const phParts = ph.split(".");
+    // If the trailing parts match a known platform host
+    if (
+      parts.length > phParts.length &&
+      parts.slice(-phParts.length).join(".") === ph
+    ) {
+      const subdomain = parts[0];
+      if (RESERVED_SUBDOMAINS.includes(subdomain)) return null;
       return subdomain;
     }
+  }
+
+  // Vercel: slug.project-name.vercel.app → 4+ parts
+  // But project-name.vercel.app → 3 parts (no facility subdomain)
+  if (host.endsWith(".vercel.app") && parts.length >= 4) {
+    const subdomain = parts[0];
+    if (RESERVED_SUBDOMAINS.includes(subdomain)) return null;
+    return subdomain;
   }
 
   return null;
