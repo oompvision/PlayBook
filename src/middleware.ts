@@ -44,9 +44,6 @@ function extractFacilitySlug(hostname: string): string | null {
 }
 
 export async function middleware(request: NextRequest) {
-  // First, handle Supabase session refresh
-  const response = await updateSession(request);
-
   const hostname = request.headers.get("host") || "";
   const { pathname } = request.nextUrl;
 
@@ -63,10 +60,14 @@ export async function middleware(request: NextRequest) {
     facilitySlug = request.cookies.get("playbook-admin-org")?.value || null;
   }
 
-  // Set facility slug as a header so server components can access it
+  // Pass facility slug as a REQUEST header so server components read it
+  const customHeaders: Record<string, string> = {};
   if (facilitySlug) {
-    response.headers.set("x-facility-slug", facilitySlug);
+    customHeaders["x-facility-slug"] = facilitySlug;
   }
+
+  // Handle Supabase session refresh + inject custom request headers
+  const response = await updateSession(request, customHeaders);
 
   // Super admin routes — no facility context needed
   if (pathname.startsWith("/super-admin")) {
@@ -76,10 +77,8 @@ export async function middleware(request: NextRequest) {
   // Admin routes — require facility context
   if (pathname.startsWith("/admin")) {
     if (!facilitySlug) {
-      // No facility context — redirect to root
       return NextResponse.redirect(new URL("/", request.url));
     }
-    response.headers.set("x-facility-slug", facilitySlug);
     return response;
   }
 
