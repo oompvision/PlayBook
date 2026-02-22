@@ -106,6 +106,7 @@ export function DailySchedule({
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [showCancelled, setShowCancelled] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [cancelledDropdownId, setCancelledDropdownId] = useState<string | null>(null);
   const [now, setNow] = useState(() => getNowInTimezone(timezone));
 
   // Update current time every 2 minutes
@@ -116,28 +117,39 @@ export function DailySchedule({
     return () => clearInterval(interval);
   }, [timezone]);
 
-  // Filter bookings for selected date
+  // All bookings for the selected date
   const dayBookings = useMemo(() => {
-    return allBookings.filter((b) => {
-      if (b.date !== selectedDate) return false;
-      if (!showCancelled && b.status === "cancelled") return false;
-      return true;
-    });
-  }, [allBookings, selectedDate, showCancelled]);
+    return allBookings.filter((b) => b.date === selectedDate);
+  }, [allBookings, selectedDate]);
+
+  const activeBookings = useMemo(
+    () => dayBookings.filter((b) => b.status !== "cancelled"),
+    [dayBookings]
+  );
+
+  const cancelledBookings = useMemo(
+    () => dayBookings.filter((b) => b.status === "cancelled"),
+    [dayBookings]
+  );
+
+  // Bookings that affect the visible time range
+  const visibleBookings = useMemo(() => {
+    return showCancelled ? dayBookings : activeBookings;
+  }, [dayBookings, activeBookings, showCancelled]);
 
   // Compute dynamic time range from scheduled slots
   const { startHour, endHour } = useMemo(() => {
-    if (dayBookings.length === 0) return { startHour: 8, endHour: 18 };
+    if (visibleBookings.length === 0) return { startHour: 8, endHour: 18 };
     let min = 24;
     let max = 0;
-    for (const b of dayBookings) {
+    for (const b of visibleBookings) {
       const s = getHourInTimezone(b.start_time, timezone);
       const e = getHourInTimezone(b.end_time, timezone);
       if (s < min) min = s;
       if (e > max) max = e;
     }
     return { startHour: Math.floor(min), endHour: Math.ceil(max) };
-  }, [dayBookings, timezone]);
+  }, [visibleBookings, timezone]);
 
   const totalHours = endHour - startHour;
   const gridHeight = totalHours * HOUR_HEIGHT;
@@ -147,6 +159,11 @@ export function DailySchedule({
   const isToday = now.dateStr === selectedDate;
   const nowInRange = isToday && now.hour >= startHour && now.hour <= endHour;
   const nowOffset = nowInRange ? ((now.hour - startHour) / totalHours) * 100 : -1;
+
+  // Close cancelled dropdown when showCancelled is toggled off
+  useEffect(() => {
+    if (!showCancelled) setCancelledDropdownId(null);
+  }, [showCancelled]);
 
   return (
     <div>
@@ -203,7 +220,7 @@ export function DailySchedule({
         </div>
       </div>
 
-      {dayBookings.length === 0 ? (
+      {visibleBookings.length === 0 ? (
         <p className="py-16 text-center text-muted-foreground">
           No bookings for this day.
         </p>
@@ -249,9 +266,32 @@ export function DailySchedule({
             </div>
 
             {bays.map((bay) => {
-              const bayBookings = dayBookings.filter(
+              const bayActive = activeBookings.filter(
                 (b) => b.bay_id === bay.id
               );
+              const bayCancelled = cancelledBookings.filter(
+                (b) => b.bay_id === bay.id
+              );
+
+              // Find cancelled bookings not overlapping any active booking
+              const attachedCancelledIds = new Set<string>();
+              if (showCancelled) {
+                for (const active of bayActive) {
+                  const aStart = getHourInTimezone(active.start_time, timezone);
+                  const aEnd = getHourInTimezone(active.end_time, timezone);
+                  for (const c of bayCancelled) {
+                    const cStart = getHourInTimezone(c.start_time, timezone);
+                    const cEnd = getHourInTimezone(c.end_time, timezone);
+                    if (cStart < aEnd && cEnd > aStart) {
+                      attachedCancelledIds.add(c.id);
+                    }
+                  }
+                }
+              }
+              const unattachedCancelled = showCancelled
+                ? bayCancelled.filter((c) => !attachedCancelledIds.has(c.id))
+                : [];
+
               return (
                 <div
                   key={bay.id}
@@ -267,25 +307,29 @@ export function DailySchedule({
                     />
                   ))}
 
-                  {/* Booking cards */}
-                  {bayBookings.map((booking) => {
+                  {/* Active booking cards */}
+                  {bayActive.map((booking) => {
                     const bStart = getHourInTimezone(booking.start_time, timezone);
                     const bEnd = getHourInTimezone(booking.end_time, timezone);
                     const top = ((bStart - startHour) / totalHours) * 100;
                     const height = ((bEnd - bStart) / totalHours) * 100;
-                    const isCancelled = booking.status === "cancelled";
                     const isExpanded = expandedId === booking.id;
                     const customer = customerMap[booking.customer_id];
                     const name = customer?.full_name || customer?.email || "Unknown";
 
+                    // Find overlapping cancelled bookings for this active card
+                    const overlappingCancelled = showCancelled
+                      ? bayCancelled.filter((c) => {
+                          const cStart = getHourInTimezone(c.start_time, timezone);
+                          const cEnd = getHourInTimezone(c.end_time, timezone);
+                          return cStart < bEnd && cEnd > bStart;
+                        })
+                      : [];
+
                     return (
                       <div
                         key={booking.id}
-                        className={`absolute cursor-pointer overflow-hidden rounded-md border px-2 py-1 text-xs shadow-sm transition-colors ${
-                          isCancelled
-                            ? "left-2 right-2 border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400 opacity-80"
-                            : "left-1 right-1 border-primary/20 bg-primary/10 hover:bg-primary/15"
-                        } ${isExpanded ? "z-20 ring-2 ring-primary" : isCancelled ? "z-0" : "z-10"}`}
+                        className={`absolute left-1 right-1 cursor-pointer overflow-hidden rounded-md border border-primary/20 bg-primary/10 px-2 py-1 text-xs shadow-sm transition-colors hover:bg-primary/15 ${isExpanded ? "z-20 ring-2 ring-primary" : "z-10"}`}
                         style={{
                           top: `${top}%`,
                           height: isExpanded ? "auto" : `${height}%`,
@@ -306,6 +350,63 @@ export function DailySchedule({
                         <p className="text-[10px] font-medium">
                           ${(booking.total_price_cents / 100).toFixed(2)}
                         </p>
+
+                        {/* "N Cancelled" link for overlapping cancelled bookings */}
+                        {overlappingCancelled.length > 0 && (
+                          <div className="relative">
+                            <button
+                              className="text-[10px] text-red-600 underline decoration-red-400/50 hover:decoration-red-600 dark:text-red-400 dark:decoration-red-500/50 dark:hover:decoration-red-400"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCancelledDropdownId(
+                                  cancelledDropdownId === booking.id
+                                    ? null
+                                    : booking.id
+                                );
+                              }}
+                            >
+                              {overlappingCancelled.length} Cancelled
+                            </button>
+                            {cancelledDropdownId === booking.id && (
+                              <div
+                                className="absolute left-0 top-full z-40 mt-1 w-56 rounded-md border bg-popover p-1 text-popover-foreground shadow-lg"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {overlappingCancelled.map((c) => {
+                                  const cCustomer =
+                                    customerMap[c.customer_id];
+                                  return (
+                                    <div
+                                      key={c.id}
+                                      className="space-y-0.5 border-b border-border/50 px-2 py-1.5 last:border-0"
+                                    >
+                                      <p className="truncate font-medium text-red-700 dark:text-red-400">
+                                        {cCustomer?.full_name ||
+                                          cCustomer?.email ||
+                                          "Unknown"}
+                                      </p>
+                                      <p className="text-[10px] text-muted-foreground">
+                                        {formatTime(c.start_time, timezone)} –{" "}
+                                        {formatTime(c.end_time, timezone)}
+                                      </p>
+                                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                        <span className="font-mono">
+                                          {c.confirmation_code}
+                                        </span>
+                                        <span>
+                                          $
+                                          {(c.total_price_cents / 100).toFixed(
+                                            2
+                                          )}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         {isExpanded && (
                           <div
@@ -344,10 +445,7 @@ export function DailySchedule({
                               </p>
                               <p>
                                 <span className="text-muted-foreground">Status:</span>{" "}
-                                <Badge
-                                  variant={isCancelled ? "outline" : "default"}
-                                  className={`ml-1 ${isCancelled ? "border-red-300 text-red-700 dark:border-red-400 dark:text-red-400" : ""}`}
-                                >
+                                <Badge variant="default" className="ml-1">
                                   {booking.status}
                                 </Badge>
                               </p>
@@ -361,24 +459,22 @@ export function DailySchedule({
                               )}
                             </div>
                             <div className="flex items-center gap-2">
-                              {!isCancelled && (
-                                <form action={cancelAction}>
-                                  <input
-                                    type="hidden"
-                                    name="booking_id"
-                                    value={booking.id}
-                                  />
-                                  <Button
-                                    type="submit"
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-6 text-[10px] text-destructive hover:bg-destructive/10"
-                                  >
-                                    <X className="mr-1 h-3 w-3" />
-                                    Cancel Booking
-                                  </Button>
-                                </form>
-                              )}
+                              <form action={cancelAction}>
+                                <input
+                                  type="hidden"
+                                  name="booking_id"
+                                  value={booking.id}
+                                />
+                                <Button
+                                  type="submit"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 text-[10px] text-destructive hover:bg-destructive/10"
+                                >
+                                  <X className="mr-1 h-3 w-3" />
+                                  Cancel Booking
+                                </Button>
+                              </form>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -387,6 +483,59 @@ export function DailySchedule({
                               >
                                 Close
                               </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Unattached cancelled bookings (no overlapping active) — small indicator */}
+                  {unattachedCancelled.map((c) => {
+                    const cStart = getHourInTimezone(c.start_time, timezone);
+                    const cEnd = getHourInTimezone(c.end_time, timezone);
+                    const top = ((cStart - startHour) / totalHours) * 100;
+                    const height = ((cEnd - cStart) / totalHours) * 100;
+                    const cCustomer = customerMap[c.customer_id];
+                    const isDropdownOpen = cancelledDropdownId === c.id;
+
+                    return (
+                      <div
+                        key={c.id}
+                        className="absolute left-1 right-1 z-0 flex items-start justify-center"
+                        style={{
+                          top: `${top}%`,
+                          height: `${height}%`,
+                        }}
+                      >
+                        <button
+                          className="mt-1 rounded-full border border-red-300 bg-red-50 px-2 py-0.5 text-[10px] text-red-600 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-950/80"
+                          onClick={() =>
+                            setCancelledDropdownId(isDropdownOpen ? null : c.id)
+                          }
+                        >
+                          1 Cancelled
+                        </button>
+                        {isDropdownOpen && (
+                          <div className="absolute left-0 top-8 z-40 w-56 rounded-md border bg-popover p-1 text-xs text-popover-foreground shadow-lg">
+                            <div className="space-y-0.5 px-2 py-1.5">
+                              <p className="truncate font-medium text-red-700 dark:text-red-400">
+                                {cCustomer?.full_name ||
+                                  cCustomer?.email ||
+                                  "Unknown"}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground">
+                                {formatTime(c.start_time, timezone)} –{" "}
+                                {formatTime(c.end_time, timezone)}
+                              </p>
+                              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                <span className="font-mono">
+                                  {c.confirmation_code}
+                                </span>
+                                <span>
+                                  ${(c.total_price_cents / 100).toFixed(2)}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         )}
