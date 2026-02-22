@@ -49,14 +49,16 @@ export async function middleware(request: NextRequest) {
   // Extract facility slug from subdomain
   let facilitySlug = extractFacilitySlug(hostname);
 
-  // Fallback: check for ?facility= query param (for local dev)
-  if (!facilitySlug) {
-    facilitySlug = request.nextUrl.searchParams.get("facility");
+  // Fallback: check for ?facility= query param and persist via cookie
+  const facilityParam = request.nextUrl.searchParams.get("facility");
+  if (!facilitySlug && facilityParam) {
+    facilitySlug = facilityParam;
   }
 
-  // Fallback: check cookie (set by super admin "Enter as Admin" flow)
+  // Fallback: check cookie (set by ?facility= param or super admin "Enter as Admin" flow)
   if (!facilitySlug) {
-    facilitySlug = request.cookies.get("playbook-admin-org")?.value || null;
+    facilitySlug = request.cookies.get("playbook-facility")?.value ||
+      request.cookies.get("playbook-admin-org")?.value || null;
   }
 
   // Pass facility slug as a REQUEST header so server components read it
@@ -67,6 +69,16 @@ export async function middleware(request: NextRequest) {
 
   // Handle Supabase session refresh + inject custom request headers
   const response = await updateSession(request, customHeaders);
+
+  // Persist ?facility= param as a cookie so it sticks across navigations
+  if (facilityParam) {
+    response.cookies.set("playbook-facility", facilityParam, {
+      path: "/",
+      maxAge: 60 * 60 * 8, // 8 hours
+      httpOnly: true,
+      sameSite: "lax",
+    });
+  }
 
   // Super admin routes — no facility context needed
   if (pathname.startsWith("/super-admin")) {
