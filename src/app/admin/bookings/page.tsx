@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
+import { requireAdmin } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,8 @@ export default async function BookingsListPage({
   const org = await getOrg();
   if (!org) redirect("/");
 
+  await requireAdmin(org.id);
+
   const supabase = await createClient();
 
   // Load bays for filter dropdown
@@ -70,7 +73,11 @@ export default async function BookingsListPage({
     query = query.eq("bay_id", params.bay);
   }
 
-  const { data: bookings } = await query;
+  const { data: bookings, error: bookingsError } = await query;
+
+  if (bookingsError) {
+    console.error("Failed to load bookings:", bookingsError.message);
+  }
 
   // Look up customer names and bay names
   const customerIds = [
@@ -153,6 +160,11 @@ export default async function BookingsListPage({
         <Badge variant="secondary">{filtered.length} result{filtered.length !== 1 ? "s" : ""}</Badge>
       </div>
 
+      {bookingsError && (
+        <div className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          Failed to load bookings: {bookingsError.message}
+        </div>
+      )}
       {params.error && (
         <div className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {params.error}
