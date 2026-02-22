@@ -281,11 +281,11 @@ export function DailySchedule({
                     return (
                       <div
                         key={booking.id}
-                        className={`absolute left-1 right-1 cursor-pointer overflow-hidden rounded-md border px-2 py-1 text-xs shadow-sm transition-colors ${
+                        className={`absolute cursor-pointer overflow-hidden rounded-md border px-2 py-1 text-xs shadow-sm transition-colors ${
                           isCancelled
-                            ? "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400 opacity-80"
-                            : "border-primary/20 bg-primary/10 hover:bg-primary/15"
-                        } ${isExpanded ? "z-20 ring-2 ring-primary" : "z-10"}`}
+                            ? "left-2 right-2 border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400 opacity-80"
+                            : "left-1 right-1 border-primary/20 bg-primary/10 hover:bg-primary/15"
+                        } ${isExpanded ? "z-20 ring-2 ring-primary" : isCancelled ? "z-0" : "z-10"}`}
                         style={{
                           top: `${top}%`,
                           height: isExpanded ? "auto" : `${height}%`,
@@ -345,8 +345,8 @@ export function DailySchedule({
                               <p>
                                 <span className="text-muted-foreground">Status:</span>{" "}
                                 <Badge
-                                  variant={isCancelled ? "destructive" : "default"}
-                                  className="ml-1"
+                                  variant={isCancelled ? "outline" : "default"}
+                                  className={`ml-1 ${isCancelled ? "border-red-300 text-red-700 dark:border-red-400 dark:text-red-400" : ""}`}
                                 >
                                   {booking.status}
                                 </Badge>
