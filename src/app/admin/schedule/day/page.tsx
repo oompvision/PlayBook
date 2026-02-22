@@ -381,7 +381,7 @@ export default async function DayEditorPage({
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-2">
                   {templates.length > 0 && (
                     <form
                       action={applyTemplateToDay}
