@@ -45,7 +45,7 @@ export default async function OrganizationsPage() {
               <tr className="border-b text-left text-sm text-muted-foreground">
                 <th className="p-4 font-medium">Name</th>
                 <th className="p-4 font-medium">Slug</th>
-                <th className="p-4 font-medium">Bays</th>
+                <th className="p-4 font-medium">Facilities</th>
                 <th className="p-4 font-medium">Timezone</th>
                 <th className="p-4 font-medium">Status</th>
                 <th className="p-4 font-medium">Created</th>

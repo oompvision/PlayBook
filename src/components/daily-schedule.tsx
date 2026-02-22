@@ -436,7 +436,7 @@ export function DailySchedule({
                                 </p>
                               )}
                               <p>
-                                <span className="text-muted-foreground">Bay:</span>{" "}
+                                <span className="text-muted-foreground">Facility:</span>{" "}
                                 {bay.name}
                               </p>
                               <p>

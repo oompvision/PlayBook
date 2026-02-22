@@ -133,9 +133,9 @@ export default async function BayManagementPage({
     <div>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Bays</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Facilities</h1>
           <p className="mt-2 text-muted-foreground">
-            Manage your bookable resources — simulator bays, courts, and more.
+            Manage your bookable resources — simulator facilities, courts, and more.
           </p>
         </div>
       </div>
@@ -155,7 +155,7 @@ export default async function BayManagementPage({
       <div className="mt-8 space-y-3">
         {(!bays || bays.length === 0) && !editingId && (
           <p className="py-8 text-center text-muted-foreground">
-            No bays yet. Add your first one below.
+            No facilities yet. Add your first one below.
           </p>
         )}
 
@@ -164,7 +164,7 @@ export default async function BayManagementPage({
             /* Edit form */
             <Card key={bay.id}>
               <CardHeader>
-                <CardTitle className="text-base">Edit Bay</CardTitle>
+                <CardTitle className="text-base">Edit Facility</CardTitle>
               </CardHeader>
               <CardContent>
                 <form action={updateBay} className="space-y-4">
@@ -191,7 +191,7 @@ export default async function BayManagementPage({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="edit-type">Resource Type</Label>
+                      <Label htmlFor="edit-type">Facility Type</Label>
                       <Input
                         id="edit-type"
                         name="resource_type"
@@ -280,7 +280,7 @@ export default async function BayManagementPage({
       {!editingId && (
         <Card className="mt-8">
           <CardHeader>
-            <CardTitle className="text-base">Add New Bay</CardTitle>
+            <CardTitle className="text-base">Add New Facility</CardTitle>
           </CardHeader>
           <CardContent>
             <form action={createBay} className="space-y-4">
@@ -290,7 +290,7 @@ export default async function BayManagementPage({
                   <Input
                     id="new-name"
                     name="name"
-                    placeholder="e.g. Bay 1, Court A"
+                    placeholder="e.g. Facility 1, Court A"
                     required
                   />
                 </div>
@@ -306,7 +306,7 @@ export default async function BayManagementPage({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="new-type">Resource Type</Label>
+                  <Label htmlFor="new-type">Facility Type</Label>
                   <Input
                     id="new-type"
                     name="resource_type"
@@ -322,7 +322,7 @@ export default async function BayManagementPage({
                   />
                 </div>
               </div>
-              <Button type="submit">Add Bay</Button>
+              <Button type="submit">Add Facility</Button>
             </form>
           </CardContent>
         </Card>
