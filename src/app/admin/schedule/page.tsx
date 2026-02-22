@@ -90,6 +90,24 @@ export default async function ScheduleManagerPage({
     scheduleMap.set(`${s.bay_id}_${s.date}`, s);
   }
 
+  // Get slot counts for displayed schedules
+  const scheduleIds = schedules.map((s) => s.id);
+  const slotCountMap = new Map<string, number>();
+  if (scheduleIds.length > 0) {
+    const { data: slotCounts } = await supabase
+      .from("bay_schedule_slots")
+      .select("bay_schedule_id")
+      .in("bay_schedule_id", scheduleIds);
+    if (slotCounts) {
+      for (const s of slotCounts) {
+        slotCountMap.set(
+          s.bay_schedule_id,
+          (slotCountMap.get(s.bay_schedule_id) || 0) + 1
+        );
+      }
+    }
+  }
+
   // Previous / next week navigation
   const prevDate = new Date(startDate);
   prevDate.setDate(prevDate.getDate() - 7);
@@ -344,13 +362,18 @@ export default async function ScheduleManagerPage({
                 {weekDates.map((date) => (
                   <th
                     key={date}
-                    className={`border p-2 text-center text-sm font-medium ${
+                    className={`border p-0 text-center text-sm font-medium ${
                       date === today
                         ? "bg-primary/5 text-primary"
                         : "text-muted-foreground"
                     }`}
                   >
-                    {formatDate(date)}
+                    <a
+                      href={`/admin/schedule/day?date=${date}`}
+                      className="block p-2 hover:bg-accent/50 transition-colors"
+                    >
+                      {formatDate(date)}
+                    </a>
                   </th>
                 ))}
               </tr>
@@ -366,39 +389,29 @@ export default async function ScheduleManagerPage({
                     return (
                       <td
                         key={date}
-                        className={`border p-2 text-center ${
+                        className={`border p-0 text-center ${
                           date === today ? "bg-primary/5" : ""
                         }`}
                       >
-                        {schedule ? (
-                          <div className="space-y-1">
-                            <Badge variant="default" className="text-xs">
-                              {(schedule as { schedule_templates: { name: string } | null }).schedule_templates?.name || "Custom"}
-                            </Badge>
-                            <form action={clearSchedule}>
-                              <input
-                                type="hidden"
-                                name="schedule_id"
-                                value={schedule.id}
-                              />
-                              <input
-                                type="hidden"
-                                name="return_date"
-                                value={selectedDate}
-                              />
-                              <button
-                                type="submit"
-                                className="block mx-auto text-xs text-muted-foreground hover:text-destructive"
-                              >
-                                clear
-                              </button>
-                            </form>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            —
-                          </span>
-                        )}
+                        <a
+                          href={`/admin/schedule/day?date=${date}&bay=${bay.id}`}
+                          className="block p-2 hover:bg-accent/50 transition-colors"
+                        >
+                          {schedule ? (
+                            <div className="space-y-1">
+                              <Badge variant="default" className="text-xs">
+                                {(schedule as { schedule_templates: { name: string } | null }).schedule_templates?.name || "Custom"}
+                              </Badge>
+                              <p className="text-xs text-muted-foreground">
+                                {slotCountMap.get(schedule.id) || 0} slots
+                              </p>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              —
+                            </span>
+                          )}
+                        </a>
                       </td>
                     );
                   })}
