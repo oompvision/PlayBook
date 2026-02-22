@@ -314,36 +314,36 @@ async function executeGetMyBookings(
 async function executeCreateBooking(
   org: OrgContext,
   customerId: string | null,
-  args: { slot_ids: string[]; notes?: string }
+  args: { slot_ids: string[] | string; notes?: string }
 ) {
   if (!customerId) {
     return { error: "You need to be signed in to make a booking. Please log in first." };
   }
 
-  if (!args.slot_ids || args.slot_ids.length === 0) {
+  // Normalize slot_ids — Gemini may pass a single string instead of an array
+  const slotIds: string[] = Array.isArray(args.slot_ids)
+    ? args.slot_ids
+    : args.slot_ids
+      ? [args.slot_ids]
+      : [];
+
+  if (slotIds.length === 0) {
     return { error: "No slots selected. Please choose time slots first." };
   }
 
   const supabase = await createClient();
 
-  // Look up the slots to get bay and date info
+  // Look up slot → bay_schedule → bay mapping (needed for the RPC call)
   const { data: slots } = await supabase
     .from("bay_schedule_slots")
-    .select("id, bay_schedule_id, start_time, end_time, price_cents, status")
-    .in("id", args.slot_ids)
+    .select("id, bay_schedule_id")
+    .in("id", slotIds)
     .eq("org_id", org.id);
 
   if (!slots || slots.length === 0) {
-    return { error: "Could not find the selected slots. They may no longer be available." };
+    return { error: "Could not find the selected slots. Please check availability and try again." };
   }
 
-  // Check all slots are still available
-  const unavailable = slots.filter((s) => s.status !== "available");
-  if (unavailable.length > 0) {
-    return { error: "Some of the selected slots are no longer available. Please check availability again." };
-  }
-
-  // Get bay_schedule records to map to bays and dates
   const scheduleIds = [...new Set(slots.map((s) => s.bay_schedule_id))];
   const { data: schedules } = await supabase
     .from("bay_schedules")
@@ -370,7 +370,7 @@ async function executeCreateBooking(
     slotsByBay[info.bay_id].slot_ids.push(slot.id);
   }
 
-  // Create bookings (one per bay, matching existing confirm page behavior)
+  // Create bookings — the RPC handles availability checks with row locking
   const results: Array<{ confirmation_code: string; total_price: string; start_time: string; end_time: string }> = [];
 
   for (const [bayId, { date, slot_ids }] of Object.entries(slotsByBay)) {
