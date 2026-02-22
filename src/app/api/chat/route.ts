@@ -98,6 +98,23 @@ const toolDeclarations: FunctionDeclaration[] = [
       required: ["confirmation_code"],
     },
   },
+  {
+    name: "suggest_quick_replies",
+    description:
+      "Suggest clickable quick-reply buttons for the customer. Call this alongside your text response to give the customer easy tap-to-reply options. Use for confirmations, bay/time selection, and follow-up actions.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        options: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description:
+            "Array of short button labels (2-4 options). Keep labels concise and actionable.",
+        },
+      },
+      required: ["options"],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -546,7 +563,18 @@ Booking guidelines:
 - BEFORE calling cancel_booking, you MUST confirm the cancellation with the customer. Tell them which booking will be cancelled and that the action cannot be undone.
 - When a booking is created, share the confirmation code with the customer.
 - Use get_my_bookings to look up a customer's existing bookings when they ask.
-- The slot_ids for create_booking come from the get_available_slots response. Always look up availability first.`;
+- The slot_ids for create_booking come from the get_available_slots response. Always look up availability first.
+
+Quick reply buttons:
+- ALWAYS call suggest_quick_replies to offer clickable buttons when the customer needs to make a choice.
+- When to use quick replies:
+  - After showing availability → offer bay names or times to pick from.
+  - When asking for booking confirmation → "Confirm booking" and "No, cancel".
+  - When asking for cancellation confirmation → "Yes, cancel it" and "No, keep it".
+  - After a successful booking → "Show my bookings" and "Book another slot".
+  - After cancellation → "Show my bookings" and "Check availability".
+  - When asking a yes/no question → "Yes" and "No".
+- Keep labels short (2-5 words) and limit to 2-4 options.`;
 
   // Convert messages to Gemini Content format
   const currentMessages: Content[] = messages.map((m) => ({
@@ -557,6 +585,7 @@ Booking guidelines:
   // Resolve tool calls server-side in a loop, then stream the final text response
   try {
     let finalText = "";
+    let quickReplies: string[] = [];
 
     // Tool call loop — up to 5 rounds to prevent infinite loops
     for (let i = 0; i < 5; i++) {
@@ -577,11 +606,25 @@ Booking guidelines:
 
       const parts = candidate.content?.parts ?? [];
 
-      // Check if there are function calls
-      const functionCalls = parts.filter((p) => p.functionCall);
+      // Separate quick-reply calls from real tool calls
+      const allCalls = parts.filter((p) => p.functionCall);
+      const quickReplyCall = allCalls.find(
+        (p) => p.functionCall?.name === "suggest_quick_replies"
+      );
+      const realCalls = allCalls.filter(
+        (p) => p.functionCall?.name !== "suggest_quick_replies"
+      );
 
-      if (functionCalls.length === 0) {
-        // No tool calls — extract text response
+      // Capture quick replies if present
+      if (quickReplyCall) {
+        const opts = quickReplyCall.functionCall?.args?.options;
+        if (Array.isArray(opts)) {
+          quickReplies = opts.map(String);
+        }
+      }
+
+      // If no real tool calls, extract text and finish
+      if (realCalls.length === 0) {
         finalText = parts
           .filter((p) => p.text)
           .map((p) => p.text)
@@ -589,20 +632,22 @@ Booking guidelines:
         break;
       }
 
-      // Add the model's response (with function calls) to the conversation
-      const modelParts: Part[] = parts.map((p) => {
-        if (p.functionCall) {
-          return { functionCall: p.functionCall } as Part;
-        }
-        return { text: p.text ?? "" } as Part;
-      });
+      // Add the model's response (real tool calls only) to the conversation
+      const modelParts: Part[] = parts
+        .filter((p) => p.functionCall?.name !== "suggest_quick_replies")
+        .map((p) => {
+          if (p.functionCall) {
+            return { functionCall: p.functionCall } as Part;
+          }
+          return { text: p.text ?? "" } as Part;
+        });
 
       currentMessages.push({ role: "model", parts: modelParts });
 
-      // Execute each function call and build response parts
+      // Execute each real function call and build response parts
       const responseParts: Part[] = [];
 
-      for (const part of functionCalls) {
+      for (const part of realCalls) {
         const call = part.functionCall!;
         let result: Record<string, unknown>;
 
@@ -653,6 +698,11 @@ Booking guidelines:
       currentMessages.push({ role: "user", parts: responseParts });
     }
 
+    // Append quick replies delimiter if present
+    if (quickReplies.length > 0) {
+      finalText += `\n\n<<QUICK_REPLIES>>\n${JSON.stringify(quickReplies)}`;
+    }
+
     // Stream the final text back to the client
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -671,8 +721,6 @@ Booking guidelines:
           const suffix = index + chunkSize < words.length ? " " : "";
           controller.enqueue(encoder.encode(chunk + suffix));
           index += chunkSize;
-          // Small delay would be nice but ReadableStream start is sync
-          // The client will see progressive chunks as they arrive
           push();
         }
         push();
