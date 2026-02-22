@@ -24,7 +24,7 @@ async function getOrg() {
 export default async function MyBookingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cancelled?: string; error?: string }>;
+  searchParams: Promise<{ cancelled?: string; error?: string; success?: string; codes?: string }>;
 }) {
   const params = await searchParams;
   const slug = await getFacilitySlug();
@@ -116,6 +116,17 @@ export default async function MyBookingsPage({
         {params.cancelled && (
           <div className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
             Booking cancelled successfully.
+          </div>
+        )}
+        {params.success && (
+          <div className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
+            Booking confirmed!{" "}
+            {params.codes && (
+              <span>
+                Confirmation code{params.codes.includes(",") ? "s" : ""}:{" "}
+                <span className="font-mono font-semibold">{params.codes}</span>
+              </span>
+            )}
           </div>
         )}
 

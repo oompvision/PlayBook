@@ -175,9 +175,9 @@ export default async function BookingConfirmPage({
     revalidatePath("/book");
     revalidatePath("/my-bookings");
 
-    // Redirect to success with confirmation codes
+    // Redirect to My Bookings so the customer sees their reservation
     const codes = results.map((r) => r.confirmation_code).join(",");
-    redirect(`/book/confirm?success=true&codes=${codes}`);
+    redirect(`/my-bookings?success=true&codes=${codes}`);
   }
 
   // Success state
