@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SignOutButton } from "@/components/sign-out-button";
+import { OrgHeader } from "@/components/org-header";
 import { getTodayInTimezone, toTimestamp } from "@/lib/utils";
 
 export default async function BookPage() {
@@ -17,7 +18,7 @@ export default async function BookPage() {
 
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, timezone")
+    .select("id, name, slug, timezone, logo_url")
     .eq("slug", slug)
     .single();
 
@@ -65,9 +66,7 @@ export default async function BookPage() {
       <div className="mx-auto max-w-2xl">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight capitalize">
-              {org.name}
-            </h1>
+            <OrgHeader name={org.name} logoUrl={org.logo_url} />
             <p className="mt-2 text-muted-foreground">
               Select a date to view available time slots.
             </p>

@@ -12,6 +12,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import { BrandingSettings } from "./branding-settings";
 
 const TIMEZONES = [
   "America/New_York",
@@ -106,6 +107,14 @@ export default async function FacilitySettingsPage({
           Settings saved.
         </div>
       )}
+
+      <div className="mt-8">
+        <BrandingSettings
+          orgId={org.id}
+          logoUrl={org.logo_url}
+          coverPhotoUrl={org.cover_photo_url}
+        />
+      </div>
 
       <Card className="mt-8">
         <CardHeader>
