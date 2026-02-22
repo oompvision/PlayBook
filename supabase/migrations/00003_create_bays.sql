@@ -25,60 +25,10 @@ create trigger set_bays_updated_at
   before update on public.bays
   for each row execute function public.handle_updated_at();
 
--- ============================================================
--- RLS Policies for bays
--- ============================================================
-
+-- Enable RLS (role-based policies added in 00011)
 alter table public.bays enable row level security;
 
--- Public can read active bays
+-- Public can read active bays (no profiles dependency)
 create policy "bays_public_read_active"
   on public.bays for select
   using (is_active = true);
-
--- Admins can read all bays in their org (including inactive)
-create policy "bays_admin_read"
-  on public.bays for select
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bays.org_id
-    )
-  );
-
--- Admins can insert bays in their org
-create policy "bays_admin_insert"
-  on public.bays for insert
-  with check (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bays.org_id
-    )
-  );
-
--- Admins can update bays in their org
-create policy "bays_admin_update"
-  on public.bays for update
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bays.org_id
-    )
-  );
-
--- Super admins: full access
-create policy "bays_super_admin_all"
-  on public.bays for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
-    )
-  );

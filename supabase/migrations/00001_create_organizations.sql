@@ -34,35 +34,10 @@ create trigger set_organizations_updated_at
   before update on public.organizations
   for each row execute function public.handle_updated_at();
 
--- ============================================================
--- RLS Policies for organizations
--- ============================================================
-
+-- Enable RLS (policies added in 00011 after all tables exist)
 alter table public.organizations enable row level security;
 
--- Anyone can read org info (needed for subdomain resolution)
+-- Public read doesn't reference profiles, so it's safe here
 create policy "organizations_public_read"
   on public.organizations for select
   using (true);
-
--- Super admins can insert new orgs
-create policy "organizations_super_admin_insert"
-  on public.organizations for insert
-  with check (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
-    )
-  );
-
--- Super admins can update any org
-create policy "organizations_super_admin_update"
-  on public.organizations for update
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
-    )
-  );

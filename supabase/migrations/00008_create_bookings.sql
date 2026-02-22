@@ -50,65 +50,14 @@ begin
 end;
 $$ language plpgsql;
 
--- ============================================================
--- RLS Policies for bookings
--- ============================================================
-
+-- Enable RLS (role-based policies added in 00011)
 alter table public.bookings enable row level security;
 
--- Customers can read their own bookings
+-- Customer self-referencing policies (no cross-table profiles lookup)
 create policy "bookings_customer_read_own"
   on public.bookings for select
   using (auth.uid() = customer_id);
 
--- Customers can insert bookings (for themselves)
 create policy "bookings_customer_insert"
   on public.bookings for insert
   with check (auth.uid() = customer_id);
-
--- Admins can read all bookings in their org
-create policy "bookings_admin_read"
-  on public.bookings for select
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bookings.org_id
-    )
-  );
-
--- Admins can insert bookings in their org (walk-in bookings)
-create policy "bookings_admin_insert"
-  on public.bookings for insert
-  with check (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bookings.org_id
-    )
-  );
-
--- Admins can update bookings in their org (cancel, etc.)
-create policy "bookings_admin_update"
-  on public.bookings for update
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bookings.org_id
-    )
-  );
-
--- Super admins: full access
-create policy "bookings_super_admin_all"
-  on public.bookings for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
-    )
-  );

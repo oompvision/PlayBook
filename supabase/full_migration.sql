@@ -1,6 +1,6 @@
--- ################################################################
--- ## FILE: 00001_create_organizations.sql
--- ################################################################
+-- ===========================================================
+-- FILE: 00001_create_organizations.sql
+-- ===========================================================
 
 -- ============================================================
 -- 1. organizations
@@ -38,42 +38,18 @@ create trigger set_organizations_updated_at
   before update on public.organizations
   for each row execute function public.handle_updated_at();
 
--- ============================================================
--- RLS Policies for organizations
--- ============================================================
-
+-- Enable RLS (policies added in 00011 after all tables exist)
 alter table public.organizations enable row level security;
 
--- Anyone can read org info (needed for subdomain resolution)
+-- Public read doesn't reference profiles, so it's safe here
 create policy "organizations_public_read"
   on public.organizations for select
   using (true);
 
--- Super admins can insert new orgs
-create policy "organizations_super_admin_insert"
-  on public.organizations for insert
-  with check (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
-    )
-  );
 
--- Super admins can update any org
-create policy "organizations_super_admin_update"
-  on public.organizations for update
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
-    )
-  );
-
--- ################################################################
--- ## FILE: 00002_create_profiles.sql
--- ################################################################
+-- ===========================================================
+-- FILE: 00002_create_profiles.sql
+-- ===========================================================
 
 -- ============================================================
 -- 2. profiles
@@ -122,70 +98,22 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- ============================================================
--- RLS Policies for profiles
--- ============================================================
-
+-- Enable RLS (policies added in 00011 after all tables exist)
 alter table public.profiles enable row level security;
 
--- Users can read their own profile
+-- Self-referencing policies are safe here (no cross-table dependency)
 create policy "profiles_self_read"
   on public.profiles for select
   using (auth.uid() = id);
 
--- Users can update their own profile (name, phone only — role/org_id protected by app logic)
 create policy "profiles_self_update"
   on public.profiles for update
   using (auth.uid() = id);
 
--- Admins can read all profiles in their org
-create policy "profiles_admin_org_read"
-  on public.profiles for select
-  using (
-    exists (
-      select 1 from public.profiles as p
-      where p.id = auth.uid()
-      and p.role = 'admin'
-      and p.org_id = profiles.org_id
-    )
-  );
 
--- Super admins can read all profiles
-create policy "profiles_super_admin_read"
-  on public.profiles for select
-  using (
-    exists (
-      select 1 from public.profiles as p
-      where p.id = auth.uid()
-      and p.role = 'super_admin'
-    )
-  );
-
--- Super admins can insert profiles (for admin provisioning)
-create policy "profiles_super_admin_insert"
-  on public.profiles for insert
-  with check (
-    exists (
-      select 1 from public.profiles as p
-      where p.id = auth.uid()
-      and p.role = 'super_admin'
-    )
-  );
-
--- Super admins can update any profile
-create policy "profiles_super_admin_update"
-  on public.profiles for update
-  using (
-    exists (
-      select 1 from public.profiles as p
-      where p.id = auth.uid()
-      and p.role = 'super_admin'
-    )
-  );
-
--- ################################################################
--- ## FILE: 00003_create_bays.sql
--- ################################################################
+-- ===========================================================
+-- FILE: 00003_create_bays.sql
+-- ===========================================================
 
 -- ============================================================
 -- 3. bays
@@ -214,67 +142,18 @@ create trigger set_bays_updated_at
   before update on public.bays
   for each row execute function public.handle_updated_at();
 
--- ============================================================
--- RLS Policies for bays
--- ============================================================
-
+-- Enable RLS (role-based policies added in 00011)
 alter table public.bays enable row level security;
 
--- Public can read active bays
+-- Public can read active bays (no profiles dependency)
 create policy "bays_public_read_active"
   on public.bays for select
   using (is_active = true);
 
--- Admins can read all bays in their org (including inactive)
-create policy "bays_admin_read"
-  on public.bays for select
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bays.org_id
-    )
-  );
 
--- Admins can insert bays in their org
-create policy "bays_admin_insert"
-  on public.bays for insert
-  with check (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bays.org_id
-    )
-  );
-
--- Admins can update bays in their org
-create policy "bays_admin_update"
-  on public.bays for update
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bays.org_id
-    )
-  );
-
--- Super admins: full access
-create policy "bays_super_admin_all"
-  on public.bays for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
-    )
-  );
-
--- ################################################################
--- ## FILE: 00004_create_schedule_templates.sql
--- ################################################################
+-- ===========================================================
+-- FILE: 00004_create_schedule_templates.sql
+-- ===========================================================
 
 -- ============================================================
 -- 4. schedule_templates
@@ -297,74 +176,13 @@ create trigger set_schedule_templates_updated_at
   before update on public.schedule_templates
   for each row execute function public.handle_updated_at();
 
--- ============================================================
--- RLS Policies for schedule_templates
--- ============================================================
-
+-- Enable RLS (role-based policies added in 00011)
 alter table public.schedule_templates enable row level security;
 
--- Admins can read templates in their org
-create policy "schedule_templates_admin_read"
-  on public.schedule_templates for select
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = schedule_templates.org_id
-    )
-  );
 
--- Admins can insert templates in their org
-create policy "schedule_templates_admin_insert"
-  on public.schedule_templates for insert
-  with check (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = schedule_templates.org_id
-    )
-  );
-
--- Admins can update templates in their org
-create policy "schedule_templates_admin_update"
-  on public.schedule_templates for update
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = schedule_templates.org_id
-    )
-  );
-
--- Admins can delete templates in their org
-create policy "schedule_templates_admin_delete"
-  on public.schedule_templates for delete
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = schedule_templates.org_id
-    )
-  );
-
--- Super admins: full access
-create policy "schedule_templates_super_admin_all"
-  on public.schedule_templates for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
-    )
-  );
-
--- ################################################################
--- ## FILE: 00005_create_template_slots.sql
--- ################################################################
+-- ===========================================================
+-- FILE: 00005_create_template_slots.sql
+-- ===========================================================
 
 -- ============================================================
 -- 5. template_slots
@@ -387,79 +205,13 @@ create index if not exists idx_template_slots_template_id on public.template_slo
 alter table public.template_slots
   add constraint template_slots_time_order check (end_time > start_time);
 
--- ============================================================
--- RLS Policies for template_slots
--- Inherit access from the parent schedule_template
--- ============================================================
-
+-- Enable RLS (role-based policies added in 00011)
 alter table public.template_slots enable row level security;
 
--- Admins can read template slots for templates in their org
-create policy "template_slots_admin_read"
-  on public.template_slots for select
-  using (
-    exists (
-      select 1 from public.schedule_templates st
-      join public.profiles p on p.org_id = st.org_id
-      where st.id = template_slots.template_id
-      and p.id = auth.uid()
-      and p.role = 'admin'
-    )
-  );
 
--- Admins can insert template slots
-create policy "template_slots_admin_insert"
-  on public.template_slots for insert
-  with check (
-    exists (
-      select 1 from public.schedule_templates st
-      join public.profiles p on p.org_id = st.org_id
-      where st.id = template_slots.template_id
-      and p.id = auth.uid()
-      and p.role = 'admin'
-    )
-  );
-
--- Admins can update template slots
-create policy "template_slots_admin_update"
-  on public.template_slots for update
-  using (
-    exists (
-      select 1 from public.schedule_templates st
-      join public.profiles p on p.org_id = st.org_id
-      where st.id = template_slots.template_id
-      and p.id = auth.uid()
-      and p.role = 'admin'
-    )
-  );
-
--- Admins can delete template slots
-create policy "template_slots_admin_delete"
-  on public.template_slots for delete
-  using (
-    exists (
-      select 1 from public.schedule_templates st
-      join public.profiles p on p.org_id = st.org_id
-      where st.id = template_slots.template_id
-      and p.id = auth.uid()
-      and p.role = 'admin'
-    )
-  );
-
--- Super admins: full access
-create policy "template_slots_super_admin_all"
-  on public.template_slots for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
-    )
-  );
-
--- ################################################################
--- ## FILE: 00006_create_bay_schedules.sql
--- ################################################################
+-- ===========================================================
+-- FILE: 00006_create_bay_schedules.sql
+-- ===========================================================
 
 -- ============================================================
 -- 6. bay_schedules
@@ -490,67 +242,18 @@ create trigger set_bay_schedules_updated_at
   before update on public.bay_schedules
   for each row execute function public.handle_updated_at();
 
--- ============================================================
--- RLS Policies for bay_schedules
--- ============================================================
-
+-- Enable RLS (role-based policies added in 00011)
 alter table public.bay_schedules enable row level security;
 
--- Public can read schedules (needed for availability display)
+-- Public can read schedules (no profiles dependency)
 create policy "bay_schedules_public_read"
   on public.bay_schedules for select
   using (true);
 
--- Admins can insert schedules in their org
-create policy "bay_schedules_admin_insert"
-  on public.bay_schedules for insert
-  with check (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bay_schedules.org_id
-    )
-  );
 
--- Admins can update schedules in their org
-create policy "bay_schedules_admin_update"
-  on public.bay_schedules for update
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bay_schedules.org_id
-    )
-  );
-
--- Admins can delete schedules in their org
-create policy "bay_schedules_admin_delete"
-  on public.bay_schedules for delete
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bay_schedules.org_id
-    )
-  );
-
--- Super admins: full access
-create policy "bay_schedules_super_admin_all"
-  on public.bay_schedules for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
-    )
-  );
-
--- ################################################################
--- ## FILE: 00007_create_bay_schedule_slots.sql
--- ################################################################
+-- ===========================================================
+-- FILE: 00007_create_bay_schedule_slots.sql
+-- ===========================================================
 
 -- ============================================================
 -- 7. bay_schedule_slots
@@ -583,67 +286,18 @@ create trigger set_bay_schedule_slots_updated_at
   before update on public.bay_schedule_slots
   for each row execute function public.handle_updated_at();
 
--- ============================================================
--- RLS Policies for bay_schedule_slots
--- ============================================================
-
+-- Enable RLS (role-based policies added in 00011)
 alter table public.bay_schedule_slots enable row level security;
 
--- Public can read slots (needed for availability calendar)
+-- Public can read slots (no profiles dependency)
 create policy "bay_schedule_slots_public_read"
   on public.bay_schedule_slots for select
   using (true);
 
--- Admins can insert slots in their org
-create policy "bay_schedule_slots_admin_insert"
-  on public.bay_schedule_slots for insert
-  with check (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bay_schedule_slots.org_id
-    )
-  );
 
--- Admins can update slots in their org
-create policy "bay_schedule_slots_admin_update"
-  on public.bay_schedule_slots for update
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bay_schedule_slots.org_id
-    )
-  );
-
--- Admins can delete slots in their org
-create policy "bay_schedule_slots_admin_delete"
-  on public.bay_schedule_slots for delete
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bay_schedule_slots.org_id
-    )
-  );
-
--- Super admins: full access
-create policy "bay_schedule_slots_super_admin_all"
-  on public.bay_schedule_slots for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
-    )
-  );
-
--- ################################################################
--- ## FILE: 00008_create_bookings.sql
--- ################################################################
+-- ===========================================================
+-- FILE: 00008_create_bookings.sql
+-- ===========================================================
 
 -- ============================================================
 -- 8. bookings
@@ -697,72 +351,22 @@ begin
 end;
 $$ language plpgsql;
 
--- ============================================================
--- RLS Policies for bookings
--- ============================================================
-
+-- Enable RLS (role-based policies added in 00011)
 alter table public.bookings enable row level security;
 
--- Customers can read their own bookings
+-- Customer self-referencing policies (no cross-table profiles lookup)
 create policy "bookings_customer_read_own"
   on public.bookings for select
   using (auth.uid() = customer_id);
 
--- Customers can insert bookings (for themselves)
 create policy "bookings_customer_insert"
   on public.bookings for insert
   with check (auth.uid() = customer_id);
 
--- Admins can read all bookings in their org
-create policy "bookings_admin_read"
-  on public.bookings for select
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bookings.org_id
-    )
-  );
 
--- Admins can insert bookings in their org (walk-in bookings)
-create policy "bookings_admin_insert"
-  on public.bookings for insert
-  with check (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bookings.org_id
-    )
-  );
-
--- Admins can update bookings in their org (cancel, etc.)
-create policy "bookings_admin_update"
-  on public.bookings for update
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'admin'
-      and profiles.org_id = bookings.org_id
-    )
-  );
-
--- Super admins: full access
-create policy "bookings_super_admin_all"
-  on public.bookings for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
-    )
-  );
-
--- ################################################################
--- ## FILE: 00009_create_booking_slots.sql
--- ################################################################
+-- ===========================================================
+-- FILE: 00009_create_booking_slots.sql
+-- ===========================================================
 
 -- ============================================================
 -- 9. booking_slots
@@ -784,14 +388,10 @@ create index if not exists idx_booking_slots_slot_id on public.booking_slots (ba
 alter table public.booking_slots
   add constraint booking_slots_slot_unique unique (bay_schedule_slot_id);
 
--- ============================================================
--- RLS Policies for booking_slots
--- Inherits access from the parent booking
--- ============================================================
-
+-- Enable RLS (role-based policies added in 00011)
 alter table public.booking_slots enable row level security;
 
--- Customers can read their own booking slots
+-- Customer self-referencing policies (looks up bookings, not profiles)
 create policy "booking_slots_customer_read"
   on public.booking_slots for select
   using (
@@ -802,7 +402,6 @@ create policy "booking_slots_customer_read"
     )
   );
 
--- Customers can insert booking slots (during booking creation)
 create policy "booking_slots_customer_insert"
   on public.booking_slots for insert
   with check (
@@ -813,33 +412,10 @@ create policy "booking_slots_customer_insert"
     )
   );
 
--- Admins can read booking slots in their org
-create policy "booking_slots_admin_read"
-  on public.booking_slots for select
-  using (
-    exists (
-      select 1 from public.bookings b
-      join public.profiles p on p.org_id = b.org_id
-      where b.id = booking_slots.booking_id
-      and p.id = auth.uid()
-      and p.role = 'admin'
-    )
-  );
 
--- Super admins: full access
-create policy "booking_slots_super_admin_all"
-  on public.booking_slots for all
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role = 'super_admin'
-    )
-  );
-
--- ################################################################
--- ## FILE: 00010_create_booking_function.sql
--- ################################################################
+-- ===========================================================
+-- FILE: 00010_create_booking_function.sql
+-- ===========================================================
 
 -- ============================================================
 -- Atomic booking function with row-level locking
@@ -957,9 +533,425 @@ begin
 end;
 $$ language plpgsql security definer;
 
--- ################################################################
--- ## FILE: seed.sql
--- ################################################################
+
+-- ===========================================================
+-- FILE: 00011_create_rls_policies.sql
+-- ===========================================================
+
+-- ============================================================
+-- 11. RLS Policies (role-based)
+-- All policies that reference public.profiles for role checks.
+-- Must run AFTER all tables are created (00001-00009).
+-- ============================================================
+
+-- ============================================================
+-- organizations policies
+-- ============================================================
+
+create policy "organizations_super_admin_insert"
+  on public.organizations for insert
+  with check (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'super_admin'
+    )
+  );
+
+create policy "organizations_super_admin_update"
+  on public.organizations for update
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'super_admin'
+    )
+  );
+
+-- ============================================================
+-- profiles policies (admin/super_admin cross-row access)
+-- ============================================================
+
+create policy "profiles_admin_org_read"
+  on public.profiles for select
+  using (
+    exists (
+      select 1 from public.profiles as p
+      where p.id = auth.uid()
+      and p.role = 'admin'
+      and p.org_id = profiles.org_id
+    )
+  );
+
+create policy "profiles_super_admin_read"
+  on public.profiles for select
+  using (
+    exists (
+      select 1 from public.profiles as p
+      where p.id = auth.uid()
+      and p.role = 'super_admin'
+    )
+  );
+
+create policy "profiles_super_admin_insert"
+  on public.profiles for insert
+  with check (
+    exists (
+      select 1 from public.profiles as p
+      where p.id = auth.uid()
+      and p.role = 'super_admin'
+    )
+  );
+
+create policy "profiles_super_admin_update"
+  on public.profiles for update
+  using (
+    exists (
+      select 1 from public.profiles as p
+      where p.id = auth.uid()
+      and p.role = 'super_admin'
+    )
+  );
+
+-- ============================================================
+-- bays policies
+-- ============================================================
+
+create policy "bays_admin_read"
+  on public.bays for select
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = bays.org_id
+    )
+  );
+
+create policy "bays_admin_insert"
+  on public.bays for insert
+  with check (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = bays.org_id
+    )
+  );
+
+create policy "bays_admin_update"
+  on public.bays for update
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = bays.org_id
+    )
+  );
+
+create policy "bays_super_admin_all"
+  on public.bays for all
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'super_admin'
+    )
+  );
+
+-- ============================================================
+-- schedule_templates policies
+-- ============================================================
+
+create policy "schedule_templates_admin_read"
+  on public.schedule_templates for select
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = schedule_templates.org_id
+    )
+  );
+
+create policy "schedule_templates_admin_insert"
+  on public.schedule_templates for insert
+  with check (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = schedule_templates.org_id
+    )
+  );
+
+create policy "schedule_templates_admin_update"
+  on public.schedule_templates for update
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = schedule_templates.org_id
+    )
+  );
+
+create policy "schedule_templates_admin_delete"
+  on public.schedule_templates for delete
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = schedule_templates.org_id
+    )
+  );
+
+create policy "schedule_templates_super_admin_all"
+  on public.schedule_templates for all
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'super_admin'
+    )
+  );
+
+-- ============================================================
+-- template_slots policies
+-- ============================================================
+
+create policy "template_slots_admin_read"
+  on public.template_slots for select
+  using (
+    exists (
+      select 1 from public.schedule_templates st
+      join public.profiles p on p.org_id = st.org_id
+      where st.id = template_slots.template_id
+      and p.id = auth.uid()
+      and p.role = 'admin'
+    )
+  );
+
+create policy "template_slots_admin_insert"
+  on public.template_slots for insert
+  with check (
+    exists (
+      select 1 from public.schedule_templates st
+      join public.profiles p on p.org_id = st.org_id
+      where st.id = template_slots.template_id
+      and p.id = auth.uid()
+      and p.role = 'admin'
+    )
+  );
+
+create policy "template_slots_admin_update"
+  on public.template_slots for update
+  using (
+    exists (
+      select 1 from public.schedule_templates st
+      join public.profiles p on p.org_id = st.org_id
+      where st.id = template_slots.template_id
+      and p.id = auth.uid()
+      and p.role = 'admin'
+    )
+  );
+
+create policy "template_slots_admin_delete"
+  on public.template_slots for delete
+  using (
+    exists (
+      select 1 from public.schedule_templates st
+      join public.profiles p on p.org_id = st.org_id
+      where st.id = template_slots.template_id
+      and p.id = auth.uid()
+      and p.role = 'admin'
+    )
+  );
+
+create policy "template_slots_super_admin_all"
+  on public.template_slots for all
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'super_admin'
+    )
+  );
+
+-- ============================================================
+-- bay_schedules policies
+-- ============================================================
+
+create policy "bay_schedules_admin_insert"
+  on public.bay_schedules for insert
+  with check (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = bay_schedules.org_id
+    )
+  );
+
+create policy "bay_schedules_admin_update"
+  on public.bay_schedules for update
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = bay_schedules.org_id
+    )
+  );
+
+create policy "bay_schedules_admin_delete"
+  on public.bay_schedules for delete
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = bay_schedules.org_id
+    )
+  );
+
+create policy "bay_schedules_super_admin_all"
+  on public.bay_schedules for all
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'super_admin'
+    )
+  );
+
+-- ============================================================
+-- bay_schedule_slots policies
+-- ============================================================
+
+create policy "bay_schedule_slots_admin_insert"
+  on public.bay_schedule_slots for insert
+  with check (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = bay_schedule_slots.org_id
+    )
+  );
+
+create policy "bay_schedule_slots_admin_update"
+  on public.bay_schedule_slots for update
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = bay_schedule_slots.org_id
+    )
+  );
+
+create policy "bay_schedule_slots_admin_delete"
+  on public.bay_schedule_slots for delete
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = bay_schedule_slots.org_id
+    )
+  );
+
+create policy "bay_schedule_slots_super_admin_all"
+  on public.bay_schedule_slots for all
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'super_admin'
+    )
+  );
+
+-- ============================================================
+-- bookings policies (admin/super_admin)
+-- ============================================================
+
+create policy "bookings_admin_read"
+  on public.bookings for select
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = bookings.org_id
+    )
+  );
+
+create policy "bookings_admin_insert"
+  on public.bookings for insert
+  with check (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = bookings.org_id
+    )
+  );
+
+create policy "bookings_admin_update"
+  on public.bookings for update
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'admin'
+      and profiles.org_id = bookings.org_id
+    )
+  );
+
+create policy "bookings_super_admin_all"
+  on public.bookings for all
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'super_admin'
+    )
+  );
+
+-- ============================================================
+-- booking_slots policies (admin/super_admin)
+-- ============================================================
+
+create policy "booking_slots_admin_read"
+  on public.booking_slots for select
+  using (
+    exists (
+      select 1 from public.bookings b
+      join public.profiles p on p.org_id = b.org_id
+      where b.id = booking_slots.booking_id
+      and p.id = auth.uid()
+      and p.role = 'admin'
+    )
+  );
+
+create policy "booking_slots_super_admin_all"
+  on public.booking_slots for all
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'super_admin'
+    )
+  );
+
+
+
+-- ===========================================================
+-- SEED DATA
+-- ===========================================================
 
 -- ============================================================
 -- Seed data for PlayBook
