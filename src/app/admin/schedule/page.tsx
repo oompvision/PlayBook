@@ -14,6 +14,7 @@ import {
   CardDescription,
 } from "@/components/ui/card";
 import { toTimestamp, getTodayInTimezone } from "@/lib/utils";
+import { SubmitButton } from "@/components/submit-button";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -300,9 +301,9 @@ export default async function ScheduleManagerPage({
                   />
                 </div>
                 <div className="flex items-end">
-                  <Button type="submit" className="w-full">
+                  <SubmitButton pendingText="Applying..." className="w-full">
                     Apply
-                  </Button>
+                  </SubmitButton>
                 </div>
               </div>
               <div className="space-y-2">

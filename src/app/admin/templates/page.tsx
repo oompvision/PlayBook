@@ -302,26 +302,24 @@ export default async function TemplatesPage({
                         />
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <Button type="submit" size="sm">
-                        Save Details
-                      </Button>
-                      <form action={deleteTemplate}>
-                        <input
-                          type="hidden"
-                          name="id"
-                          value={editingTemplate.id}
-                        />
-                        <Button
-                          type="submit"
-                          variant="outline"
-                          size="sm"
-                          className="text-destructive hover:bg-destructive/10"
-                        >
-                          Delete Template
-                        </Button>
-                      </form>
-                    </div>
+                    <Button type="submit" size="sm">
+                      Save Details
+                    </Button>
+                  </form>
+                  <form action={deleteTemplate} className="mt-2">
+                    <input
+                      type="hidden"
+                      name="id"
+                      value={editingTemplate.id}
+                    />
+                    <Button
+                      type="submit"
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:bg-destructive/10"
+                    >
+                      Delete Template
+                    </Button>
                   </form>
                 </CardContent>
               </Card>
