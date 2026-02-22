@@ -414,7 +414,7 @@ Guidelines:
       );
     }
     return Response.json(
-      { error: "Failed to generate response. Please try again." },
+      { error: `Chat error: ${message}` },
       { status: 500 }
     );
   }
