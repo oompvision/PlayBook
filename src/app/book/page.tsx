@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SignOutButton } from "@/components/sign-out-button";
-import { getTodayInTimezone } from "@/lib/utils";
+import { getTodayInTimezone, toTimestamp } from "@/lib/utils";
 
 export default async function BookPage() {
   const slug = await getFacilitySlug();
@@ -32,14 +32,22 @@ export default async function BookPage() {
     dates.push(d.toISOString().split("T")[0]);
   }
 
-  // Get available slot counts per date
+  // Get available slot counts per date using timezone-aware bounds
+  // so that evening slots don't bleed into the next day's count
+  const lastDay = new Date(dates[dates.length - 1] + "T12:00:00");
+  lastDay.setDate(lastDay.getDate() + 1);
+  const dayAfterLastStr = lastDay.toISOString().split("T")[0];
+
+  const rangeStart = toTimestamp(dates[0], "00:00:00", org.timezone);
+  const rangeEnd = toTimestamp(dayAfterLastStr, "00:00:00", org.timezone);
+
   const { data: slots } = await supabase
     .from("bay_schedule_slots")
     .select("id, start_time, status, bay_schedule_id")
     .eq("org_id", org.id)
     .eq("status", "available")
-    .gte("start_time", `${dates[0]}T00:00:00`)
-    .lte("start_time", `${dates[dates.length - 1]}T23:59:59`);
+    .gte("start_time", rangeStart)
+    .lt("start_time", rangeEnd);
 
   // Count available slots per date (extract date in facility timezone)
   const availByDate: Record<string, number> = {};
