@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -133,6 +134,11 @@ export function AvailabilityWidget({
   const [loading, setLoading] = useState(true);
   const [selectedSlotIds, setSelectedSlotIds] = useState<Set<string>>(new Set());
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const isToday = selectedDate === todayStr;
   const canGoBack = selectedDate > todayStr;
@@ -460,28 +466,32 @@ export function AvailabilityWidget({
             )}
           </div>
 
-          {/* Booking Bar */}
-          {selectedSlotIds.size > 0 && (
-            <div className="border-t bg-muted/30 px-5 py-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium">
-                    {selectedSlotIds.size} slot
-                    {selectedSlotIds.size !== 1 ? "s" : ""} selected
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Total: ${(totalCents / 100).toFixed(2)}
-                  </p>
-                </div>
-                <Button onClick={handleContinue} className="gap-2">
-                  Continue to Book
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      {/* Fixed booking bar overlay — portalled to body so it's always visible */}
+      {selectedSlotIds.size > 0 &&
+        mounted &&
+        createPortal(
+          <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-background p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.1)]">
+            <div className="mx-auto flex max-w-6xl items-center justify-between px-6">
+              <div>
+                <p className="text-sm font-medium">
+                  {selectedSlotIds.size} slot
+                  {selectedSlotIds.size !== 1 ? "s" : ""} selected
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Total: ${(totalCents / 100).toFixed(2)}
+                </p>
+              </div>
+              <Button onClick={handleContinue} className="gap-2">
+                Continue to Book
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
