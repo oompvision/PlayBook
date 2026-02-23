@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ChatWidget } from "./chat-widget";
@@ -11,22 +11,37 @@ type ChatBubbleProps = {
   orgName: string;
 };
 
-// Pages where the floating bubble should NOT appear
-const HIDDEN_PATHS = ["/", "/admin", "/super-admin"];
+// Pages where the floating bubble should NOT appear at all
+const HIDDEN_PATHS = ["/admin", "/super-admin"];
 
 export function ChatBubble({ facilitySlug, orgName }: ChatBubbleProps) {
-  const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
+  const isHomepage = pathname === "/";
 
-  // Hide on homepage (has inline widget), admin, and super-admin pages
+  // Default to open on homepage (for desktop), closed on other pages
+  const [isOpen, setIsOpen] = useState(isHomepage);
+  const [hasMounted, setHasMounted] = useState(false);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
+  // Hide on admin and super-admin pages
   const shouldHide = HIDDEN_PATHS.some(
-    (p) => pathname === p || (p !== "/" && pathname.startsWith(p + "/"))
+    (p) => pathname === p || pathname.startsWith(p + "/")
   );
 
   if (shouldHide) return null;
 
+  // Avoid flash before hydration when using conditional default state
+  if (!hasMounted) return null;
+
+  // On homepage: only show on desktop (lg+) since mobile has its own inline ChatWidget
+  // On other pages: show on all screen sizes
+  const visibilityClass = isHomepage ? "hidden lg:block" : "";
+
   return (
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className={`fixed bottom-4 right-4 z-50 ${visibilityClass}`}>
       {/* Chat panel */}
       {isOpen && (
         <div className="mb-3 flex h-[500px] w-[380px] max-w-[calc(100vw-2rem)] flex-col rounded-2xl border bg-card shadow-2xl">
