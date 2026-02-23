@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +45,11 @@ export default function SlotPicker({
   const [selected, setSelected] = useState<
     Map<string, { slotIds: string[]; bayId: string; bayName: string }>
   >(new Map());
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   function toggleSlot(bayId: string, bayName: string, slot: Slot) {
     if (slot.status !== "available" || !isAuthenticated) return;
@@ -162,22 +168,27 @@ export default function SlotPicker({
       {/* Spacer so content isn't hidden behind the fixed bar */}
       {totalSlots > 0 && <div className="h-24" />}
 
-      {/* Fixed booking bar overlay */}
-      {totalSlots > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-background p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.1)]">
-          <div className="mx-auto flex max-w-3xl items-center justify-between">
-            <div>
-              <p className="font-medium">
-                {totalSlots} slot{totalSlots !== 1 ? "s" : ""} selected
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Total: ${(totalCents / 100).toFixed(2)}
-              </p>
+      {/* Fixed booking bar overlay — portalled to body to avoid parent CSS interference */}
+      {totalSlots > 0 &&
+        mounted &&
+        createPortal(
+          <div
+            className="fixed inset-x-0 bottom-0 z-50 border-t bg-background p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.1)]"
+          >
+            <div className="mx-auto flex max-w-3xl items-center justify-between">
+              <div>
+                <p className="font-medium">
+                  {totalSlots} slot{totalSlots !== 1 ? "s" : ""} selected
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Total: ${(totalCents / 100).toFixed(2)}
+                </p>
+              </div>
+              <Button onClick={handleContinue}>Continue to Book</Button>
             </div>
-            <Button onClick={handleContinue}>Continue to Book</Button>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
