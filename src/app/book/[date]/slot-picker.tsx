@@ -159,10 +159,13 @@ export default function SlotPicker({
         </p>
       )}
 
-      {/* Sticky booking bar */}
+      {/* Spacer so content isn't hidden behind the fixed bar */}
+      {totalSlots > 0 && <div className="h-24" />}
+
+      {/* Fixed booking bar overlay */}
       {totalSlots > 0 && (
-        <div className="sticky bottom-0 rounded-lg border bg-background p-4 shadow-lg">
-          <div className="flex items-center justify-between">
+        <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-background p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.1)]">
+          <div className="mx-auto flex max-w-3xl items-center justify-between">
             <div>
               <p className="font-medium">
                 {totalSlots} slot{totalSlots !== 1 ? "s" : ""} selected
