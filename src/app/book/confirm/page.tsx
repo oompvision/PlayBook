@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/submit-button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -128,15 +129,34 @@ export default async function BookingConfirmPage({
 
     const supabase = await createClient();
     const notes = (formData.get("notes") as string) || null;
+    const date = formData.get("date") as string;
+
+    // Collect all slot IDs from the form for a single availability check
+    const bayIdList = (formData.get("bay_ids") as string).split(",");
+    const allFormSlotIds: string[] = [];
+    for (const bayId of bayIdList) {
+      const slotsParam = formData.get(`slots_${bayId}`) as string;
+      if (slotsParam) allFormSlotIds.push(...slotsParam.split(","));
+    }
+
+    // Re-validate slot availability before attempting to book
+    const { data: freshSlots } = await supabase
+      .from("bay_schedule_slots")
+      .select("id, status")
+      .in("id", allFormSlotIds);
+
+    const unavailableSlots = freshSlots?.filter((s) => s.status !== "available") || [];
+    if (unavailableSlots.length > 0) {
+      redirect(
+        `/book/${date}?error=${encodeURIComponent("One or more selected slots are no longer available. Please choose different time slots.")}`
+      );
+    }
 
     // Create one booking per bay
     const results: Array<{ confirmation_code: string; bay_name: string }> = [];
 
-    const bayIdList = (formData.get("bay_ids") as string).split(",");
-
     for (const bayId of bayIdList) {
       const slotIds = (formData.get(`slots_${bayId}`) as string).split(",");
-      const date = formData.get("date") as string;
 
       const { data, error } = await supabase.rpc("create_booking", {
         p_org_id: org.id,
@@ -353,14 +373,14 @@ export default async function BookingConfirmPage({
                 Booking as {auth.profile.full_name || auth.profile.email}
               </p>
 
-              <Button
-                type="submit"
+              <SubmitButton
                 className="w-full"
                 size="lg"
                 disabled={unavailable.length > 0}
+                pendingText="Booking..."
               >
                 Confirm Booking
-              </Button>
+              </SubmitButton>
             </form>
           </CardContent>
         </Card>
