@@ -55,10 +55,14 @@ export async function middleware(request: NextRequest) {
     facilitySlug = facilityParam;
   }
 
-  // Fallback: check cookie (set by ?facility= param or super admin "Enter as Admin" flow)
+  // Fallback: check playbook-facility cookie (set by ?facility= query param for dev/preview)
   if (!facilitySlug) {
-    facilitySlug = request.cookies.get("playbook-facility")?.value ||
-      request.cookies.get("playbook-admin-org")?.value || null;
+    facilitySlug = request.cookies.get("playbook-facility")?.value || null;
+  }
+
+  // playbook-admin-org cookie only applies to /admin routes (Enter as Admin flow)
+  if (!facilitySlug && pathname.startsWith("/admin")) {
+    facilitySlug = request.cookies.get("playbook-admin-org")?.value || null;
   }
 
   // Pass facility slug as a REQUEST header so server components read it
