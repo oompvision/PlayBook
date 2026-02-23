@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Clock, Eye, EyeOff, X } from "lucide-react";
 
 export interface DailyBooking {
@@ -153,46 +151,48 @@ export function DailySchedule({
     <div>
       {/* Header: date nav + controls */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8"
+        <div className="inline-flex items-center rounded-lg border border-gray-200 dark:border-gray-700">
+          <button
+            type="button"
+            className="flex h-9 w-9 items-center justify-center rounded-l-lg text-gray-500 transition-colors hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800"
             onClick={() => setSelectedDate(shiftDate(selectedDate, -1))}
           >
             <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8"
+          </button>
+          <div className="h-9 w-px bg-gray-200 dark:bg-gray-700" />
+          <button
+            type="button"
+            className="flex h-9 w-9 items-center justify-center rounded-r-lg text-gray-500 transition-colors hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800"
             onClick={() => setSelectedDate(shiftDate(selectedDate, 1))}
           >
             <ChevronRight className="h-4 w-4" />
-          </Button>
+          </button>
         </div>
+
         <input
           type="date"
           value={selectedDate}
           onChange={(e) => setSelectedDate(e.target.value)}
-          className="h-8 rounded-md border border-input bg-transparent px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="h-9 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
         />
-        <Button
-          variant="ghost"
-          size="sm"
+
+        <button
+          type="button"
+          className="h-9 rounded-lg px-3 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
           onClick={() => setSelectedDate(getNowInTimezone(timezone).dateStr)}
         >
           Today
-        </Button>
-        <span className="text-lg font-semibold">
+        </button>
+
+        <span className="text-base font-semibold text-gray-800 dark:text-white/90">
           {formatDateForDisplay(selectedDate)}
         </span>
+
         <div className="ml-auto">
-          <Button
-            variant="outline"
-            size="sm"
+          <button
+            type="button"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
             onClick={() => setShowCancelled(!showCancelled)}
-            className="gap-1.5"
           >
             {showCancelled ? (
               <EyeOff className="h-3.5 w-3.5" />
@@ -200,17 +200,17 @@ export function DailySchedule({
               <Eye className="h-3.5 w-3.5" />
             )}
             {showCancelled ? "Hide" : "Show"} cancelled
-          </Button>
+          </button>
         </div>
       </div>
 
       {dayBookings.length === 0 ? (
-        <p className="py-16 text-center text-muted-foreground">
+        <div className="mt-6 rounded-xl border border-gray-200 bg-white px-5 py-16 text-center text-sm text-gray-500 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-400">
           No bookings for this day.
-        </p>
+        </div>
       ) : (
         /* Timeline grid */
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
           <div
             className="grid"
             style={{
@@ -218,24 +218,24 @@ export function DailySchedule({
             }}
           >
             {/* Column headers */}
-            <div className="sticky top-0 z-10 border-b bg-background p-2 text-xs font-medium text-muted-foreground">
+            <div className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50/80 p-2 text-xs font-medium text-gray-500 backdrop-blur dark:border-white/[0.05] dark:bg-gray-900/80 dark:text-gray-400">
               <Clock className="mx-auto h-4 w-4" />
             </div>
             {bays.map((bay) => (
               <div
                 key={bay.id}
-                className="sticky top-0 z-10 border-b border-l bg-background p-2 text-center text-sm font-semibold"
+                className="sticky top-0 z-10 border-b border-l border-gray-100 bg-gray-50/80 p-2 text-center text-sm font-semibold text-gray-800 backdrop-blur dark:border-white/[0.05] dark:bg-gray-900/80 dark:text-white/90"
               >
                 {bay.name}
               </div>
             ))}
 
             {/* Time column + bay columns */}
-            <div className="relative border-r" style={{ height: gridHeight }}>
+            <div className="relative border-r border-gray-100 dark:border-white/[0.05]" style={{ height: gridHeight }}>
               {hourLabels.map((h) => (
                 <div
                   key={h}
-                  className="absolute left-0 right-0 flex items-start justify-end pr-2 text-xs text-muted-foreground"
+                  className="absolute left-0 right-0 flex items-start justify-end pr-2 text-xs text-gray-500 dark:text-gray-400"
                   style={{ top: (h - startHour) * HOUR_HEIGHT }}
                 >
                   {h === 0
@@ -313,14 +313,14 @@ export function DailySchedule({
               return (
                 <div
                   key={bay.id}
-                  className="relative border-l"
+                  className="relative border-l border-gray-100 dark:border-white/[0.05]"
                   style={{ height: gridHeight }}
                 >
                   {/* Hour gridlines */}
                   {hourLabels.map((h) => (
                     <div
                       key={h}
-                      className="absolute left-0 right-0 border-t border-dashed border-muted"
+                      className="absolute left-0 right-0 border-t border-dashed border-gray-100 dark:border-white/[0.05]"
                       style={{ top: (h - startHour) * HOUR_HEIGHT }}
                     />
                   ))}
@@ -341,7 +341,13 @@ export function DailySchedule({
                     return (
                       <div
                         key={booking.id}
-                        className={`absolute left-1 right-1 cursor-pointer overflow-hidden rounded-md border border-primary/20 bg-primary/10 px-2 py-1 text-xs shadow-sm transition-colors hover:bg-primary/15 ${isExpanded ? "z-20 ring-2 ring-primary" : hasCancelledExpanded ? "z-30" : "z-10"}`}
+                        className={`absolute left-1 right-1 cursor-pointer overflow-hidden rounded-lg border px-2 py-1.5 text-xs shadow-sm transition-all ${
+                          isExpanded
+                            ? "z-20 border-blue-300 bg-blue-50 ring-2 ring-blue-500/30 dark:border-blue-700 dark:bg-blue-950/40 dark:ring-blue-500/20"
+                            : hasCancelledExpanded
+                              ? "z-30 border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30"
+                              : "z-10 border-blue-200 bg-blue-50 hover:bg-blue-100/80 dark:border-blue-800 dark:bg-blue-950/30 dark:hover:bg-blue-950/50"
+                        }`}
                         style={{
                           top: `${top}%`,
                           height: needsAutoHeight ? "auto" : `${height}%`,
@@ -351,15 +357,15 @@ export function DailySchedule({
                           setExpandedId(isExpanded ? null : booking.id)
                         }
                       >
-                        <p className="truncate font-medium">{name}</p>
-                        <p className="text-[10px] text-muted-foreground">
+                        <p className="truncate font-semibold text-gray-800 dark:text-white/90">{name}</p>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400">
                           {formatTime(booking.start_time, timezone)} –{" "}
                           {formatTime(booking.end_time, timezone)}
                         </p>
-                        <p className="font-mono text-[10px] text-muted-foreground">
+                        <p className="font-mono text-[10px] text-gray-500 dark:text-gray-400">
                           {booking.confirmation_code}
                         </p>
-                        <p className="text-[10px] font-medium">
+                        <p className="text-[10px] font-semibold text-gray-700 dark:text-gray-300">
                           ${(booking.total_price_cents / 100).toFixed(2)}
                         </p>
 
@@ -383,13 +389,13 @@ export function DailySchedule({
                         {/* Inline cancelled bookings list */}
                         {hasCancelledExpanded && associatedCancelled && (
                           <div
-                            className="mt-1.5 overflow-hidden rounded-lg border border-red-200 bg-popover text-[10px] shadow-md dark:border-red-900"
+                            className="mt-1.5 overflow-hidden rounded-lg border border-red-200 bg-white text-[10px] shadow-md dark:border-red-900 dark:bg-gray-900"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <div className="border-b border-red-200 bg-red-50 px-2.5 py-1 font-medium text-red-700 no-underline dark:border-red-900 dark:bg-red-950/40 dark:text-red-400">
+                            <div className="border-b border-red-200 bg-red-50 px-2.5 py-1 font-medium text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400">
                               Cancelled Bookings
                             </div>
-                            <div className="divide-y divide-border/50">
+                            <div className="divide-y divide-gray-100 dark:divide-white/[0.05]">
                               {associatedCancelled.map((cb) => {
                                 const cbCustomer = customerMap[cb.customer_id];
                                 const cbName =
@@ -399,12 +405,12 @@ export function DailySchedule({
                                 return (
                                   <div
                                     key={cb.id}
-                                    className="px-2.5 py-1.5 no-underline"
+                                    className="px-2.5 py-1.5"
                                   >
-                                    <p className="truncate font-medium text-foreground">
+                                    <p className="truncate font-medium text-gray-800 dark:text-white/90">
                                       {cbName}
                                     </p>
-                                    <div className="mt-0.5 flex items-center gap-2 text-muted-foreground">
+                                    <div className="mt-0.5 flex items-center gap-2 text-gray-500 dark:text-gray-400">
                                       <span className="font-mono">
                                         {cb.confirmation_code}
                                       </span>
@@ -421,79 +427,84 @@ export function DailySchedule({
 
                         {isExpanded && (
                           <div
-                            className="mt-2 space-y-2 border-t pt-2"
+                            className="mt-2 space-y-2 border-t border-blue-200 pt-2 dark:border-blue-800"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <div className="space-y-1">
-                              <p>
-                                <span className="text-muted-foreground">Customer:</span>{" "}
-                                {customer?.full_name || "N/A"}
-                              </p>
+                            <div className="space-y-1.5">
+                              <div className="flex justify-between">
+                                <span className="text-gray-500 dark:text-gray-400">Customer</span>
+                                <span className="text-gray-800 dark:text-white/90">
+                                  {customer?.full_name || "N/A"}
+                                </span>
+                              </div>
                               {customer?.email && (
-                                <p>
-                                  <span className="text-muted-foreground">Email:</span>{" "}
-                                  {customer.email}
-                                </p>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-500 dark:text-gray-400">Email</span>
+                                  <span className="text-gray-800 dark:text-white/90">
+                                    {customer.email}
+                                  </span>
+                                </div>
                               )}
-                              <p>
-                                <span className="text-muted-foreground">Facility:</span>{" "}
-                                {bay.name}
-                              </p>
-                              <p>
-                                <span className="text-muted-foreground">Time:</span>{" "}
-                                {formatTime(booking.start_time, timezone)} –{" "}
-                                {formatTime(booking.end_time, timezone)}
-                              </p>
-                              <p>
-                                <span className="text-muted-foreground">Code:</span>{" "}
-                                <span className="font-mono">
+                              <div className="flex justify-between">
+                                <span className="text-gray-500 dark:text-gray-400">Facility</span>
+                                <span className="text-gray-800 dark:text-white/90">{bay.name}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-500 dark:text-gray-400">Time</span>
+                                <span className="text-gray-800 dark:text-white/90">
+                                  {formatTime(booking.start_time, timezone)} –{" "}
+                                  {formatTime(booking.end_time, timezone)}
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-500 dark:text-gray-400">Code</span>
+                                <span className="font-mono text-gray-800 dark:text-white/90">
                                   {booking.confirmation_code}
                                 </span>
-                              </p>
-                              <p>
-                                <span className="text-muted-foreground">Price:</span> $
-                                {(booking.total_price_cents / 100).toFixed(2)}
-                              </p>
-                              <p>
-                                <span className="text-muted-foreground">Status:</span>{" "}
-                                <Badge variant="default" className="ml-1">
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-gray-500 dark:text-gray-400">Price</span>
+                                <span className="font-semibold text-gray-800 dark:text-white/90">
+                                  ${(booking.total_price_cents / 100).toFixed(2)}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-gray-500 dark:text-gray-400">Status</span>
+                                <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
                                   {booking.status}
-                                </Badge>
-                              </p>
+                                </span>
+                              </div>
                               {booking.notes && (
-                                <p className="italic">
-                                  <span className="text-muted-foreground not-italic">
-                                    Notes:
-                                  </span>{" "}
-                                  {booking.notes}
-                                </p>
+                                <div className="flex justify-between">
+                                  <span className="text-gray-500 dark:text-gray-400">Notes</span>
+                                  <span className="text-right italic text-gray-800 dark:text-white/90">
+                                    {booking.notes}
+                                  </span>
+                                </div>
                               )}
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 pt-1">
                               <form action={cancelAction}>
                                 <input
                                   type="hidden"
                                   name="booking_id"
                                   value={booking.id}
                                 />
-                                <Button
+                                <button
                                   type="submit"
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-6 text-[10px] text-destructive hover:bg-destructive/10"
+                                  className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2 py-1 text-[10px] font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 dark:border-red-800 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
                                 >
-                                  <X className="mr-1 h-3 w-3" />
+                                  <X className="h-3 w-3" />
                                   Cancel Booking
-                                </Button>
+                                </button>
                               </form>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 text-[10px]"
+                              <button
+                                type="button"
+                                className="rounded-md px-2 py-1 text-[10px] font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                                 onClick={() => setExpandedId(null)}
                               >
                                 Close
-                              </Button>
+                              </button>
                             </div>
                           </div>
                         )}
@@ -520,7 +531,7 @@ export function DailySchedule({
                         style={{ top: `${top}%` }}
                       >
                         <button
-                          className="w-full cursor-pointer rounded border border-red-300 bg-red-50 py-0.5 text-center text-[10px] font-medium text-red-600 hover:bg-red-100 dark:border-red-800 dark:bg-red-950/50 dark:text-red-400 dark:hover:bg-red-950/80"
+                          className="w-full cursor-pointer rounded-lg border border-red-200 bg-red-50 py-0.5 text-center text-[10px] font-medium text-red-600 transition-colors hover:bg-red-100 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400 dark:hover:bg-red-950/50"
                           onClick={() =>
                             setShowCancelledForId(
                               isOpen ? null : clusterKey
@@ -531,11 +542,11 @@ export function DailySchedule({
                           {isOpen ? "▲" : "▼"}
                         </button>
                         {isOpen && (
-                          <div className="mt-1 overflow-hidden rounded-lg border border-red-200 bg-popover text-[10px] shadow-xl dark:border-red-900">
+                          <div className="mt-1 overflow-hidden rounded-lg border border-red-200 bg-white text-[10px] shadow-xl dark:border-red-900 dark:bg-gray-900">
                             <div className="border-b border-red-200 bg-red-50 px-2.5 py-1 font-medium text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400">
                               Cancelled Bookings
                             </div>
-                            <div className="divide-y divide-border/50">
+                            <div className="divide-y divide-gray-100 dark:divide-white/[0.05]">
                               {cluster.map((cb) => {
                                 const cbCustomer =
                                   customerMap[cb.customer_id];
@@ -548,10 +559,10 @@ export function DailySchedule({
                                     key={cb.id}
                                     className="px-2.5 py-1.5"
                                   >
-                                    <p className="truncate font-medium text-foreground">
+                                    <p className="truncate font-medium text-gray-800 dark:text-white/90">
                                       {cbName}
                                     </p>
-                                    <div className="mt-0.5 flex items-center gap-2 text-muted-foreground">
+                                    <div className="mt-0.5 flex items-center gap-2 text-gray-500 dark:text-gray-400">
                                       <span>
                                         {formatTime(cb.start_time, timezone)}{" "}
                                         –{" "}
