@@ -6,15 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
 import { toTimestamp, getTodayInTimezone } from "@/lib/utils";
 import { SubmitButton } from "@/components/submit-button";
+import {
+  CalendarDays,
+  Layers,
+  CheckCircle2,
+  LayoutTemplate,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -35,6 +36,28 @@ function formatDate(dateStr: string) {
     month: "short",
     day: "numeric",
   });
+}
+
+function formatWeekday(dateStr: string) {
+  const d = new Date(dateStr + "T12:00:00");
+  return d.toLocaleDateString("en-US", { weekday: "short" });
+}
+
+function formatDayNum(dateStr: string) {
+  const d = new Date(dateStr + "T12:00:00");
+  return d.getDate();
+}
+
+function formatMonthRange(start: string, end: string) {
+  const s = new Date(start + "T12:00:00");
+  const e = new Date(end + "T12:00:00");
+  const sMonth = s.toLocaleDateString("en-US", { month: "long" });
+  const eMonth = e.toLocaleDateString("en-US", { month: "long" });
+  const year = s.getFullYear();
+  if (sMonth === eMonth) {
+    return `${sMonth} ${s.getDate()} – ${e.getDate()}, ${year}`;
+  }
+  return `${sMonth} ${s.getDate()} – ${eMonth} ${e.getDate()}, ${year}`;
 }
 
 export default async function ScheduleManagerPage({
@@ -109,6 +132,12 @@ export default async function ScheduleManagerPage({
       }
     }
   }
+
+  // Compute metrics
+  const totalSlots = Array.from(slotCountMap.values()).reduce((a, b) => a + b, 0);
+  const publishedDays = new Set(schedules.map((s) => s.date)).size;
+  const coveredBays = new Set(schedules.map((s) => s.bay_id)).size;
+  const templatesUsed = new Set(schedules.filter((s) => s.template_id).map((s) => s.template_id)).size;
 
   // Previous / next week navigation
   const prevDate = new Date(startDate);
@@ -212,65 +241,117 @@ export default async function ScheduleManagerPage({
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Schedule</h1>
-          <p className="mt-2 text-muted-foreground">
-            Apply templates to facilities and manage daily schedules.
-          </p>
-        </div>
+    <div className="space-y-6">
+      {/* Page header */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-800">Schedule</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Apply templates to facilities and manage daily schedules.
+        </p>
       </div>
 
+      {/* Alerts */}
       {params.error && (
-        <div className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+        <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100">
+            <span className="text-red-500">!</span>
+          </div>
           {params.error}
         </div>
       )}
       {params.saved && (
-        <div className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
+        <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
           Schedule updated successfully.
         </div>
       )}
 
-      {/* Apply template form */}
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="text-base">Apply Template</CardTitle>
-          <CardDescription>
+      {/* Metric cards */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+              <Layers className="h-5 w-5 text-blue-500" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Total Slots</p>
+              <p className="text-xl font-bold text-gray-800">{totalSlots}</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-50">
+              <CalendarDays className="h-5 w-5 text-green-500" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Published Days</p>
+              <p className="text-xl font-bold text-gray-800">{publishedDays}</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50">
+              <CheckCircle2 className="h-5 w-5 text-purple-500" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Facilities Covered</p>
+              <p className="text-xl font-bold text-gray-800">
+                {coveredBays}/{bays.length}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50">
+              <LayoutTemplate className="h-5 w-5 text-amber-500" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Templates Used</p>
+              <p className="text-xl font-bold text-gray-800">{templatesUsed}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Apply template card */}
+      <div className="rounded-2xl border border-gray-200 bg-white">
+        <div className="border-b border-gray-200 px-6 py-4">
+          <h2 className="font-semibold text-gray-800">Apply Template</h2>
+          <p className="mt-0.5 text-sm text-gray-500">
             Apply a schedule template to one or more facilities for a date range.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+          </p>
+        </div>
+        <div className="p-6">
           {templates.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-gray-500">
               No templates yet.{" "}
-              <a href="/admin/templates" className="text-primary hover:underline">
+              <a href="/admin/templates" className="font-medium text-blue-600 hover:underline">
                 Create one first.
               </a>
             </p>
           ) : bays.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-gray-500">
               No active facilities.{" "}
-              <a href="/admin/bays" className="text-primary hover:underline">
+              <a href="/admin/bays" className="font-medium text-blue-600 hover:underline">
                 Add facilities first.
               </a>
             </p>
           ) : (
             <form action={applyTemplate} className="space-y-4">
-              <input
-                type="hidden"
-                name="return_date"
-                value={selectedDate}
-              />
+              <input type="hidden" name="return_date" value={selectedDate} />
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="space-y-2">
-                  <Label htmlFor="template_id">Template</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="template_id" className="text-sm text-gray-700">
+                    Template
+                  </Label>
                   <select
                     id="template_id"
                     name="template_id"
                     required
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="flex h-10 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300"
                   >
                     <option value="">Select template...</option>
                     {templates.map((t) => (
@@ -280,39 +361,45 @@ export default async function ScheduleManagerPage({
                     ))}
                   </select>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="start_date">Start Date</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="start_date" className="text-sm text-gray-700">
+                    Start Date
+                  </Label>
                   <Input
                     id="start_date"
                     name="start_date"
                     type="date"
                     defaultValue={today}
                     required
+                    className="h-10 rounded-lg border-gray-200"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="end_date">End Date</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="end_date" className="text-sm text-gray-700">
+                    End Date
+                  </Label>
                   <Input
                     id="end_date"
                     name="end_date"
                     type="date"
                     defaultValue={weekDates[6]}
                     required
+                    className="h-10 rounded-lg border-gray-200"
                   />
                 </div>
                 <div className="flex items-end">
-                  <SubmitButton pendingText="Applying..." className="w-full">
+                  <SubmitButton pendingText="Applying..." className="h-10 w-full rounded-lg">
                     Apply
                   </SubmitButton>
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label>Facilities</Label>
-                <div className="flex flex-wrap gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-sm text-gray-700">Facilities</Label>
+                <div className="flex flex-wrap gap-2">
                   {bays.map((bay) => (
                     <label
                       key={bay.id}
-                      className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-accent cursor-pointer"
+                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-100"
                     >
                       <input
                         type="checkbox"
@@ -328,99 +415,108 @@ export default async function ScheduleManagerPage({
               </div>
             </form>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Week navigation */}
-      <div className="mt-8 flex items-center justify-between">
+      <div className="flex items-center justify-between">
         <a href={`/admin/schedule?date=${prevDate.toISOString().split("T")[0]}`}>
-          <Button variant="outline" size="sm">
-            Previous Week
+          <Button variant="outline" size="sm" className="gap-1.5 rounded-lg border-gray-200">
+            <ChevronLeft className="h-4 w-4" />
+            Previous
           </Button>
         </a>
-        <h2 className="text-sm font-medium">
-          {formatDate(weekDates[0])} – {formatDate(weekDates[6])}
+        <h2 className="text-sm font-semibold text-gray-800">
+          {formatMonthRange(weekDates[0], weekDates[6])}
         </h2>
         <a href={`/admin/schedule?date=${nextDate.toISOString().split("T")[0]}`}>
-          <Button variant="outline" size="sm">
-            Next Week
+          <Button variant="outline" size="sm" className="gap-1.5 rounded-lg border-gray-200">
+            Next
+            <ChevronRight className="h-4 w-4" />
           </Button>
         </a>
       </div>
 
-      {/* Weekly schedule grid */}
+      {/* Weekly schedule card grid */}
       {bays.length === 0 ? (
-        <div className="mt-4 rounded-lg border border-dashed p-12 text-center text-muted-foreground">
-          No active facilities. Add facilities first to manage schedules.
+        <div className="rounded-2xl border-2 border-dashed border-gray-200 bg-white p-12 text-center">
+          <CalendarDays className="mx-auto h-10 w-10 text-gray-300" />
+          <p className="mt-3 text-sm font-medium text-gray-500">No active facilities</p>
+          <p className="mt-1 text-sm text-gray-400">
+            Add facilities first to manage schedules.
+          </p>
         </div>
       ) : (
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr>
-                <th className="border p-2 text-left text-sm font-medium text-muted-foreground">
-                  Facility
-                </th>
-                {weekDates.map((date) => (
-                  <th
-                    key={date}
-                    className={`border p-0 text-center text-sm font-medium ${
-                      date === today
-                        ? "bg-primary/5 text-primary"
-                        : "text-muted-foreground"
-                    }`}
-                  >
-                    <a
-                      href={`/admin/schedule/day?date=${date}`}
-                      className="block p-2 hover:bg-accent/50 transition-colors"
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          {weekDates.map((date) => {
+            const isToday = date === today;
+            return (
+              <div
+                key={date}
+                className={`rounded-2xl border bg-white ${
+                  isToday
+                    ? "border-blue-300 ring-1 ring-blue-100"
+                    : "border-gray-200"
+                }`}
+              >
+                {/* Day header */}
+                <a
+                  href={`/admin/schedule/day?date=${date}`}
+                  className="block border-b border-gray-100 px-4 py-3 transition-colors hover:bg-gray-50"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className={`text-xs font-medium uppercase tracking-wide ${isToday ? "text-blue-600" : "text-gray-400"}`}>
+                      {formatWeekday(date)}
+                    </span>
+                    <span
+                      className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${
+                        isToday
+                          ? "bg-blue-600 text-white"
+                          : "text-gray-800"
+                      }`}
                     >
-                      {formatDate(date)}
-                    </a>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {bays.map((bay) => (
-                <tr key={bay.id}>
-                  <td className="border p-2 text-sm font-medium">
-                    {bay.name}
-                  </td>
-                  {weekDates.map((date) => {
+                      {formatDayNum(date)}
+                    </span>
+                  </div>
+                </a>
+
+                {/* Bay slots for this day */}
+                <div className="divide-y divide-gray-100 px-3 py-2">
+                  {bays.map((bay) => {
                     const schedule = scheduleMap.get(`${bay.id}_${date}`);
+                    const slotCount = schedule
+                      ? slotCountMap.get(schedule.id) || 0
+                      : 0;
+                    const templateName = schedule
+                      ? (schedule as { schedule_templates: { name: string } | null }).schedule_templates?.name
+                      : null;
+
                     return (
-                      <td
-                        key={date}
-                        className={`border p-0 text-center ${
-                          date === today ? "bg-primary/5" : ""
-                        }`}
+                      <a
+                        key={bay.id}
+                        href={`/admin/schedule/day?date=${date}&bay=${bay.id}`}
+                        className="flex items-center justify-between py-2 transition-colors hover:bg-gray-50 rounded px-1 -mx-1"
                       >
-                        <a
-                          href={`/admin/schedule/day?date=${date}&bay=${bay.id}`}
-                          className="block p-2 hover:bg-accent/50 transition-colors"
-                        >
-                          {schedule ? (
-                            <div className="space-y-1">
-                              <Badge variant="default" className="text-xs">
-                                {(schedule as { schedule_templates: { name: string } | null }).schedule_templates?.name || "Custom"}
-                              </Badge>
-                              <p className="text-xs text-muted-foreground">
-                                {slotCountMap.get(schedule.id) || 0} slots
-                              </p>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">
-                              —
+                        <span className="truncate text-xs font-medium text-gray-700">
+                          {bay.name}
+                        </span>
+                        {schedule ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-gray-400">
+                              {slotCount}s
                             </span>
-                          )}
-                        </a>
-                      </td>
+                            <span className="inline-flex h-2 w-2 rounded-full bg-green-400" />
+                          </div>
+                        ) : (
+                          <span className="inline-flex h-2 w-2 rounded-full bg-gray-200" />
+                        )}
+                      </a>
                     );
                   })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

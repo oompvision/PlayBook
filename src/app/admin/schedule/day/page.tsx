@@ -8,6 +8,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toTimestamp, formatTimeInZone, getTodayInTimezone } from "@/lib/utils";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ArrowLeft,
+  Clock,
+  Layers,
+  CheckCircle2,
+  XCircle,
+  Ban,
+  Plus,
+  Trash2,
+} from "lucide-react";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -31,10 +43,19 @@ function formatDateHeading(dateStr: string) {
   });
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  available: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-  booked: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-  blocked: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
+function formatShortDate(dateStr: string) {
+  const d = new Date(dateStr + "T12:00:00");
+  return d.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+const STATUS_COLORS: Record<string, { dot: string; bg: string; text: string }> = {
+  available: { dot: "bg-green-400", bg: "bg-green-50 border-green-200", text: "text-green-700" },
+  booked: { dot: "bg-blue-400", bg: "bg-blue-50 border-blue-200", text: "text-blue-700" },
+  blocked: { dot: "bg-gray-400", bg: "bg-gray-100 border-gray-200", text: "text-gray-600" },
 };
 
 export default async function DayEditorPage({
@@ -87,6 +108,12 @@ export default async function DayEditorPage({
       scheduleByBay.set(s.bay_id, s);
     }
   }
+
+  // Compute day metrics
+  const allSlots = schedules?.flatMap((s) => s.bay_schedule_slots) || [];
+  const availableCount = allSlots.filter((s) => s.status === "available").length;
+  const bookedCount = allSlots.filter((s) => s.status === "booked").length;
+  const blockedCount = allSlots.filter((s) => s.status === "blocked").length;
 
   // If a specific bay is focused, scroll to it
   const focusedBayId = params.bay || null;
@@ -261,315 +288,360 @@ export default async function DayEditorPage({
   }
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <Link href={`/admin/schedule?date=${date}`}>
-          <Button variant="outline" size="sm">
-            &larr; Week View
-          </Button>
+    <div className="space-y-6">
+      {/* Breadcrumb + header */}
+      <div>
+        <Link
+          href={`/admin/schedule?date=${date}`}
+          className="inline-flex items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-gray-700"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Week View
         </Link>
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            {formatDateHeading(date)}
-          </h1>
-          <p className="mt-1 text-muted-foreground">
-            Edit schedules for each facility on this day.
-          </p>
-        </div>
+        <h1 className="mt-2 text-2xl font-bold text-gray-800">
+          {formatDateHeading(date)}
+        </h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Edit schedules for each facility on this day.
+        </p>
       </div>
 
+      {/* Alerts */}
       {params.error && (
-        <div className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+        <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <XCircle className="h-5 w-5 shrink-0 text-red-500" />
           {params.error}
         </div>
       )}
       {params.saved && (
-        <div className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
+        <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+          <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
           Changes saved.
         </div>
       )}
 
+      {/* Metric cards */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+              <Layers className="h-5 w-5 text-blue-500" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Total Slots</p>
+              <p className="text-xl font-bold text-gray-800">{allSlots.length}</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-50">
+              <CheckCircle2 className="h-5 w-5 text-green-500" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Available</p>
+              <p className="text-xl font-bold text-gray-800">{availableCount}</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50">
+              <Clock className="h-5 w-5 text-indigo-500" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Booked</p>
+              <p className="text-xl font-bold text-gray-800">{bookedCount}</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100">
+              <Ban className="h-5 w-5 text-gray-500" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Blocked</p>
+              <p className="text-xl font-bold text-gray-800">{blockedCount}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Day navigation */}
-      <div className="mt-6 flex items-center justify-between">
+      <div className="flex items-center justify-between">
         <a
           href={`/admin/schedule/day?date=${prevDate.toISOString().split("T")[0]}${focusedBayId ? `&bay=${focusedBayId}` : ""}`}
         >
-          <Button variant="outline" size="sm">
-            Previous Day
+          <Button variant="outline" size="sm" className="gap-1.5 rounded-lg border-gray-200">
+            <ChevronLeft className="h-4 w-4" />
+            {formatShortDate(prevDate.toISOString().split("T")[0])}
           </Button>
         </a>
-        <div className="flex items-center gap-2">
-          <form className="flex items-center gap-2">
-            <Input
-              name="date"
-              type="date"
-              defaultValue={date}
-              className="w-40"
-            />
-            {focusedBayId && (
-              <input type="hidden" name="bay" value={focusedBayId} />
-            )}
-            <Button type="submit" variant="outline" size="sm">
-              Go
-            </Button>
-          </form>
-        </div>
+        <form className="flex items-center gap-2">
+          <Input
+            name="date"
+            type="date"
+            defaultValue={date}
+            className="h-9 w-40 rounded-lg border-gray-200"
+          />
+          {focusedBayId && (
+            <input type="hidden" name="bay" value={focusedBayId} />
+          )}
+          <Button type="submit" variant="outline" size="sm" className="rounded-lg border-gray-200">
+            Go
+          </Button>
+        </form>
         <a
           href={`/admin/schedule/day?date=${nextDate.toISOString().split("T")[0]}${focusedBayId ? `&bay=${focusedBayId}` : ""}`}
         >
-          <Button variant="outline" size="sm">
-            Next Day
+          <Button variant="outline" size="sm" className="gap-1.5 rounded-lg border-gray-200">
+            {formatShortDate(nextDate.toISOString().split("T")[0])}
+            <ChevronRight className="h-4 w-4" />
           </Button>
         </a>
       </div>
 
       {/* Bay schedule cards */}
-      <div className="mt-6 space-y-6">
-        {bays.length === 0 && (
-          <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground">
-            No active facilities.
-          </div>
-        )}
+      {bays.length === 0 ? (
+        <div className="rounded-2xl border-2 border-dashed border-gray-200 bg-white p-12 text-center">
+          <Layers className="mx-auto h-10 w-10 text-gray-300" />
+          <p className="mt-3 text-sm font-medium text-gray-500">No active facilities</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {bays.map((bay) => {
+            const schedule = scheduleByBay.get(bay.id);
+            const slots = schedule?.bay_schedule_slots || [];
+            const sortedSlots = [...slots].sort((a, b) =>
+              a.start_time.localeCompare(b.start_time)
+            );
+            const isFocused = focusedBayId === bay.id;
+            const templateName = schedule
+              ? (schedule as { schedule_templates: { name: string } | null }).schedule_templates?.name
+              : null;
 
-        {bays.map((bay, index) => {
-          const schedule = scheduleByBay.get(bay.id);
-          const slots = schedule?.bay_schedule_slots || [];
-          const sortedSlots = [...slots].sort((a, b) =>
-            a.start_time.localeCompare(b.start_time)
-          );
-          const isFocused = focusedBayId === bay.id;
-          const isOpen = isFocused || (!focusedBayId && index === 0);
-
-          return (
-            <details
-              key={bay.id}
-              id={`bay-${bay.id}`}
-              open={isOpen || undefined}
-              className={`group rounded-lg border ${isFocused ? "ring-2 ring-primary" : ""}`}
-            >
-              <summary className="flex cursor-pointer list-none items-center justify-between px-6 py-4 [&::-webkit-details-marker]:hidden">
-                <div className="flex items-center gap-3">
-                  <svg
-                    className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="m9 18 6-6-6-6" />
-                  </svg>
+            return (
+              <div
+                key={bay.id}
+                id={`bay-${bay.id}`}
+                className={`rounded-2xl border bg-white ${
+                  isFocused
+                    ? "border-blue-300 ring-2 ring-blue-100"
+                    : "border-gray-200"
+                }`}
+              >
+                {/* Bay header */}
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-6 py-4">
                   <div>
-                    <p className="font-semibold leading-none tracking-tight">
-                      {bay.name}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
+                    <h3 className="font-semibold text-gray-800">{bay.name}</h3>
+                    <p className="mt-0.5 text-sm text-gray-500">
                       {schedule
-                        ? `${sortedSlots.length} slots · Template: ${(schedule as { schedule_templates: { name: string } | null }).schedule_templates?.name || "Custom"}`
+                        ? `${sortedSlots.length} slots${templateName ? ` · Template: ${templateName}` : " · Custom"}`
                         : "No schedule set for this day"}
                     </p>
                   </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {templates.length > 0 && (
+                      <form
+                        action={applyTemplateToDay}
+                        className="flex items-center gap-2"
+                      >
+                        <input type="hidden" name="bay_id" value={bay.id} />
+                        <input type="hidden" name="date" value={date} />
+                        <select
+                          name="template_id"
+                          required
+                          className="h-9 rounded-lg border border-gray-200 bg-white px-2 text-sm text-gray-700 focus:border-gray-300 focus:outline-none focus:ring-1 focus:ring-gray-300"
+                        >
+                          <option value="">Template...</option>
+                          {templates.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </select>
+                        <Button type="submit" variant="outline" size="sm" className="rounded-lg border-gray-200">
+                          Apply
+                        </Button>
+                      </form>
+                    )}
+                    {schedule && (
+                      <form action={clearDaySchedule}>
+                        <input type="hidden" name="schedule_id" value={schedule.id} />
+                        <input type="hidden" name="bay_id" value={bay.id} />
+                        <input type="hidden" name="date" value={date} />
+                        <Button
+                          type="submit"
+                          variant="outline"
+                          size="sm"
+                          className="rounded-lg border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                        >
+                          Clear All
+                        </Button>
+                      </form>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {templates.length > 0 && (
+
+                {/* Slot list */}
+                <div className="p-4">
+                  {sortedSlots.length === 0 ? (
+                    <div className="rounded-xl border-2 border-dashed border-gray-200 py-8 text-center">
+                      <Clock className="mx-auto h-8 w-8 text-gray-300" />
+                      <p className="mt-2 text-sm text-gray-500">
+                        No slots. Apply a template or add slots manually.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="overflow-hidden rounded-xl border border-gray-200">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-gray-200 bg-gray-50">
+                            <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                              Time
+                            </th>
+                            <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                              Price
+                            </th>
+                            <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                              Status
+                            </th>
+                            <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {sortedSlots.map((slot) => {
+                            const colors = STATUS_COLORS[slot.status] || STATUS_COLORS.available;
+                            return (
+                              <tr key={slot.id} className="transition-colors hover:bg-gray-50">
+                                <td className="px-4 py-3">
+                                  <span className="font-mono text-sm text-gray-800">
+                                    {formatTimeInZone(slot.start_time, org.timezone)} –{" "}
+                                    {formatTimeInZone(slot.end_time, org.timezone)}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="text-sm text-gray-700">
+                                    ${(slot.price_cents / 100).toFixed(2)}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${colors.bg} ${colors.text}`}>
+                                    <span className={`h-1.5 w-1.5 rounded-full ${colors.dot}`} />
+                                    {slot.status}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <form
+                                      action={updateSlot}
+                                      className="flex items-center gap-1.5"
+                                    >
+                                      <input type="hidden" name="slot_id" value={slot.id} />
+                                      <input type="hidden" name="bay_id" value={bay.id} />
+                                      <input type="hidden" name="date" value={date} />
+                                      <Input
+                                        name="price"
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        defaultValue={(slot.price_cents / 100).toFixed(2)}
+                                        className="h-8 w-20 rounded-lg border-gray-200 text-xs"
+                                      />
+                                      <select
+                                        name="status"
+                                        defaultValue={slot.status}
+                                        className="h-8 rounded-lg border border-gray-200 bg-white px-1.5 text-xs text-gray-700"
+                                      >
+                                        <option value="available">available</option>
+                                        <option value="blocked">blocked</option>
+                                      </select>
+                                      <Button
+                                        type="submit"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-8 rounded-lg border-gray-200 text-xs"
+                                      >
+                                        Save
+                                      </Button>
+                                    </form>
+                                    {slot.status !== "booked" && (
+                                      <form action={removeSlot}>
+                                        <input type="hidden" name="slot_id" value={slot.id} />
+                                        <input type="hidden" name="bay_id" value={bay.id} />
+                                        <input type="hidden" name="date" value={date} />
+                                        <Button
+                                          type="submit"
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-8 rounded-lg border-red-200 text-red-500 hover:bg-red-50 hover:text-red-600"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </form>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Add slot form */}
+                  <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4">
                     <form
-                      action={applyTemplateToDay}
-                      className="flex items-center gap-2"
+                      action={addSlot}
+                      className="flex flex-wrap items-end gap-3"
                     >
                       <input type="hidden" name="bay_id" value={bay.id} />
                       <input type="hidden" name="date" value={date} />
-                      <select
-                        name="template_id"
-                        required
-                        className="h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      >
-                        <option value="">Template...</option>
-                        {templates.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
-                      <Button type="submit" variant="outline" size="sm">
-                        Apply
-                      </Button>
-                    </form>
-                  )}
-                  {schedule && (
-                    <form action={clearDaySchedule}>
-                      <input
-                        type="hidden"
-                        name="schedule_id"
-                        value={schedule.id}
-                      />
-                      <input type="hidden" name="bay_id" value={bay.id} />
-                      <input type="hidden" name="date" value={date} />
-                      <Button
-                        type="submit"
-                        variant="outline"
-                        size="sm"
-                        className="text-destructive hover:bg-destructive/10"
-                      >
-                        Clear All
-                      </Button>
-                    </form>
-                  )}
-                </div>
-              </summary>
-              <div className="border-t px-6 py-4">
-                {/* Slot list */}
-                {sortedSlots.length === 0 ? (
-                  <p className="py-4 text-center text-sm text-muted-foreground">
-                    No slots. Apply a template or add slots manually below.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {sortedSlots.map((slot) => (
-                      <div
-                        key={slot.id}
-                        className="flex items-center justify-between rounded-md border px-3 py-2"
-                      >
-                        <div className="flex items-center gap-4">
-                          <span className="font-mono text-sm">
-                            {formatTimeInZone(slot.start_time, org.timezone)} –{" "}
-                            {formatTimeInZone(slot.end_time, org.timezone)}
-                          </span>
-                          <span className="text-sm text-muted-foreground">
-                            ${(slot.price_cents / 100).toFixed(2)}
-                          </span>
-                          <Badge
-                            variant="secondary"
-                            className={`text-xs ${STATUS_STYLES[slot.status] || ""}`}
-                          >
-                            {slot.status}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <form
-                            action={updateSlot}
-                            className="flex items-center gap-2"
-                          >
-                            <input
-                              type="hidden"
-                              name="slot_id"
-                              value={slot.id}
-                            />
-                            <input
-                              type="hidden"
-                              name="bay_id"
-                              value={bay.id}
-                            />
-                            <input
-                              type="hidden"
-                              name="date"
-                              value={date}
-                            />
-                            <Input
-                              name="price"
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              defaultValue={(slot.price_cents / 100).toFixed(2)}
-                              className="h-7 w-20 text-xs"
-                            />
-                            <select
-                              name="status"
-                              defaultValue={slot.status}
-                              className="h-7 rounded-md border border-input bg-transparent px-1 text-xs"
-                            >
-                              <option value="available">available</option>
-                              <option value="blocked">blocked</option>
-                            </select>
-                            <Button
-                              type="submit"
-                              variant="outline"
-                              size="sm"
-                              className="h-7 text-xs"
-                            >
-                              Save
-                            </Button>
-                          </form>
-                          {slot.status !== "booked" && (
-                            <form action={removeSlot}>
-                              <input
-                                type="hidden"
-                                name="slot_id"
-                                value={slot.id}
-                              />
-                              <input
-                                type="hidden"
-                                name="bay_id"
-                                value={bay.id}
-                              />
-                              <input
-                                type="hidden"
-                                name="date"
-                                value={date}
-                              />
-                              <Button
-                                type="submit"
-                                variant="outline"
-                                size="sm"
-                                className="h-7 text-xs text-destructive hover:bg-destructive/10"
-                              >
-                                Remove
-                              </Button>
-                            </form>
-                          )}
-                        </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-gray-600">Start</Label>
+                        <Input
+                          name="start_time"
+                          type="time"
+                          required
+                          className="h-9 w-32 rounded-lg border-gray-200"
+                        />
                       </div>
-                    ))}
+                      <div className="space-y-1">
+                        <Label className="text-xs text-gray-600">End</Label>
+                        <Input
+                          name="end_time"
+                          type="time"
+                          required
+                          className="h-9 w-32 rounded-lg border-gray-200"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-gray-600">Price ($)</Label>
+                        <Input
+                          name="price"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          defaultValue="0"
+                          className="h-9 w-24 rounded-lg border-gray-200"
+                        />
+                      </div>
+                      <Button type="submit" size="sm" className="h-9 gap-1.5 rounded-lg">
+                        <Plus className="h-4 w-4" />
+                        Add Slot
+                      </Button>
+                    </form>
                   </div>
-                )}
-
-                {/* Add single slot */}
-                <form
-                  action={addSlot}
-                  className="mt-4 flex items-end gap-3 border-t pt-4"
-                >
-                  <input type="hidden" name="bay_id" value={bay.id} />
-                  <input type="hidden" name="date" value={date} />
-                  <div className="space-y-1">
-                    <Label className="text-xs">Start</Label>
-                    <Input
-                      name="start_time"
-                      type="time"
-                      required
-                      className="w-32"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">End</Label>
-                    <Input
-                      name="end_time"
-                      type="time"
-                      required
-                      className="w-32"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Price ($)</Label>
-                    <Input
-                      name="price"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      defaultValue="0"
-                      className="w-24"
-                    />
-                  </div>
-                  <Button type="submit" size="sm">
-                    Add Slot
-                  </Button>
-                </form>
+                </div>
               </div>
-            </details>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
