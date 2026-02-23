@@ -50,7 +50,7 @@ export default async function FacilityHomePage() {
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, logo_url, cover_photo_url, timezone")
+    .select("id, name, slug, logo_url, cover_photo_url, timezone, min_booking_lead_minutes")
     .eq("slug", slug)
     .single();
 
@@ -58,6 +58,7 @@ export default async function FacilityHomePage() {
   const coverPhotoUrl = org?.cover_photo_url ?? null;
   const logoUrl = org?.logo_url ?? null;
   const timezone = org?.timezone ?? "America/New_York";
+  const minBookingLeadMinutes = org?.min_booking_lead_minutes ?? 15;
 
   // Fetch active bays for the desktop availability widget
   const { data: bays } = org
@@ -146,6 +147,7 @@ export default async function FacilityHomePage() {
                 timezone={timezone}
                 bays={bays}
                 todayStr={todayStr}
+                minBookingLeadMinutes={minBookingLeadMinutes}
               />
             ) : (
               <div className="rounded-xl border bg-card p-12 text-center">

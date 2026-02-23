@@ -38,6 +38,7 @@ type AvailabilityWidgetProps = {
   timezone: string;
   bays: Bay[];
   todayStr: string;
+  minBookingLeadMinutes: number;
 };
 
 function formatTime(timestamp: string, timezone: string) {
@@ -125,6 +126,7 @@ export function AvailabilityWidget({
   timezone,
   bays,
   todayStr,
+  minBookingLeadMinutes,
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(todayStr);
@@ -157,13 +159,20 @@ export function AvailabilityWidget({
       const dayStart = toTimestamp(date, "00:00:00", timezone);
       const dayEnd = toTimestamp(nextDayStr, "00:00:00", timezone);
 
+      // For today, exclude slots starting within the lead time window
+      let effectiveStart = dayStart;
+      if (date === todayStr && minBookingLeadMinutes > 0) {
+        const cutoff = new Date(Date.now() + minBookingLeadMinutes * 60_000);
+        effectiveStart = cutoff.toISOString();
+      }
+
       // Fetch all available slots for the date across all bays
       const { data: allSlots } = await supabase
         .from("bay_schedule_slots")
         .select("id, start_time, end_time, price_cents, status, bay_schedule_id")
         .eq("org_id", orgId)
         .eq("status", "available")
-        .gte("start_time", dayStart)
+        .gte("start_time", effectiveStart)
         .lt("start_time", dayEnd)
         .order("start_time");
 
@@ -209,7 +218,7 @@ export function AvailabilityWidget({
       setSlots(baySlots);
       setLoading(false);
     },
-    [orgId, timezone]
+    [orgId, timezone, todayStr, minBookingLeadMinutes]
   );
 
   useEffect(() => {

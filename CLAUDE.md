@@ -105,7 +105,7 @@ src/
 
 | Table | Purpose | Key Columns |
 |-------|---------|------------|
-| `organizations` | Tenant/facility | slug (unique), timezone, name, address, phone |
+| `organizations` | Tenant/facility | slug (unique), timezone, name, address, phone, min_booking_lead_minutes (default 15) |
 | `profiles` | User profiles (linked to auth.users) | org_id, email, role, full_name |
 | `bays` | Bookable resources per org | org_id, name, resource_type, hourly_rate_cents, sort_order, is_active |
 | `schedule_templates` | Reusable schedule patterns | org_id, name |
