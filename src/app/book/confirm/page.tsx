@@ -42,12 +42,12 @@ export default async function BookingConfirmPage({
 
   // Ensure customer is linked to this org
   const auth = await ensureCustomerOrg(org.id);
-  if (!auth) redirect(`/auth/login?redirect=/book`);
+  if (!auth) redirect(`/auth/login?redirect=/`);
 
   const params = await searchParams;
   const date = (params.date as string) || "";
 
-  if (!date) redirect("/book");
+  if (!date) redirect("/");
 
   // Parse selected bays and slots from URL
   const bayIds: string[] = Array.isArray(params.bay)
@@ -56,7 +56,7 @@ export default async function BookingConfirmPage({
       ? [params.bay]
       : [];
 
-  if (bayIds.length === 0) redirect(`/book/${date}`);
+  if (bayIds.length === 0) redirect("/");
 
   const supabase = await createClient();
 
@@ -86,7 +86,7 @@ export default async function BookingConfirmPage({
     allSlotIds.push(...ids);
   }
 
-  if (allSlotIds.length === 0) redirect(`/book/${date}`);
+  if (allSlotIds.length === 0) redirect("/");
 
   const { data: slots } = await supabase
     .from("bay_schedule_slots")
@@ -125,7 +125,7 @@ export default async function BookingConfirmPage({
     const org = await getOrg();
     if (!org) return;
     const auth = await ensureCustomerOrg(org.id);
-    if (!auth) redirect("/auth/login?redirect=/book");
+    if (!auth) redirect("/auth/login?redirect=/");
 
     const supabase = await createClient();
     const notes = (formData.get("notes") as string) || null;
@@ -148,7 +148,7 @@ export default async function BookingConfirmPage({
     const unavailableSlots = freshSlots?.filter((s) => s.status !== "available") || [];
     if (unavailableSlots.length > 0) {
       redirect(
-        `/book/${date}?error=${encodeURIComponent("One or more selected slots are no longer available. Please choose different time slots.")}`
+        `/?error=${encodeURIComponent("One or more selected slots are no longer available. Please choose different time slots.")}`
       );
     }
 
@@ -169,7 +169,7 @@ export default async function BookingConfirmPage({
 
       if (error) {
         redirect(
-          `/book/${date}?error=${encodeURIComponent(error.message)}`
+          `/?error=${encodeURIComponent(error.message)}`
         );
       }
 
@@ -192,7 +192,7 @@ export default async function BookingConfirmPage({
       }
     }
 
-    revalidatePath("/book");
+    revalidatePath("/");
     revalidatePath("/my-bookings");
 
     // Redirect to My Bookings so the customer sees their reservation
@@ -230,7 +230,7 @@ export default async function BookingConfirmPage({
               <Link href="/my-bookings">
                 <Button>View My Bookings</Button>
               </Link>
-              <Link href="/book">
+              <Link href="/">
                 <Button variant="outline">Book Another</Button>
               </Link>
             </div>
@@ -251,7 +251,7 @@ export default async function BookingConfirmPage({
     <div className="min-h-screen p-8">
       <div className="mx-auto max-w-2xl">
         <div className="flex items-center gap-4">
-          <Link href={`/book/${date}`}>
+          <Link href="/">
             <Button variant="ghost" size="sm">
               &larr; Back
             </Button>

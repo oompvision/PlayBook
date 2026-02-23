@@ -32,8 +32,6 @@ src/
 │   │   ├── callback/route.ts   # OAuth code exchange
 │   │   └── signout/route.ts    # POST → sign out + redirect
 │   ├── book/
-│   │   ├── page.tsx            # Date picker → redirects to /book/[date]
-│   │   ├── [date]/page.tsx     # Slot selection grid for a date
 │   │   └── confirm/page.tsx    # Booking confirmation (processes slot_ids)
 │   ├── my-bookings/page.tsx    # Customer's booking history
 │   ├── admin/                  # Facility admin dashboard (requires facility context)
@@ -163,6 +161,18 @@ src/
 - `create_booking` accepts EITHER `slot_ids` (from get_available_slots) OR human-friendly `date + bay_name + start_time`
 - Fallback path: looks up bay by name → gets bay_schedule → finds available slot matching formatted start_time
 - This handles the case where tool call context (slot_ids) is lost between stateless API requests
+
+## Customer Booking Flow
+
+**IMPORTANT**: All availability browsing and slot selection starts on the **facility home page** (`/`).
+
+- **Desktop**: `AvailabilityWidget` component (`src/components/availability-widget.tsx`) — embedded in the home page, shows bay sidebar + date picker + slot list with inline selection
+- **Mobile**: `ChatWidget` — AI booking assistant embedded in the home page
+- **Confirmation**: `/book/confirm` — the ONLY route under `/book/`. Receives selected slot IDs via query params, shows summary, and processes the booking.
+- **There is NO `/book` or `/book/[date]` route.** Those were removed. Do not create or link to them.
+- When a user selects slots on the home page, the `AvailabilityWidget` navigates to `/book/confirm?date=...&bay=...&slots_BAYID=...`
+- All "back" links from `/book/confirm` go to `/` (the home page)
+- The booking CTA bar ("N slots selected — Continue to Book") uses a `createPortal` fixed overlay at the bottom of the viewport so it's always visible regardless of scroll position
 
 ## Conventions
 

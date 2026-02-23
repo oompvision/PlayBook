@@ -227,9 +227,9 @@ export default async function FacilityHomePage() {
               </p>
             )}
             <div className="flex gap-4">
-              <Link href="/book">
+              <a href="#availability">
                 <Button size="lg">View Availability</Button>
-              </Link>
+              </a>
               {auth ? (
                 <Link href="/my-bookings">
                   <Button variant="outline" size="lg">
@@ -255,7 +255,7 @@ export default async function FacilityHomePage() {
           </div>
 
           {/* Inline availability assistant */}
-          <div className="mt-8 w-full max-w-lg">
+          <div id="availability" className="mt-8 w-full max-w-lg">
             <ChatWidget facilitySlug={slug} orgName={orgName} inline />
           </div>
         </div>
