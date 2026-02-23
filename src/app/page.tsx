@@ -1,12 +1,15 @@
 import { getFacilitySlug } from "@/lib/facility";
 import { getAuthUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getTodayInTimezone } from "@/lib/utils";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ChatWidget } from "@/components/chat/chat-widget";
 import { OrgHeader } from "@/components/org-header";
+import { AuthModal } from "@/components/auth-modal";
+import { AvailabilityWidget } from "@/components/availability-widget";
 
 export default async function FacilityHomePage() {
   const slug = await getFacilitySlug();
@@ -47,115 +50,214 @@ export default async function FacilityHomePage() {
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, logo_url, cover_photo_url")
+    .select("id, name, slug, logo_url, cover_photo_url, timezone")
     .eq("slug", slug)
     .single();
 
   const orgName = org?.name ?? slug.replace(/-/g, " ");
-
   const coverPhotoUrl = org?.cover_photo_url ?? null;
   const logoUrl = org?.logo_url ?? null;
+  const timezone = org?.timezone ?? "America/New_York";
 
-  // Facility landing page
+  // Fetch active bays for the desktop availability widget
+  const { data: bays } = org
+    ? await supabase
+        .from("bays")
+        .select("id, name, resource_type")
+        .eq("org_id", org.id)
+        .eq("is_active", true)
+        .order("sort_order")
+        .order("created_at")
+    : { data: null };
+
+  const todayStr = getTodayInTimezone(timezone);
+
   return (
     <div className="flex min-h-screen flex-col">
-      {/* Cover photo hero */}
-      {coverPhotoUrl && (
-        <div className="relative h-64 w-full sm:h-80">
-          <Image
-            src={coverPhotoUrl}
-            alt={`${orgName} cover`}
-            fill
-            className="object-cover"
-            priority
-            unoptimized
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/60" />
-          <div className="absolute bottom-6 left-6 flex items-center gap-3">
-            {logoUrl ? (
-              <Image
-                src={logoUrl}
-                alt={orgName}
-                width={56}
-                height={56}
-                className="rounded-full object-cover h-14 w-14 border-2 border-white shadow-lg"
-                unoptimized
+      {/* =========== DESKTOP LAYOUT =========== */}
+      <div className="hidden lg:flex lg:min-h-screen lg:flex-col">
+        {/* Top Navigation Bar */}
+        <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
+            <OrgHeader name={orgName} logoUrl={logoUrl} />
+            <div className="flex items-center gap-3">
+              {auth ? (
+                <>
+                  <Link href="/my-bookings">
+                    <Button variant="ghost" size="sm">
+                      My Bookings
+                    </Button>
+                  </Link>
+                  <span className="text-sm text-muted-foreground">
+                    {auth.profile.email}
+                  </span>
+                  <SignOutButton variant="outline" size="sm" />
+                </>
+              ) : (
+                <AuthModal />
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* Hero Section */}
+        {coverPhotoUrl ? (
+          <div className="relative h-48 w-full">
+            <Image
+              src={coverPhotoUrl}
+              alt={`${orgName} cover`}
+              fill
+              className="object-cover"
+              priority
+              unoptimized
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/10 to-black/40" />
+            <div className="absolute bottom-4 left-0 right-0">
+              <div className="mx-auto max-w-6xl px-6">
+                <h1 className="text-2xl font-bold tracking-tight text-white drop-shadow-lg capitalize">
+                  {orgName}
+                </h1>
+                <p className="mt-1 text-sm text-white/80">
+                  Browse availability and book your session
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="border-b bg-muted/30 py-8">
+            <div className="mx-auto max-w-6xl px-6">
+              <h1 className="text-2xl font-bold tracking-tight capitalize">
+                {orgName}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Browse availability and book your session
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Availability Widget */}
+        <div className="flex-1 py-6">
+          <div className="mx-auto max-w-6xl px-6">
+            {org && bays && bays.length > 0 ? (
+              <AvailabilityWidget
+                orgId={org.id}
+                orgName={orgName}
+                timezone={timezone}
+                bays={bays}
+                todayStr={todayStr}
               />
             ) : (
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-primary text-xl font-bold shadow-lg">
-                {orgName.charAt(0).toUpperCase()}
+              <div className="rounded-xl border bg-card p-12 text-center">
+                <p className="text-muted-foreground">
+                  No facilities are currently available for booking.
+                </p>
               </div>
             )}
-            <h1 className="text-3xl font-bold tracking-tight text-white drop-shadow-lg capitalize sm:text-4xl">
-              {orgName}
-            </h1>
           </div>
         </div>
-      )}
+      </div>
 
-      <div className="flex flex-1 flex-col items-center p-8">
-        {/* Show org header when no cover photo */}
-        {!coverPhotoUrl && (
-          <div className="flex flex-1 flex-col items-center justify-center">
-            <div className="flex flex-col items-center gap-3">
+      {/* =========== MOBILE LAYOUT (unchanged) =========== */}
+      <div className="flex min-h-screen flex-col lg:hidden">
+        {/* Cover photo hero */}
+        {coverPhotoUrl && (
+          <div className="relative h-64 w-full sm:h-80">
+            <Image
+              src={coverPhotoUrl}
+              alt={`${orgName} cover`}
+              fill
+              className="object-cover"
+              priority
+              unoptimized
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/60" />
+            <div className="absolute bottom-6 left-6 flex items-center gap-3">
               {logoUrl ? (
                 <Image
                   src={logoUrl}
                   alt={orgName}
-                  width={72}
-                  height={72}
-                  className="rounded-full object-cover h-18 w-18"
+                  width={56}
+                  height={56}
+                  className="rounded-full object-cover h-14 w-14 border-2 border-white shadow-lg"
                   unoptimized
                 />
-              ) : null}
-              <h1 className="text-4xl font-bold tracking-tight capitalize">
+              ) : (
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-primary text-xl font-bold shadow-lg">
+                  {orgName.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <h1 className="text-3xl font-bold tracking-tight text-white drop-shadow-lg capitalize sm:text-4xl">
                 {orgName}
               </h1>
             </div>
-            <p className="mt-4 text-lg text-muted-foreground">
-              Browse availability and book your session
-            </p>
           </div>
         )}
 
-        {/* CTA section */}
-        <div className={`flex flex-col items-center ${coverPhotoUrl ? "mt-8" : ""}`}>
-          {coverPhotoUrl && (
-            <p className="mb-6 text-lg text-muted-foreground">
-              Browse availability and book your session
-            </p>
-          )}
-          <div className="flex gap-4">
-            <Link href="/book">
-              <Button size="lg">View Availability</Button>
-            </Link>
-            {auth ? (
-              <Link href="/my-bookings">
-                <Button variant="outline" size="lg">
-                  My Bookings
-                </Button>
-              </Link>
-            ) : (
-              <Link href="/auth/login">
-                <Button variant="outline" size="lg">
-                  Sign In
-                </Button>
-              </Link>
-            )}
-          </div>
-          {auth && (
-            <div className="mt-4 flex flex-col items-center gap-1">
-              <p className="text-sm text-muted-foreground">
-                Signed in as {auth.profile.email}
+        <div className="flex flex-1 flex-col items-center p-8">
+          {/* Show org header when no cover photo */}
+          {!coverPhotoUrl && (
+            <div className="flex flex-1 flex-col items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                {logoUrl ? (
+                  <Image
+                    src={logoUrl}
+                    alt={orgName}
+                    width={72}
+                    height={72}
+                    className="rounded-full object-cover h-18 w-18"
+                    unoptimized
+                  />
+                ) : null}
+                <h1 className="text-4xl font-bold tracking-tight capitalize">
+                  {orgName}
+                </h1>
+              </div>
+              <p className="mt-4 text-lg text-muted-foreground">
+                Browse availability and book your session
               </p>
-              <SignOutButton variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" />
             </div>
           )}
-        </div>
 
-        {/* Inline availability assistant */}
-        <div className="mt-8 w-full max-w-lg">
-          <ChatWidget facilitySlug={slug} orgName={orgName} inline />
+          {/* CTA section */}
+          <div className={`flex flex-col items-center ${coverPhotoUrl ? "mt-8" : ""}`}>
+            {coverPhotoUrl && (
+              <p className="mb-6 text-lg text-muted-foreground">
+                Browse availability and book your session
+              </p>
+            )}
+            <div className="flex gap-4">
+              <Link href="/book">
+                <Button size="lg">View Availability</Button>
+              </Link>
+              {auth ? (
+                <Link href="/my-bookings">
+                  <Button variant="outline" size="lg">
+                    My Bookings
+                  </Button>
+                </Link>
+              ) : (
+                <Link href="/auth/login">
+                  <Button variant="outline" size="lg">
+                    Sign In
+                  </Button>
+                </Link>
+              )}
+            </div>
+            {auth && (
+              <div className="mt-4 flex flex-col items-center gap-1">
+                <p className="text-sm text-muted-foreground">
+                  Signed in as {auth.profile.email}
+                </p>
+                <SignOutButton variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" />
+              </div>
+            )}
+          </div>
+
+          {/* Inline availability assistant */}
+          <div className="mt-8 w-full max-w-lg">
+            <ChatWidget facilitySlug={slug} orgName={orgName} inline />
+          </div>
         </div>
       </div>
     </div>
