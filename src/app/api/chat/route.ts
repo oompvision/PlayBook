@@ -366,14 +366,20 @@ async function executeCreateBooking(
       ? [args.slot_ids]
       : [];
 
-  // Try to look up slots by ID first
+  // Try to look up slots by ID first, verifying they are still available
   let slots: { id: string; bay_schedule_id: string }[] | null = null;
   if (slotIds.length > 0) {
     const { data } = await supabase
       .from("bay_schedule_slots")
-      .select("id, bay_schedule_id")
+      .select("id, bay_schedule_id, status")
       .in("id", slotIds)
       .eq("org_id", org.id);
+
+    const unavailable = data?.filter((s) => s.status !== "available") || [];
+    if (unavailable.length > 0) {
+      return { error: "One or more of those time slots are no longer available. Please check availability again for updated options." };
+    }
+
     slots = data;
   }
 
