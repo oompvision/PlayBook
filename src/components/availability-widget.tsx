@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ type AvailabilityWidgetProps = {
   timezone: string;
   bays: Bay[];
   todayStr: string;
+  minBookingLeadMinutes: number;
 };
 
 function formatTime(timestamp: string, timezone: string) {
@@ -124,6 +126,7 @@ export function AvailabilityWidget({
   timezone,
   bays,
   todayStr,
+  minBookingLeadMinutes,
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(todayStr);
@@ -133,6 +136,11 @@ export function AvailabilityWidget({
   const [loading, setLoading] = useState(true);
   const [selectedSlotIds, setSelectedSlotIds] = useState<Set<string>>(new Set());
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const isToday = selectedDate === todayStr;
   const canGoBack = selectedDate > todayStr;
@@ -151,13 +159,20 @@ export function AvailabilityWidget({
       const dayStart = toTimestamp(date, "00:00:00", timezone);
       const dayEnd = toTimestamp(nextDayStr, "00:00:00", timezone);
 
+      // For today, exclude slots starting within the lead time window
+      let effectiveStart = dayStart;
+      if (date === todayStr && minBookingLeadMinutes > 0) {
+        const cutoff = new Date(Date.now() + minBookingLeadMinutes * 60_000);
+        effectiveStart = cutoff.toISOString();
+      }
+
       // Fetch all available slots for the date across all bays
       const { data: allSlots } = await supabase
         .from("bay_schedule_slots")
         .select("id, start_time, end_time, price_cents, status, bay_schedule_id")
         .eq("org_id", orgId)
         .eq("status", "available")
-        .gte("start_time", dayStart)
+        .gte("start_time", effectiveStart)
         .lt("start_time", dayEnd)
         .order("start_time");
 
@@ -203,7 +218,7 @@ export function AvailabilityWidget({
       setSlots(baySlots);
       setLoading(false);
     },
-    [orgId, timezone]
+    [orgId, timezone, todayStr, minBookingLeadMinutes]
   );
 
   useEffect(() => {
@@ -265,9 +280,7 @@ export function AvailabilityWidget({
         {/* Bay Sidebar */}
         <div className="w-56 shrink-0 border-r bg-muted/30">
           <div className="border-b px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Facilities
-            </p>
+            <div className="h-8" />
           </div>
           <nav className="p-2">
             {bays.map((bay) => {
@@ -360,12 +373,8 @@ export function AvailabilityWidget({
                   mode="single"
                   selected={new Date(selectedDate + "T12:00:00")}
                   onSelect={handleCalendarSelect}
-                  disabled={(date) => {
-                    const d = new Date(date);
-                    d.setHours(12, 0, 0, 0);
-                    const todayDate = new Date(todayStr + "T12:00:00");
-                    return d < todayDate;
-                  }}
+                  disabled={{ before: new Date(todayStr + "T12:00:00") }}
+                  startMonth={new Date(todayStr + "T12:00:00")}
                   initialFocus
                 />
               </PopoverContent>
@@ -460,28 +469,32 @@ export function AvailabilityWidget({
             )}
           </div>
 
-          {/* Booking Bar */}
-          {selectedSlotIds.size > 0 && (
-            <div className="border-t bg-muted/30 px-5 py-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium">
-                    {selectedSlotIds.size} slot
-                    {selectedSlotIds.size !== 1 ? "s" : ""} selected
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Total: ${(totalCents / 100).toFixed(2)}
-                  </p>
-                </div>
-                <Button onClick={handleContinue} className="gap-2">
-                  Continue to Book
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      {/* Fixed booking bar overlay — portalled to body so it's always visible */}
+      {selectedSlotIds.size > 0 &&
+        mounted &&
+        createPortal(
+          <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-background p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.1)]">
+            <div className="mx-auto flex max-w-6xl items-center justify-between px-6">
+              <div>
+                <p className="text-sm font-medium">
+                  {selectedSlotIds.size} slot
+                  {selectedSlotIds.size !== 1 ? "s" : ""} selected
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Total: ${(totalCents / 100).toFixed(2)}
+                </p>
+              </div>
+              <Button onClick={handleContinue} className="gap-2">
+                Continue to Book
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

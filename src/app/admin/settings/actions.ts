@@ -29,7 +29,6 @@ export async function updateOrgImage(
 
   revalidatePath("/admin/settings");
   revalidatePath("/");
-  revalidatePath("/book");
   revalidatePath("/my-bookings");
 
   return { success: true };

@@ -143,6 +143,7 @@ type OrgContext = {
   description: string | null;
   address: string | null;
   phone: string | null;
+  min_booking_lead_minutes: number;
 };
 
 async function executeFacilityInfo(org: OrgContext) {
@@ -228,13 +229,20 @@ async function executeAvailableSlots(
   const dayStart = toTimestamp(args.date, "00:00:00", org.timezone);
   const dayEnd = toTimestamp(nextDayStr, "00:00:00", org.timezone);
 
+  // For today, exclude slots starting within the lead time window
+  let effectiveStart = dayStart;
+  if (args.date === today && org.min_booking_lead_minutes > 0) {
+    const cutoff = new Date(Date.now() + org.min_booking_lead_minutes * 60_000);
+    effectiveStart = cutoff.toISOString();
+  }
+
   // Get all available slots for this date
   const { data: allSlots } = await supabase
     .from("bay_schedule_slots")
     .select("id, start_time, end_time, price_cents, status, bay_schedule_id")
     .eq("org_id", org.id)
     .eq("status", "available")
-    .gte("start_time", dayStart)
+    .gte("start_time", effectiveStart)
     .lt("start_time", dayEnd)
     .order("start_time");
 
@@ -584,7 +592,7 @@ export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, timezone, description, address, phone")
+    .select("id, name, slug, timezone, description, address, phone, min_booking_lead_minutes")
     .eq("slug", facilitySlug)
     .single();
 
