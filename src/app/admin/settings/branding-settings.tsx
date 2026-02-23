@@ -2,18 +2,9 @@
 
 import { useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
 import { updateOrgImage } from "./actions";
 import Image from "next/image";
-import { Upload, X, ImageIcon } from "lucide-react";
+import { Upload, X, ImageIcon, Palette } from "lucide-react";
 
 function ImageUploader({
   label,
@@ -41,13 +32,11 @@ function ImageUploader({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
     if (!file.type.startsWith("image/")) {
       setError("Please select an image file.");
       return;
     }
 
-    // Validate file size (5MB max)
     if (file.size > 5 * 1024 * 1024) {
       setError("Image must be under 5MB.");
       return;
@@ -100,13 +89,19 @@ function ImageUploader({
 
   return (
     <div className="space-y-2">
-      <Label>{label}</Label>
-      <p className="text-xs text-muted-foreground">{description}</p>
+      <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+        {label}
+      </label>
+      <p className="text-xs text-gray-400 dark:text-gray-500">{description}</p>
 
       <div
-        className={`relative overflow-hidden rounded-lg border-2 border-dashed transition-colors ${
+        className={`relative overflow-hidden rounded-xl border-2 border-dashed transition-colors ${
           aspect === "square" ? "h-32 w-32" : "h-40 w-full"
-        } ${!preview ? "hover:border-primary/50 cursor-pointer" : ""}`}
+        } ${
+          !preview
+            ? "border-gray-300 hover:border-blue-400 cursor-pointer dark:border-gray-700 dark:hover:border-blue-600"
+            : "border-gray-200 dark:border-gray-700"
+        }`}
         onClick={() => !preview && inputRef.current?.click()}
       >
         {preview ? (
@@ -115,40 +110,38 @@ function ImageUploader({
               src={preview}
               alt={label}
               fill
-              className={`${aspect === "square" ? "object-cover rounded-lg" : "object-cover"}`}
+              className={`${aspect === "square" ? "object-cover rounded-xl" : "object-cover"}`}
               unoptimized
             />
             <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/0 opacity-0 transition-all hover:bg-black/40 hover:opacity-100">
-              <Button
+              <button
                 type="button"
-                size="sm"
-                variant="secondary"
                 onClick={(e) => {
                   e.stopPropagation();
                   inputRef.current?.click();
                 }}
                 disabled={uploading}
+                className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
               >
-                <Upload className="mr-1 h-3 w-3" />
+                <Upload className="h-3 w-3" />
                 Replace
-              </Button>
-              <Button
+              </button>
+              <button
                 type="button"
-                size="sm"
-                variant="destructive"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleRemove();
                 }}
                 disabled={uploading}
+                className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-red-700"
               >
-                <X className="mr-1 h-3 w-3" />
+                <X className="h-3 w-3" />
                 Remove
-              </Button>
+              </button>
             </div>
           </>
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground">
+          <div className="flex h-full flex-col items-center justify-center gap-1 text-gray-400 dark:text-gray-500">
             <ImageIcon className="h-6 w-6" />
             <span className="text-xs">
               {uploading ? "Uploading..." : "Click to upload"}
@@ -171,7 +164,7 @@ function ImageUploader({
       />
 
       {error && (
-        <p className="text-xs text-destructive">{error}</p>
+        <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
       )}
     </div>
   );
@@ -187,14 +180,19 @@ export function BrandingSettings({
   coverPhotoUrl: string | null;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Branding</CardTitle>
-        <CardDescription>
+    <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+      <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
+        <div className="flex items-center gap-2">
+          <Palette className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+          <h2 className="font-semibold text-gray-800 dark:text-white/90">
+            Branding
+          </h2>
+        </div>
+        <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
           Customize how your facility appears to customers.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
+        </p>
+      </div>
+      <div className="space-y-6 p-6">
         <ImageUploader
           label="Logo"
           description="Displayed on booking pages as your facility's profile picture. Square images work best."
@@ -211,7 +209,7 @@ export function BrandingSettings({
           field="cover_photo_url"
           aspect="wide"
         />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

@@ -2,17 +2,14 @@ import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
 import { BrandingSettings } from "./branding-settings";
+import {
+  Settings,
+  Building2,
+  Clock,
+  Globe,
+  CheckCircle2,
+} from "lucide-react";
 
 const TIMEZONES = [
   "America/New_York",
@@ -91,121 +88,158 @@ export default async function FacilitySettingsPage({
   }
 
   return (
-    <div>
-      <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-      <p className="mt-2 text-muted-foreground">
-        Edit facility name, description, and timezone.
-      </p>
+    <div className="space-y-6">
+      {/* Page Header */}
+      <div>
+        <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
+          Settings
+        </h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Edit facility name, description, and timezone.
+        </p>
+      </div>
 
+      {/* Alerts */}
       {params.error && (
-        <div className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
           {params.error}
         </div>
       )}
       {params.saved && (
-        <div className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
+        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
           Settings saved.
         </div>
       )}
 
-      <div className="mt-8">
-        <BrandingSettings
-          orgId={org.id}
-          logoUrl={org.logo_url}
-          coverPhotoUrl={org.cover_photo_url}
-        />
-      </div>
+      {/* Branding Section */}
+      <BrandingSettings
+        orgId={org.id}
+        logoUrl={org.logo_url}
+        coverPhotoUrl={org.cover_photo_url}
+      />
 
-      <Card className="mt-8">
-        <CardHeader>
-          <CardTitle className="text-base">Facility Details</CardTitle>
-          <CardDescription>
+      {/* Facility Details */}
+      <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+        <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+            <h2 className="font-semibold text-gray-800 dark:text-white/90">
+              Facility Details
+            </h2>
+          </div>
+          <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
             These details are shown to customers on your booking pages.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form action={updateSettings} className="space-y-4">
+          </p>
+        </div>
+        <div className="p-6">
+          <form action={updateSettings} className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="name">Facility Name</Label>
-                <Input
-                  id="name"
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Facility Name
+                </label>
+                <input
                   name="name"
                   defaultValue={org.name}
                   required
+                  className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="phone">Phone</Label>
-                <Input
-                  id="phone"
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Phone
+                </label>
+                <input
                   name="phone"
                   type="tel"
                   placeholder="(555) 123-4567"
                   defaultValue={org.phone || ""}
+                  className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
                 />
               </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="description">Description</Label>
-                <Input
-                  id="description"
+              <div className="space-y-1.5 sm:col-span-2">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Description
+                </label>
+                <input
                   name="description"
                   placeholder="A short description of your facility"
                   defaultValue={org.description || ""}
+                  className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
                 />
               </div>
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="address">Address</Label>
-                <Input
-                  id="address"
+              <div className="space-y-1.5 sm:col-span-2">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Address
+                </label>
+                <input
                   name="address"
                   placeholder="123 Main St, City, State ZIP"
                   defaultValue={org.address || ""}
+                  className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
                 />
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="timezone">Timezone</Label>
-                <select
-                  id="timezone"
-                  name="timezone"
-                  defaultValue={org.timezone}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  {TIMEZONES.map((tz) => (
-                    <option key={tz} value={tz}>
-                      {tz.replace(/_/g, " ")}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-muted-foreground">
-                  All schedule times are displayed in this timezone.
-                </p>
+            {/* Timezone & Duration Section */}
+            <div className="border-t border-gray-200 pt-6 dark:border-white/[0.05]">
+              <div className="mb-4 flex items-center gap-2">
+                <Globe className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90">
+                  Timezone & Scheduling
+                </h3>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="duration">Default Slot Duration (minutes)</Label>
-                <Input
-                  id="duration"
-                  name="default_slot_duration_minutes"
-                  type="number"
-                  min="15"
-                  step="15"
-                  defaultValue={org.default_slot_duration_minutes}
-                />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Timezone
+                  </label>
+                  <select
+                    name="timezone"
+                    defaultValue={org.timezone}
+                    className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                  >
+                    {TIMEZONES.map((tz) => (
+                      <option key={tz} value={tz}>
+                        {tz.replace(/_/g, " ")}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    All schedule times are displayed in this timezone.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Default Slot Duration (minutes)
+                  </label>
+                  <input
+                    name="default_slot_duration_minutes"
+                    type="number"
+                    min="15"
+                    step="15"
+                    defaultValue={org.default_slot_duration_minutes}
+                    className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-4 pt-2">
-              <Button type="submit">Save Settings</Button>
-              <p className="text-xs text-muted-foreground">
+            <div className="flex items-center gap-4 border-t border-gray-200 pt-6 dark:border-white/[0.05]">
+              <button
+                type="submit"
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+              >
+                Save Settings
+              </button>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
                 Slug: <span className="font-mono">{org.slug}</span>
               </p>
             </div>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }
