@@ -271,9 +271,7 @@ export function AvailabilityWidget({
         {/* Bay Sidebar */}
         <div className="w-56 shrink-0 border-r bg-muted/30">
           <div className="border-b px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Facilities
-            </p>
+            <div className="h-8" />
           </div>
           <nav className="p-2">
             {bays.map((bay) => {
@@ -366,12 +364,8 @@ export function AvailabilityWidget({
                   mode="single"
                   selected={new Date(selectedDate + "T12:00:00")}
                   onSelect={handleCalendarSelect}
-                  disabled={(date) => {
-                    const d = new Date(date);
-                    d.setHours(12, 0, 0, 0);
-                    const todayDate = new Date(todayStr + "T12:00:00");
-                    return d < todayDate;
-                  }}
+                  disabled={{ before: new Date(todayStr + "T12:00:00") }}
+                  startMonth={new Date(todayStr + "T12:00:00")}
                   initialFocus
                 />
               </PopoverContent>
