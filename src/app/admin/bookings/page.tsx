@@ -3,12 +3,16 @@ import { getFacilitySlug } from "@/lib/facility";
 import { requireAdmin } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { formatTimeInZone, getTodayInTimezone } from "@/lib/utils";
 import { DailySchedule } from "@/components/daily-schedule";
+import { BookingCardExpandable } from "@/components/admin/booking-card-expandable";
+import {
+  CalendarDays,
+  List,
+  Search,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -144,231 +148,340 @@ export default async function BookingsListPage({
     redirect("/admin/bookings?cancelled=true");
   }
 
-  // Build filter URL preserving existing params
-  function filterUrl(overrides: Record<string, string>) {
-    const p = new URLSearchParams();
-    const merged = { ...params, ...overrides };
-    for (const [k, v] of Object.entries(merged)) {
-      if (v && k !== "cancelled" && k !== "error") p.set(k, v);
-    }
-    return `/admin/bookings?${p.toString()}`;
-  }
-
   const today = getTodayInTimezone(org.timezone);
+
+  // Check if any filters are active
+  const hasActiveFilters = params.from || params.to || (params.status && params.status !== "all") || params.bay || params.q;
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Bookings</h1>
-          <p className="mt-2 text-muted-foreground">
-            View, filter, and manage all bookings.
-          </p>
-        </div>
-        {activeView === "list" && (
-          <Badge variant="secondary">
-            {filtered.length} result{filtered.length !== 1 ? "s" : ""}
-          </Badge>
-        )}
+      {/* Page Header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
+          Bookings
+        </h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          View, filter, and manage all bookings.
+        </p>
       </div>
 
+      {/* Alerts */}
       {bookingsError && (
-        <div className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
           Failed to load bookings: {bookingsError.message}
         </div>
       )}
       {params.error && (
-        <div className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
           {params.error}
         </div>
       )}
       {params.cancelled && (
-        <div className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-950 dark:text-green-300">
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
           Booking cancelled successfully.
         </div>
       )}
 
-      {/* View tabs */}
-      <div className="mt-6 flex gap-1 border-b">
-        <a
-          href="/admin/bookings?view=list"
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
-            activeView === "list"
-              ? "border-b-2 border-primary text-primary"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          List View
-        </a>
-        <a
-          href="/admin/bookings?view=daily"
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
-            activeView === "daily"
-              ? "border-b-2 border-primary text-primary"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          Daily View
-        </a>
+      {/* View Tabs - TailAdmin segmented style */}
+      <div className="mb-6 flex items-center justify-between">
+        <div className="inline-flex rounded-lg bg-gray-100 p-0.5 dark:bg-gray-900">
+          <a
+            href="/admin/bookings?view=list"
+            className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              activeView === "list"
+                ? "bg-white text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white"
+                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            }`}
+          >
+            <List className="h-4 w-4" />
+            List View
+          </a>
+          <a
+            href="/admin/bookings?view=daily"
+            className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              activeView === "daily"
+                ? "bg-white text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white"
+                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            }`}
+          >
+            <CalendarDays className="h-4 w-4" />
+            Daily View
+          </a>
+        </div>
+
+        {activeView === "list" && (
+          <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+            {filtered.length} result{filtered.length !== 1 ? "s" : ""}
+          </span>
+        )}
       </div>
 
       {activeView === "list" ? (
         <>
-          {/* Filters */}
-          <form className="mt-6 flex flex-wrap items-end gap-3">
+          {/* Inline Filter Bar */}
+          <form className="mb-6">
             <input type="hidden" name="view" value="list" />
-            <div className="space-y-1">
-              <Label className="text-xs">From</Label>
-              <Input
-                type="date"
-                name="from"
-                defaultValue={params.from ?? ""}
-                className="h-8 w-36 text-xs"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">To</Label>
-              <Input
-                type="date"
-                name="to"
-                defaultValue={params.to ?? ""}
-                className="h-8 w-36 text-xs"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Status</Label>
-              <select
-                name="status"
-                defaultValue={params.status ?? "all"}
-                className="h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  From
+                </label>
+                <input
+                  type="date"
+                  name="from"
+                  defaultValue={params.from ?? ""}
+                  className="h-10 w-38 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm transition-colors placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  To
+                </label>
+                <input
+                  type="date"
+                  name="to"
+                  defaultValue={params.to ?? ""}
+                  className="h-10 w-38 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm transition-colors placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Status
+                </label>
+                <select
+                  name="status"
+                  defaultValue={params.status ?? "all"}
+                  className="h-10 rounded-lg border border-gray-300 bg-white px-3 pr-8 text-sm text-gray-800 shadow-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Facility
+                </label>
+                <select
+                  name="bay"
+                  defaultValue={params.bay ?? ""}
+                  className="h-10 rounded-lg border border-gray-300 bg-white px-3 pr-8 text-sm text-gray-800 shadow-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                >
+                  <option value="">All facilities</option>
+                  {bays?.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Customer
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <input
+                    name="q"
+                    placeholder="Name or email..."
+                    defaultValue={params.q ?? ""}
+                    className="h-10 w-44 rounded-lg border border-gray-300 bg-white py-2.5 pl-9 pr-3 text-sm text-gray-800 shadow-sm transition-colors placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
               >
-                <option value="all">All</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Filter
+              </button>
+              {hasActiveFilters && (
+                <a href="/admin/bookings?view=list">
+                  <button
+                    type="button"
+                    className="inline-flex h-10 items-center gap-1 rounded-lg px-3 text-sm font-medium text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Clear
+                  </button>
+                </a>
+              )}
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Facility</Label>
-              <select
-                name="bay"
-                defaultValue={params.bay ?? ""}
-                className="h-8 rounded-md border border-input bg-transparent px-2 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="">All facilities</option>
-                {bays?.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Customer</Label>
-              <Input
-                name="q"
-                placeholder="Name or email..."
-                defaultValue={params.q ?? ""}
-                className="h-8 w-40 text-xs"
-              />
-            </div>
-            <Button type="submit" variant="outline" size="sm">
-              Filter
-            </Button>
-            <a href="/admin/bookings?view=list">
-              <Button type="button" variant="ghost" size="sm">
-                Clear
-              </Button>
-            </a>
           </form>
 
-          {/* Bookings list */}
-          <div className="mt-6 space-y-2">
+          {/* Desktop Table View (hidden on mobile) */}
+          <div className="hidden md:block">
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+              {filtered.length === 0 ? (
+                <div className="px-5 py-16 text-center text-sm text-gray-500 dark:text-gray-400">
+                  No bookings found.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[800px]">
+                    <thead>
+                      <tr className="border-b border-gray-100 dark:border-white/[0.05]">
+                        <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                          Customer
+                        </th>
+                        <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                          Confirmation
+                        </th>
+                        <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                          Date &amp; Time
+                        </th>
+                        <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                          Facility
+                        </th>
+                        <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                          Price
+                        </th>
+                        <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                          Status
+                        </th>
+                        <th className="px-5 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
+                      {filtered.map((booking) => {
+                        const customer = customerMap[booking.customer_id];
+                        const timeStr = `${formatTimeInZone(booking.start_time, org!.timezone)} – ${formatTimeInZone(booking.end_time, org!.timezone)}`;
+                        const dateStr = new Date(booking.date).toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        });
+
+                        return (
+                          <tr
+                            key={booking.id}
+                            className="transition-colors hover:bg-gray-50/50 dark:hover:bg-white/[0.02]"
+                          >
+                            <td className="px-5 py-4">
+                              <div>
+                                <p className="text-sm font-medium text-gray-800 dark:text-white/90">
+                                  {customer?.full_name || customer?.email || "Unknown"}
+                                </p>
+                                {customer?.full_name && customer?.email && (
+                                  <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                                    {customer.email}
+                                  </p>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-5 py-4">
+                              <span className="font-mono text-sm text-gray-600 dark:text-gray-300">
+                                {booking.confirmation_code}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4">
+                              <div>
+                                <p className="text-sm text-gray-800 dark:text-white/90">
+                                  {dateStr}
+                                </p>
+                                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                                  {timeStr}
+                                </p>
+                              </div>
+                            </td>
+                            <td className="px-5 py-4">
+                              <span className="text-sm text-gray-800 dark:text-white/90">
+                                {bayMap[booking.bay_id] ?? "Unknown"}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4">
+                              <span className="text-sm font-semibold text-gray-800 dark:text-white/90">
+                                ${(booking.total_price_cents / 100).toFixed(2)}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4">
+                              <span
+                                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                  booking.status === "confirmed"
+                                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                    : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                }`}
+                              >
+                                {booking.status}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4 text-right">
+                              {booking.status === "confirmed" ? (
+                                <form action={cancelBooking} className="inline">
+                                  <input
+                                    type="hidden"
+                                    name="booking_id"
+                                    value={booking.id}
+                                  />
+                                  <button
+                                    type="submit"
+                                    className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 dark:border-gray-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
+                                  >
+                                    Cancel
+                                  </button>
+                                </form>
+                              ) : (
+                                <span className="text-xs text-gray-400">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Mobile Card View (hidden on desktop) */}
+          <div className="space-y-3 md:hidden">
             {filtered.length === 0 && (
-              <p className="py-12 text-center text-muted-foreground">
+              <div className="rounded-xl border border-gray-200 bg-white px-5 py-16 text-center text-sm text-gray-500 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-400">
                 No bookings found.
-              </p>
+              </div>
             )}
 
             {filtered.map((booking) => {
               const customer = customerMap[booking.customer_id];
               const timeStr = `${formatTimeInZone(booking.start_time, org!.timezone)} – ${formatTimeInZone(booking.end_time, org!.timezone)}`;
+              const dateStr = new Date(booking.date).toLocaleDateString("en-US", {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+              });
 
               return (
-                <div
+                <BookingCardExpandable
                   key={booking.id}
-                  className="flex items-center justify-between rounded-lg border p-4"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium">
-                        {customer?.full_name || customer?.email || "Unknown"}
-                      </p>
-                      <Badge
-                        variant={
-                          booking.status === "confirmed"
-                            ? "default"
-                            : "secondary"
-                        }
-                      >
-                        {booking.status}
-                      </Badge>
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {booking.confirmation_code}
-                      </span>
-                    </div>
-                    <p className="mt-0.5 text-sm text-muted-foreground">
-                      {new Date(booking.date).toLocaleDateString("en-US", {
-                        weekday: "short",
-                        month: "short",
-                        day: "numeric",
-                      })}
-                      {" · "}
-                      {timeStr}
-                      {" · "}
-                      {bayMap[booking.bay_id] ?? "Unknown facility"}
-                      {" · "}${(booking.total_price_cents / 100).toFixed(2)}
-                    </p>
-                    {booking.notes && (
-                      <p className="mt-1 text-xs text-muted-foreground italic">
-                        {booking.notes}
-                      </p>
-                    )}
-                  </div>
-                  <div className="ml-4 flex items-center gap-2">
-                    {booking.status === "confirmed" && (
-                      <form action={cancelBooking}>
-                        <input
-                          type="hidden"
-                          name="booking_id"
-                          value={booking.id}
-                        />
-                        <Button
-                          type="submit"
-                          variant="outline"
-                          size="sm"
-                          className="text-destructive hover:bg-destructive/10"
-                        >
-                          Cancel
-                        </Button>
-                      </form>
-                    )}
-                  </div>
-                </div>
+                  booking={booking}
+                  customerName={customer?.full_name || customer?.email || "Unknown"}
+                  customerEmail={customer?.email || ""}
+                  bayName={bayMap[booking.bay_id] ?? "Unknown"}
+                  timeStr={timeStr}
+                  dateStr={dateStr}
+                  cancelAction={cancelBooking}
+                />
               );
             })}
           </div>
         </>
       ) : (
-        /* Daily View */
-        <div className="mt-6">
-          <DailySchedule
-            bookings={bookings ?? []}
-            bays={bays ?? []}
-            customerMap={customerMap}
-            timezone={org.timezone}
-            initialDate={today}
-            cancelAction={cancelBooking}
-          />
+        /* Daily View - wrapped in TailAdmin card */
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+          <div className="p-4 sm:p-6">
+            <DailySchedule
+              bookings={bookings ?? []}
+              bays={bays ?? []}
+              customerMap={customerMap}
+              timezone={org.timezone}
+              initialDate={today}
+              cancelAction={cancelBooking}
+            />
+          </div>
         </div>
       )}
     </div>
