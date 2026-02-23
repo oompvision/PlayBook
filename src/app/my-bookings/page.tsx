@@ -97,7 +97,7 @@ export default async function MyBookingsPage({
         <div className="flex items-center justify-between">
           <OrgHeader name={org.name} logoUrl={org.logo_url} />
           <div className="flex items-center gap-2">
-            <Link href="/book">
+            <Link href="/">
               <Button>Book a Session</Button>
             </Link>
             <SignOutButton variant="outline" size="sm" className="" />
@@ -139,7 +139,7 @@ export default async function MyBookingsPage({
           {upcoming.length === 0 && (
             <p className="mt-4 py-8 text-center text-muted-foreground">
               No upcoming bookings.{" "}
-              <Link href="/book" className="text-primary hover:underline">
+              <Link href="/" className="text-primary hover:underline">
                 Book a session
               </Link>
             </p>
