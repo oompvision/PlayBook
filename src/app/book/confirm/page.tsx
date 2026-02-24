@@ -292,6 +292,33 @@ export default async function BookingConfirmPage({
               0
             );
 
+            // Group consecutive slots into combined time ranges
+            const groups: Array<{
+              start_time: string;
+              end_time: string;
+              price_cents: number;
+              slot_count: number;
+            }> = [];
+            for (const slot of baySlots) {
+              const last = groups[groups.length - 1];
+              if (
+                last &&
+                new Date(slot.start_time).getTime() ===
+                  new Date(last.end_time).getTime()
+              ) {
+                last.end_time = slot.end_time;
+                last.price_cents += slot.price_cents;
+                last.slot_count += 1;
+              } else {
+                groups.push({
+                  start_time: slot.start_time,
+                  end_time: slot.end_time,
+                  price_cents: slot.price_cents,
+                  slot_count: 1,
+                });
+              }
+            }
+
             return (
               <Card key={bayId}>
                 <CardHeader className="pb-3">
@@ -306,18 +333,23 @@ export default async function BookingConfirmPage({
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {baySlots.map((slot) => (
+                    {groups.map((group) => (
                         <div
-                          key={slot.start_time}
+                          key={group.start_time}
                           className="flex items-center justify-between text-sm"
                         >
                           <span>
-                            {formatTimeInZone(slot.start_time, org!.timezone)}{" "}
+                            {formatTimeInZone(group.start_time, org!.timezone)}{" "}
                             –{" "}
-                            {formatTimeInZone(slot.end_time, org!.timezone)}
+                            {formatTimeInZone(group.end_time, org!.timezone)}
+                            {group.slot_count > 1 && (
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                ({group.slot_count} slots)
+                              </span>
+                            )}
                           </span>
                           <span className="text-muted-foreground">
-                            ${(slot.price_cents / 100).toFixed(2)}
+                            ${(group.price_cents / 100).toFixed(2)}
                           </span>
                         </div>
                     ))}
