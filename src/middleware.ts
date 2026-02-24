@@ -60,13 +60,16 @@ export async function middleware(request: NextRequest) {
   }
 
   // Fallback: check cookies — but only in appropriate contexts.
-  // On localhost (dev): always read cookies (no subdomains available).
-  // On production: only read admin-org cookie for /admin routes (Enter as Admin flow).
-  // This prevents stale cookies from overriding the bare domain landing page.
+  // playbook-facility cookie: always safe to read because it's only set when
+  // the user explicitly passes ?facility= (intentional action, 8h TTL).
+  // playbook-admin-org cookie: restricted to localhost or /admin routes only
+  // (Enter as Admin flow) to prevent stale cookies overriding the bare domain.
+  if (!facilitySlug) {
+    facilitySlug = request.cookies.get("playbook-facility")?.value || null;
+  }
   if (!facilitySlug) {
     if (isLocalhost) {
-      facilitySlug = request.cookies.get("playbook-facility")?.value ||
-        request.cookies.get("playbook-admin-org")?.value || null;
+      facilitySlug = request.cookies.get("playbook-admin-org")?.value || null;
     } else if (pathname.startsWith("/admin")) {
       facilitySlug = request.cookies.get("playbook-admin-org")?.value || null;
     }

@@ -1,5 +1,5 @@
 import { getFacilitySlug } from "@/lib/facility";
-import { getAuthUser } from "@/lib/auth";
+import { getAuthUser, ensureCustomerOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getTodayInTimezone } from "@/lib/utils";
 import Link from "next/link";
@@ -69,6 +69,11 @@ export default async function FacilityHomePage() {
         .order("sort_order")
         .order("created_at")
     : { data: null };
+
+  // Link customer to org on first visit (replaces logic from removed /book/confirm page)
+  if (auth && org) {
+    await ensureCustomerOrg(org.id);
+  }
 
   const todayStr = getTodayInTimezone(timezone);
 
@@ -149,6 +154,9 @@ export default async function FacilityHomePage() {
                 minBookingLeadMinutes={minBookingLeadMinutes}
                 facilitySlug={slug}
                 isAuthenticated={!!auth}
+                userEmail={auth?.profile.email}
+                userFullName={auth?.profile.full_name}
+                userProfileId={auth?.profile.id}
               />
             ) : (
               <div className="rounded-xl border bg-card p-12 text-center">

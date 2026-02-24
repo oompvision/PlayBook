@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ChatWidget } from "./chat-widget";
-import { MessageSquare, X } from "lucide-react";
+import { MessageSquare, X, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 
 type ChatBubbleProps = {
   facilitySlug: string;
@@ -14,12 +14,17 @@ type ChatBubbleProps = {
 // Pages where the floating bubble should NOT appear at all
 const HIDDEN_PATHS = ["/", "/admin", "/super-admin"];
 
+// Pages where we show the bottom bar style instead of floating bubble
+const BAR_PATHS = ["/my-bookings"];
+
 export function ChatBubble({ facilitySlug, orgName }: ChatBubbleProps) {
   const pathname = usePathname();
   const isHomepage = pathname === "/";
+  const useBarStyle = BAR_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/")
+  );
 
-  // Default to open on homepage (for desktop), closed on other pages
-  const [isOpen, setIsOpen] = useState(isHomepage);
+  const [isOpen, setIsOpen] = useState(false);
   const [hasMounted, setHasMounted] = useState(false);
 
   useEffect(() => {
@@ -40,6 +45,68 @@ export function ChatBubble({ facilitySlug, orgName }: ChatBubbleProps) {
   // On other pages: show on all screen sizes
   const visibilityClass = isHomepage ? "hidden lg:block" : "";
 
+  // Bar style for /my-bookings
+  if (useBarStyle) {
+    return (
+      <>
+        {/* Mobile: full-width bottom bar */}
+        <div className="fixed inset-x-0 bottom-0 z-50 md:hidden">
+          {isOpen && (
+            <div className="flex h-[500px] flex-col border-t bg-card shadow-2xl">
+              <div className="min-h-0 flex-1">
+                <ChatWidget
+                  facilitySlug={facilitySlug}
+                  orgName={orgName}
+                />
+              </div>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setIsOpen((prev) => !prev)}
+            className="flex w-full items-center justify-center gap-2 border-t bg-background px-4 py-3 text-sm font-medium transition-colors hover:bg-accent"
+          >
+            <Sparkles className="h-4 w-4 text-muted-foreground" />
+            <span>Booking Assistant AI</span>
+            {isOpen ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            )}
+          </button>
+        </div>
+
+        {/* Desktop: compact bottom-right bar */}
+        <div className="fixed bottom-4 right-4 z-50 hidden md:block">
+          {isOpen && (
+            <div className="mb-2 flex h-[500px] w-[380px] flex-col rounded-2xl border bg-card shadow-2xl">
+              <div className="min-h-0 flex-1">
+                <ChatWidget
+                  facilitySlug={facilitySlug}
+                  orgName={orgName}
+                />
+              </div>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setIsOpen((prev) => !prev)}
+            className="flex w-full items-center justify-center gap-2 rounded-full border bg-background px-5 py-2.5 text-sm font-medium shadow-lg transition-colors hover:bg-accent"
+          >
+            <Sparkles className="h-4 w-4 text-muted-foreground" />
+            <span>Booking Assistant AI</span>
+            {isOpen ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            )}
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  // Floating bubble style for other pages
   return (
     <div className={`fixed bottom-4 right-4 z-50 ${visibilityClass}`}>
       {/* Chat panel */}
