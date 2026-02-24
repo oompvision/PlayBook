@@ -48,34 +48,61 @@ export function ChatBubble({ facilitySlug, orgName }: ChatBubbleProps) {
   // Bar style for /my-bookings
   if (useBarStyle) {
     return (
-      <div className="fixed inset-x-0 bottom-0 z-50">
-        {/* Chat panel — slides up from the bar */}
-        {isOpen && (
-          <div className="mx-auto flex h-[500px] max-w-2xl flex-col border-x border-t bg-card shadow-2xl rounded-t-2xl">
-            <div className="min-h-0 flex-1">
-              <ChatWidget
-                facilitySlug={facilitySlug}
-                orgName={orgName}
-              />
+      <>
+        {/* Mobile: full-width bottom bar */}
+        <div className="fixed inset-x-0 bottom-0 z-50 md:hidden">
+          {isOpen && (
+            <div className="flex h-[500px] flex-col border-t bg-card shadow-2xl">
+              <div className="min-h-0 flex-1">
+                <ChatWidget
+                  facilitySlug={facilitySlug}
+                  orgName={orgName}
+                />
+              </div>
             </div>
-          </div>
-        )}
-
-        {/* Bottom bar toggle */}
-        <button
-          type="button"
-          onClick={() => setIsOpen((prev) => !prev)}
-          className="flex w-full items-center justify-center gap-2 border-t bg-background px-4 py-3 text-sm font-medium transition-colors hover:bg-accent"
-        >
-          <Sparkles className="h-4 w-4 text-muted-foreground" />
-          <span>Booking Assistant AI</span>
-          {isOpen ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <ChevronUp className="h-4 w-4 text-muted-foreground" />
           )}
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => setIsOpen((prev) => !prev)}
+            className="flex w-full items-center justify-center gap-2 border-t bg-background px-4 py-3 text-sm font-medium transition-colors hover:bg-accent"
+          >
+            <Sparkles className="h-4 w-4 text-muted-foreground" />
+            <span>Booking Assistant AI</span>
+            {isOpen ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            )}
+          </button>
+        </div>
+
+        {/* Desktop: compact bottom-right bar */}
+        <div className="fixed bottom-4 right-4 z-50 hidden md:block">
+          {isOpen && (
+            <div className="mb-2 flex h-[500px] w-[380px] flex-col rounded-2xl border bg-card shadow-2xl">
+              <div className="min-h-0 flex-1">
+                <ChatWidget
+                  facilitySlug={facilitySlug}
+                  orgName={orgName}
+                />
+              </div>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setIsOpen((prev) => !prev)}
+            className="flex w-full items-center justify-center gap-2 rounded-full border bg-background px-5 py-2.5 text-sm font-medium shadow-lg transition-colors hover:bg-accent"
+          >
+            <Sparkles className="h-4 w-4 text-muted-foreground" />
+            <span>Booking Assistant AI</span>
+            {isOpen ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            )}
+          </button>
+        </div>
+      </>
     );
   }
 
