@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Toast } from "@/components/ui/toast";
 import {
   ChevronLeft,
   ChevronRight,
@@ -20,6 +24,7 @@ import {
   ArrowRight,
   MessageSquare,
   LogIn,
+  X,
 } from "lucide-react";
 import { ChatWidget } from "@/components/chat/chat-widget";
 import { AuthModal } from "@/components/auth-modal";
@@ -60,7 +65,18 @@ type AvailabilityWidgetProps = {
   minBookingLeadMinutes: number;
   facilitySlug?: string;
   isAuthenticated?: boolean;
+  userEmail?: string;
+  userFullName?: string | null;
+  userProfileId?: string;
 };
+
+type ToastData = {
+  message: string;
+  description?: string;
+};
+
+// localStorage key for persisting selection across auth reload
+const STORAGE_KEY = "playbook-pending-booking";
 
 function formatTime(timestamp: string, timezone: string) {
   return new Date(timestamp).toLocaleTimeString("en-US", {
@@ -150,6 +166,36 @@ function getDateParts(date: Date, timezone: string) {
   };
 }
 
+/** Group consecutive slots into combined time ranges for display. */
+function groupConsecutiveSlots(
+  slotIds: string[],
+  slotMap: Map<string, Slot>,
+  timezone: string
+): Array<{ start_time: string; end_time: string; price_cents: number; slot_count: number }> {
+  const sorted = slotIds
+    .map((id) => slotMap.get(id))
+    .filter(Boolean)
+    .sort((a, b) => new Date(a!.start_time).getTime() - new Date(b!.start_time).getTime()) as Slot[];
+
+  const groups: Array<{ start_time: string; end_time: string; price_cents: number; slot_count: number }> = [];
+  for (const slot of sorted) {
+    const last = groups[groups.length - 1];
+    if (last && new Date(slot.start_time).getTime() === new Date(last.end_time).getTime()) {
+      last.end_time = slot.end_time;
+      last.price_cents += slot.price_cents;
+      last.slot_count += 1;
+    } else {
+      groups.push({
+        start_time: slot.start_time,
+        end_time: slot.end_time,
+        price_cents: slot.price_cents,
+        slot_count: 1,
+      });
+    }
+  }
+  return groups;
+}
+
 export function AvailabilityWidget({
   orgId,
   orgName,
@@ -159,6 +205,9 @@ export function AvailabilityWidget({
   minBookingLeadMinutes,
   facilitySlug,
   isAuthenticated,
+  userEmail,
+  userFullName,
+  userProfileId,
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(todayStr);
@@ -172,37 +221,86 @@ export function AvailabilityWidget({
   const [autoAdvancedFrom, setAutoAdvancedFrom] = useState<string | null>(null);
   const [chatExpanded, setChatExpanded] = useState(true);
 
+  // Booking panel state
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [bookingInProgress, setBookingInProgress] = useState(false);
+  const [bookingError, setBookingError] = useState("");
+
+  // Inline auth state (for unauthenticated users in the panel)
+  const [authTab, setAuthTab] = useState<string>("signin");
+  const [signInEmail, setSignInEmail] = useState("");
+  const [signInPassword, setSignInPassword] = useState("");
+  const [signInError, setSignInError] = useState("");
+  const [signInLoading, setSignInLoading] = useState(false);
+  const [signUpName, setSignUpName] = useState("");
+  const [signUpEmail, setSignUpEmail] = useState("");
+  const [signUpPassword, setSignUpPassword] = useState("");
+  const [signUpError, setSignUpError] = useState("");
+  const [signUpLoading, setSignUpLoading] = useState(false);
+  const [signUpSuccess, setSignUpSuccess] = useState(false);
+
+  // Toast state
+  const [toastData, setToastData] = useState<ToastData | null>(null);
+
   // Bookings state
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [highlightedBookingIds, setHighlightedBookingIds] = useState<Set<string>>(new Set());
+
+  // Track whether we restored from localStorage (to auto-open panel)
+  const restoredFromStorage = useRef(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Fetch upcoming confirmed bookings for the current user
+  // Restore slot selection from localStorage after auth reload
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!mounted) return;
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (!stored) return;
+      const parsed = JSON.parse(stored);
+      localStorage.removeItem(STORAGE_KEY);
 
-    async function fetchBookings() {
-      setBookingsLoading(true);
-      const supabase = createClient();
-      const { data } = await supabase
-        .from("bookings")
-        .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, status, notes")
-        .eq("org_id", orgId)
-        .eq("status", "confirmed")
-        .gte("date", todayStr)
-        .order("date")
-        .order("start_time");
-      setBookings(data || []);
-      setBookingsLoading(false);
+      if (parsed.orgId !== orgId) return; // Different facility, ignore
+
+      // Restore state
+      if (parsed.date) setSelectedDate(parsed.date);
+      if (parsed.bayId) setSelectedBayId(parsed.bayId);
+      if (parsed.slotIds?.length) {
+        setSelectedSlotIds(new Set(parsed.slotIds));
+        restoredFromStorage.current = true;
+      }
+      if (parsed.notes) setNotes(parsed.notes);
+    } catch {
+      localStorage.removeItem(STORAGE_KEY);
     }
+  }, [mounted, orgId]);
 
-    fetchBookings();
+  // Fetch upcoming confirmed bookings for the current user
+  const fetchBookings = useCallback(async () => {
+    if (!isAuthenticated) return;
+    setBookingsLoading(true);
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("bookings")
+      .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, status, notes")
+      .eq("org_id", orgId)
+      .eq("status", "confirmed")
+      .gte("date", todayStr)
+      .order("date")
+      .order("start_time");
+    setBookings(data || []);
+    setBookingsLoading(false);
   }, [isAuthenticated, orgId, todayStr]);
+
+  useEffect(() => {
+    fetchBookings();
+  }, [fetchBookings]);
 
   // On initial mount, check if today has availability. If not, jump to the next date that does.
   useEffect(() => {
@@ -265,7 +363,11 @@ export function AvailabilityWidget({
   const fetchSlots = useCallback(
     async (date: string, bayId: string) => {
       setLoading(true);
-      setSelectedSlotIds(new Set());
+      // Only clear selection if we're NOT restoring from localStorage
+      if (!restoredFromStorage.current) {
+        setSelectedSlotIds(new Set());
+      }
+      restoredFromStorage.current = false;
 
       const supabase = createClient();
 
@@ -342,6 +444,18 @@ export function AvailabilityWidget({
     }
   }, [selectedDate, selectedBayId, fetchSlots]);
 
+  // Auto-open panel after restoring from localStorage (post-auth reload)
+  useEffect(() => {
+    if (mounted && selectedSlotIds.size > 0 && isAuthenticated) {
+      // Check if we just restored — the panel should open
+      const stored = sessionStorage.getItem("playbook-panel-reopen");
+      if (stored) {
+        sessionStorage.removeItem("playbook-panel-reopen");
+        setPanelOpen(true);
+      }
+    }
+  }, [mounted, selectedSlotIds.size, isAuthenticated]);
+
   function handleDateChange(delta: number) {
     const newDate = addDays(selectedDate, delta);
     if (newDate < todayStr) return;
@@ -373,15 +487,165 @@ export function AvailabilityWidget({
     });
   }
 
-  function handleContinue() {
-    const params = new URLSearchParams();
-    params.set("date", selectedDate);
-    params.append("bay", selectedBayId);
-    params.append(
-      `slots_${selectedBayId}`,
-      Array.from(selectedSlotIds).join(",")
+  function handleOpenPanel() {
+    setBookingError("");
+    setPanelOpen(true);
+  }
+
+  function handleClosePanel() {
+    setPanelOpen(false);
+    setBookingError("");
+    setNotes("");
+    // Reset auth form state
+    setSignInEmail("");
+    setSignInPassword("");
+    setSignInError("");
+    setSignUpName("");
+    setSignUpEmail("");
+    setSignUpPassword("");
+    setSignUpError("");
+    setSignUpSuccess(false);
+    setAuthTab("signin");
+  }
+
+  // Save selection to localStorage before auth reload
+  function saveSelectionToStorage() {
+    const data = {
+      orgId,
+      date: selectedDate,
+      bayId: selectedBayId,
+      slotIds: Array.from(selectedSlotIds),
+      notes,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    sessionStorage.setItem("playbook-panel-reopen", "true");
+  }
+
+  // Inline sign-in handler
+  async function handlePanelSignIn(e: React.FormEvent) {
+    e.preventDefault();
+    setSignInLoading(true);
+    setSignInError("");
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithPassword({
+      email: signInEmail,
+      password: signInPassword,
+    });
+
+    if (error) {
+      setSignInError(error.message);
+      setSignInLoading(false);
+      return;
+    }
+
+    // Save selection to localStorage, reload to refresh session cookies
+    saveSelectionToStorage();
+    window.location.reload();
+  }
+
+  // Inline sign-up handler
+  async function handlePanelSignUp(e: React.FormEvent) {
+    e.preventDefault();
+    setSignUpLoading(true);
+    setSignUpError("");
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.signUp({
+      email: signUpEmail,
+      password: signUpPassword,
+      options: {
+        data: { full_name: signUpName },
+      },
+    });
+
+    if (error) {
+      setSignUpError(error.message);
+      setSignUpLoading(false);
+      return;
+    }
+
+    setSignUpSuccess(true);
+    setSignUpLoading(false);
+  }
+
+  // Confirm booking — client-side via Supabase RPC
+  async function handleConfirmBooking() {
+    if (!userProfileId) return;
+
+    setBookingInProgress(true);
+    setBookingError("");
+
+    const supabase = createClient();
+    const slotIdsArray = Array.from(selectedSlotIds);
+
+    // Re-validate slot availability
+    const { data: freshSlots } = await supabase
+      .from("bay_schedule_slots")
+      .select("id, status")
+      .in("id", slotIdsArray);
+
+    const unavailable = freshSlots?.filter((s) => s.status !== "available") || [];
+    if (unavailable.length > 0) {
+      setBookingError("One or more selected slots are no longer available. Please close and select different time slots.");
+      setBookingInProgress(false);
+      return;
+    }
+
+    // Create the booking via RPC
+    const { data, error } = await supabase.rpc("create_booking", {
+      p_org_id: orgId,
+      p_customer_id: userProfileId,
+      p_bay_id: selectedBayId,
+      p_date: selectedDate,
+      p_slot_ids: slotIdsArray,
+      p_notes: notes || null,
+    });
+
+    if (error) {
+      setBookingError(error.message);
+      setBookingInProgress(false);
+      return;
+    }
+
+    // Extract confirmation codes from the RPC result
+    const bookingResults = Array.isArray(data) ? data : [data];
+    const codes = bookingResults.map(
+      (r: { confirmation_code: string }) => r.confirmation_code
     );
-    router.push(`/book/confirm?${params.toString()}`);
+    const newBookingIds = bookingResults.map(
+      (r: { booking_id: string }) => r.booking_id
+    );
+
+    // Detect if mobile (matches the lg: breakpoint used in layout)
+    const isMobile = window.innerWidth < 1024;
+
+    if (isMobile) {
+      // On mobile, redirect to /my-bookings with success toast via URL params
+      const codesStr = codes.join(",");
+      router.push(`/my-bookings?success=true&codes=${codesStr}`);
+      return;
+    }
+
+    // Desktop: close panel, clear selection, show toast, refresh data
+    setPanelOpen(false);
+    setSelectedSlotIds(new Set());
+    setNotes("");
+    setBookingInProgress(false);
+
+    // Show toast
+    setToastData({
+      message: "Booking Confirmed!",
+      description: `Confirmation ${codes.length > 1 ? "codes" : "code"}: ${codes.join(", ")}`,
+    });
+
+    // Highlight new bookings in sidebar
+    setHighlightedBookingIds(new Set(newBookingIds));
+    setTimeout(() => setHighlightedBookingIds(new Set()), 8000);
+
+    // Refresh slots (booked slots should disappear) and bookings list
+    fetchSlots(selectedDate, selectedBayId);
+    fetchBookings();
   }
 
   async function handleCancelBooking(bookingId: string) {
@@ -403,6 +667,12 @@ export function AvailabilityWidget({
     .reduce((sum, s) => sum + s.price_cents, 0);
 
   const selectedBay = bays.find((b) => b.id === selectedBayId);
+
+  // Build slot map for grouping
+  const slotMap = new Map(slots.map((s) => [s.id, s]));
+  const selectedGroups = selectedSlotIds.size > 0
+    ? groupConsecutiveSlots(Array.from(selectedSlotIds), slotMap, timezone)
+    : [];
 
   return (
     <div className="flex items-start gap-6">
@@ -436,11 +706,16 @@ export function AvailabilityWidget({
                       "Unknown Bay";
                     const price = `$${(booking.total_price_cents / 100).toFixed(2)}`;
                     const isCancelling = cancellingId === booking.id;
+                    const isHighlighted = highlightedBookingIds.has(booking.id);
 
                     return (
                       <div
                         key={booking.id}
-                        className="rounded-lg border bg-background transition-colors"
+                        className={`rounded-lg border bg-background transition-all duration-700 ${
+                          isHighlighted
+                            ? "border-green-400 shadow-[0_0_8px_rgba(74,222,128,0.3)]"
+                            : ""
+                        }`}
                       >
                         <button
                           type="button"
@@ -751,29 +1026,299 @@ export function AvailabilityWidget({
         </div>
       </div>
 
-      {/* Fixed booking bar overlay — portalled to body so it's always visible */}
+      {/* ===== Booking bar / slide-up panel — portalled to body ===== */}
       {selectedSlotIds.size > 0 &&
         mounted &&
         createPortal(
-          <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-background p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.1)]">
-            <div className="mx-auto flex max-w-6xl items-center justify-between px-6">
-              <div>
-                <p className="text-sm font-medium">
-                  {selectedSlotIds.size} slot
-                  {selectedSlotIds.size !== 1 ? "s" : ""} selected
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Total: ${(totalCents / 100).toFixed(2)}
-                </p>
-              </div>
-              <Button onClick={handleContinue} className="gap-2">
-                Continue to Book
-                <ArrowRight className="h-4 w-4" />
-              </Button>
+          <>
+            {/* Backdrop overlay when panel is open */}
+            {panelOpen && (
+              <div
+                className="fixed inset-0 z-50 bg-black/40 transition-opacity"
+                onClick={handleClosePanel}
+              />
+            )}
+
+            {/* The bar / panel */}
+            <div
+              className={`fixed inset-x-0 bottom-0 z-50 bg-background transition-all duration-300 ease-in-out ${
+                panelOpen
+                  ? "max-h-[85vh] overflow-y-auto rounded-t-2xl shadow-2xl"
+                  : "border-t shadow-[0_-4px_12px_rgba(0,0,0,0.1)]"
+              }`}
+            >
+              {!panelOpen ? (
+                /* ---- Collapsed CTA bar ---- */
+                <div className="mx-auto flex max-w-6xl items-center justify-between p-4 px-6">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {selectedSlotIds.size} slot
+                      {selectedSlotIds.size !== 1 ? "s" : ""} selected
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Total: ${(totalCents / 100).toFixed(2)}
+                    </p>
+                  </div>
+                  <Button onClick={handleOpenPanel} className="gap-2">
+                    Continue to Book
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                /* ---- Expanded booking panel ---- */
+                <div className="mx-auto max-w-lg px-6 py-6">
+                  {/* Panel header */}
+                  <div className="mb-6 flex items-center justify-between">
+                    <div>
+                      <h2 className="text-lg font-bold">Confirm Booking</h2>
+                      <p className="text-sm text-muted-foreground">
+                        {formatDateLabel(selectedDate)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleClosePanel}
+                      className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+
+                  {!isAuthenticated ? (
+                    /* ---- Auth form for unauthenticated users ---- */
+                    <div>
+                      {/* Show booking summary preview above auth */}
+                      <div className="mb-6 rounded-lg border bg-muted/50 p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium">{selectedBay?.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {selectedSlotIds.size} slot{selectedSlotIds.size !== 1 ? "s" : ""}
+                            </p>
+                          </div>
+                          <span className="text-sm font-bold">
+                            ${(totalCents / 100).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="mb-4 text-sm text-muted-foreground">
+                        Sign in or create an account to complete your booking.
+                      </p>
+
+                      <Tabs value={authTab} onValueChange={setAuthTab} className="w-full">
+                        <TabsList className="grid w-full grid-cols-2">
+                          <TabsTrigger value="signin">Sign In</TabsTrigger>
+                          <TabsTrigger value="signup">Sign Up</TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="signin">
+                          <form onSubmit={handlePanelSignIn} className="space-y-4 pt-2">
+                            {signInError && (
+                              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                                {signInError}
+                              </div>
+                            )}
+                            <div className="space-y-2">
+                              <Label htmlFor="panel-signin-email">Email</Label>
+                              <Input
+                                id="panel-signin-email"
+                                type="email"
+                                placeholder="you@example.com"
+                                value={signInEmail}
+                                onChange={(e) => setSignInEmail(e.target.value)}
+                                required
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="panel-signin-password">Password</Label>
+                              <Input
+                                id="panel-signin-password"
+                                type="password"
+                                value={signInPassword}
+                                onChange={(e) => setSignInPassword(e.target.value)}
+                                required
+                              />
+                            </div>
+                            <Button type="submit" className="w-full" disabled={signInLoading}>
+                              {signInLoading ? "Signing in..." : "Sign In & Book"}
+                            </Button>
+                          </form>
+                        </TabsContent>
+
+                        <TabsContent value="signup">
+                          {signUpSuccess ? (
+                            <div className="space-y-3 pt-2">
+                              <div className="rounded-md bg-muted p-4 text-center">
+                                <p className="font-medium">Check your email</p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  We sent a confirmation link to{" "}
+                                  <span className="font-medium">{signUpEmail}</span>. Click
+                                  the link to activate your account, then sign in.
+                                </p>
+                              </div>
+                              <Button
+                                variant="outline"
+                                className="w-full"
+                                onClick={() => {
+                                  setSignUpSuccess(false);
+                                  setAuthTab("signin");
+                                  setSignInEmail(signUpEmail);
+                                }}
+                              >
+                                Go to Sign In
+                              </Button>
+                            </div>
+                          ) : (
+                            <form onSubmit={handlePanelSignUp} className="space-y-4 pt-2">
+                              {signUpError && (
+                                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                                  {signUpError}
+                                </div>
+                              )}
+                              <div className="space-y-2">
+                                <Label htmlFor="panel-signup-name">Full Name</Label>
+                                <Input
+                                  id="panel-signup-name"
+                                  type="text"
+                                  placeholder="John Doe"
+                                  value={signUpName}
+                                  onChange={(e) => setSignUpName(e.target.value)}
+                                  required
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="panel-signup-email">Email</Label>
+                                <Input
+                                  id="panel-signup-email"
+                                  type="email"
+                                  placeholder="you@example.com"
+                                  value={signUpEmail}
+                                  onChange={(e) => setSignUpEmail(e.target.value)}
+                                  required
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="panel-signup-password">Password</Label>
+                                <Input
+                                  id="panel-signup-password"
+                                  type="password"
+                                  placeholder="At least 6 characters"
+                                  value={signUpPassword}
+                                  onChange={(e) => setSignUpPassword(e.target.value)}
+                                  minLength={6}
+                                  required
+                                />
+                              </div>
+                              <Button type="submit" className="w-full" disabled={signUpLoading}>
+                                {signUpLoading ? "Creating account..." : "Create Account"}
+                              </Button>
+                            </form>
+                          )}
+                        </TabsContent>
+                      </Tabs>
+                    </div>
+                  ) : (
+                    /* ---- Authenticated: Booking summary + confirm ---- */
+                    <div>
+                      {/* Error banner */}
+                      {bookingError && (
+                        <div className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                          {bookingError}
+                        </div>
+                      )}
+
+                      {/* Booking summary */}
+                      <div className="mb-4 rounded-lg border p-4">
+                        <div className="mb-3 flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{selectedBay?.name}</p>
+                            {selectedBay?.resource_type && (
+                              <Badge variant="outline" className="mt-1">
+                                {selectedBay.resource_type}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {selectedGroups.map((group) => (
+                            <div
+                              key={group.start_time}
+                              className="flex items-center justify-between text-sm"
+                            >
+                              <span>
+                                {formatTime(group.start_time, timezone)} &ndash;{" "}
+                                {formatTime(group.end_time, timezone)}
+                                {group.slot_count > 1 && (
+                                  <span className="ml-2 text-xs text-muted-foreground">
+                                    ({group.slot_count} slots)
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-muted-foreground">
+                                ${(group.price_cents / 100).toFixed(2)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-3 border-t pt-3">
+                          <div className="flex items-center justify-between font-bold">
+                            <span>Total</span>
+                            <span>${(totalCents / 100).toFixed(2)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Notes */}
+                      <div className="mb-4 space-y-2">
+                        <Label htmlFor="booking-notes">Notes (optional)</Label>
+                        <Input
+                          id="booking-notes"
+                          placeholder="Any special requests..."
+                          value={notes}
+                          onChange={(e) => setNotes(e.target.value)}
+                        />
+                      </div>
+
+                      {/* User info */}
+                      <p className="mb-4 text-sm text-muted-foreground">
+                        Booking as {userFullName || userEmail}
+                      </p>
+
+                      {/* Confirm button */}
+                      <Button
+                        className="w-full"
+                        size="lg"
+                        disabled={bookingInProgress}
+                        onClick={handleConfirmBooking}
+                      >
+                        {bookingInProgress ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Booking...
+                          </>
+                        ) : (
+                          "Confirm Booking"
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          </div>,
+          </>,
           document.body
         )}
+
+      {/* Toast notification */}
+      {toastData && (
+        <Toast
+          message={toastData.message}
+          description={toastData.description}
+          duration={10000}
+          onClose={() => setToastData(null)}
+        />
+      )}
     </div>
   );
 }

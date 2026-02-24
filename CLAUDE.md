@@ -31,8 +31,6 @@ src/
 │   │   ├── signup/page.tsx     # Registration
 │   │   ├── callback/route.ts   # OAuth code exchange
 │   │   └── signout/route.ts    # POST → sign out + redirect
-│   ├── book/
-│   │   └── confirm/page.tsx    # Booking confirmation (processes slot_ids)
 │   ├── my-bookings/page.tsx    # Customer's booking history
 │   ├── admin/                  # Facility admin dashboard (requires facility context)
 │   │   ├── layout.tsx          # Admin sidebar nav, auth gate
@@ -164,15 +162,18 @@ src/
 
 ## Customer Booking Flow
 
-**IMPORTANT**: All availability browsing and slot selection starts on the **facility home page** (`/`).
+**IMPORTANT**: All availability browsing, slot selection, and booking confirmation happens on the **facility home page** (`/`). There is NO separate `/book` or `/book/confirm` route.
 
 - **Desktop**: `AvailabilityWidget` component (`src/components/availability-widget.tsx`) — embedded in the home page, shows bay sidebar + date picker + slot list with inline selection
-- **Mobile**: `ChatWidget` — AI booking assistant embedded in the home page
-- **Confirmation**: `/book/confirm` — the ONLY route under `/book/`. Receives selected slot IDs via query params, shows summary, and processes the booking.
-- **There is NO `/book` or `/book/[date]` route.** Those were removed. Do not create or link to them.
-- When a user selects slots on the home page, the `AvailabilityWidget` navigates to `/book/confirm?date=...&bay=...&slots_BAYID=...`
-- All "back" links from `/book/confirm` go to `/` (the home page)
-- The booking CTA bar ("N slots selected — Continue to Book") uses a `createPortal` fixed overlay at the bottom of the viewport so it's always visible regardless of scroll position
+- **Mobile**: Same `AvailabilityWidget` with responsive layout
+- **Booking Panel**: When slots are selected, a fixed CTA bar appears at the bottom. Clicking "Continue to Book" slides up an inline booking panel (no page navigation). The panel shows:
+  - For unauthenticated users: inline sign-in/sign-up form. On auth, selection is saved to localStorage and restored after page reload.
+  - For authenticated users: booking summary (grouped consecutive slots), optional notes field, and "Confirm Booking" button.
+- **Booking creation**: Done client-side via `create_booking` RPC call directly from the widget.
+- **Post-booking (desktop)**: Panel closes, toast notification with confirmation code (10s auto-dismiss), new booking highlighted in sidebar feed, slots refresh.
+- **Post-booking (mobile)**: Redirects to `/my-bookings?success=true&codes=...` with confirmation banner.
+- **There is NO `/book` route.** Do not create or link to it.
+- The booking CTA bar uses a `createPortal` fixed overlay at the bottom of the viewport so it's always visible regardless of scroll position
 
 ## Conventions
 
