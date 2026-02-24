@@ -14,12 +14,15 @@ import {
   ChevronDown,
   ChevronUp,
   CalendarIcon,
+  CalendarCheck,
   Clock,
   Loader2,
   ArrowRight,
   MessageSquare,
+  LogIn,
 } from "lucide-react";
 import { ChatWidget } from "@/components/chat/chat-widget";
+import { AuthModal } from "@/components/auth-modal";
 
 type Bay = {
   id: string;
@@ -36,15 +39,17 @@ type Slot = {
   bay_id: string;
 };
 
-/**
- * Sidebar layout constants (approx px) for computing how many bays fit.
- * The sidebar has a fixed max-height; bays fill the space above the chat.
- */
-const SIDEBAR_MAX_PX = 832; // 52rem
-const CHAT_EXPANDED_PX = 600; // toggle bar + messages (512) + input + gaps
-const CHAT_COLLAPSED_PX = 40; // just the toggle bar
-const BAY_ITEM_PX = 44; // each bay button height (py-2.5 + content)
-const SIDEBAR_CHROME_PX = 20; // nav padding + borders
+type Booking = {
+  id: string;
+  confirmation_code: string;
+  bay_id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  total_price_cents: number;
+  status: string;
+  notes: string | null;
+};
 
 type AvailabilityWidgetProps = {
   orgId: string;
@@ -54,6 +59,7 @@ type AvailabilityWidgetProps = {
   todayStr: string;
   minBookingLeadMinutes: number;
   facilitySlug?: string;
+  isAuthenticated?: boolean;
 };
 
 function formatTime(timestamp: string, timezone: string) {
@@ -76,6 +82,15 @@ function formatDateLabel(dateStr: string): string {
 function formatShortDate(dateStr: string): string {
   const d = new Date(dateStr + "T12:00:00");
   return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatBookingDate(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  return d.toLocaleDateString("en-US", {
+    weekday: "short",
     month: "short",
     day: "numeric",
   });
@@ -143,6 +158,7 @@ export function AvailabilityWidget({
   todayStr,
   minBookingLeadMinutes,
   facilitySlug,
+  isAuthenticated,
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(todayStr);
@@ -154,19 +170,39 @@ export function AvailabilityWidget({
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [autoAdvancedFrom, setAutoAdvancedFrom] = useState<string | null>(null);
-  const [showAllBays, setShowAllBays] = useState(false);
   const [chatExpanded, setChatExpanded] = useState(true);
 
-  // Dynamically compute how many bays fit above the chat in the sidebar
-  const chatHeightPx = chatExpanded ? CHAT_EXPANDED_PX : CHAT_COLLAPSED_PX;
-  const availableForBaysPx = SIDEBAR_MAX_PX - chatHeightPx - SIDEBAR_CHROME_PX;
-  const maxVisibleBays = Math.max(2, Math.floor(availableForBaysPx / BAY_ITEM_PX));
-  const needsTruncation = !showAllBays && bays.length > maxVisibleBays;
-  const visibleBays = needsTruncation ? bays.slice(0, maxVisibleBays) : bays;
+  // Bookings state
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Fetch upcoming confirmed bookings for the current user
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    async function fetchBookings() {
+      setBookingsLoading(true);
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("bookings")
+        .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, status, notes")
+        .eq("org_id", orgId)
+        .eq("status", "confirmed")
+        .gte("date", todayStr)
+        .order("date")
+        .order("start_time");
+      setBookings(data || []);
+      setBookingsLoading(false);
+    }
+
+    fetchBookings();
+  }, [isAuthenticated, orgId, todayStr]);
 
   // On initial mount, check if today has availability. If not, jump to the next date that does.
   useEffect(() => {
@@ -348,6 +384,19 @@ export function AvailabilityWidget({
     router.push(`/book/confirm?${params.toString()}`);
   }
 
+  async function handleCancelBooking(bookingId: string) {
+    setCancellingId(bookingId);
+    const supabase = createClient();
+    const { error } = await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
+    if (!error) {
+      setBookings((prev) => prev.filter((b) => b.id !== bookingId));
+      setExpandedBookingId(null);
+      // Refresh slots in case cancellation freed up availability
+      fetchSlots(selectedDate, selectedBayId);
+    }
+    setCancellingId(null);
+  }
+
   // Calculate totals
   const totalCents = slots
     .filter((s) => selectedSlotIds.has(s.id))
@@ -357,70 +406,131 @@ export function AvailabilityWidget({
 
   return (
     <div className="flex items-start gap-6">
-      {/* Sticky sidebar — bays + chat assistant pinned to bottom */}
-      <div
-        className={`sticky top-[4.5rem] flex w-72 shrink-0 flex-col rounded-xl border bg-card shadow-sm ${
-          showAllBays ? "" : "max-h-[52rem]"
-        }`}
-      >
-        <nav className="shrink-0 p-2">
-          {visibleBays.map((bay) => {
-            const count = slotCountsByBay[bay.id] || 0;
-            const isActive = bay.id === selectedBayId;
-
-            return (
-              <button
-                key={bay.id}
-                type="button"
-                onClick={() => setSelectedBayId(bay.id)}
-                className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-accent"
-                }`}
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-medium">
-                    {bay.name}
-                  </p>
-                  {bay.resource_type && (
-                    <p
-                      className={`truncate text-xs ${
-                        isActive
-                          ? "text-primary-foreground/70"
-                          : "text-muted-foreground"
-                      }`}
-                    >
-                      {bay.resource_type}
-                    </p>
-                  )}
+      {/* ===== Sidebar — Confirmed Bookings + Chat Assistant (desktop only) ===== */}
+      <div className="sticky top-[4.5rem] hidden w-72 shrink-0 flex-col rounded-xl border bg-card shadow-sm lg:flex max-h-[calc(100vh-5.5rem)]">
+        {/* Bookings section — scrollable */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {isAuthenticated ? (
+            <div className="p-3">
+              <div className="mb-3 flex items-center gap-2 px-1">
+                <CalendarCheck className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Confirmed Bookings</h3>
+              </div>
+              {bookingsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
-                <Badge
-                  variant={isActive ? "secondary" : "outline"}
-                  className={`ml-2 shrink-0 text-xs ${
-                    isActive ? "" : count === 0 ? "opacity-50" : ""
-                  }`}
-                >
-                  {loading ? "..." : count}
-                </Badge>
-              </button>
-            );
-          })}
-          {needsTruncation && (
-            <button
-              type="button"
-              onClick={() => setShowAllBays(true)}
-              className="mt-1 flex w-full items-center justify-center gap-1 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              Show {bays.length - maxVisibleBays} more
-              <ChevronDown className="h-3 w-3" />
-            </button>
+              ) : bookings.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-8 text-center">
+                  <CalendarCheck className="h-8 w-8 text-muted-foreground/20" />
+                  <p className="text-xs text-muted-foreground">
+                    No upcoming bookings
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {bookings.map((booking) => {
+                    const isExpanded = expandedBookingId === booking.id;
+                    const bayName =
+                      bays.find((b) => b.id === booking.bay_id)?.name ??
+                      "Unknown Bay";
+                    const price = `$${(booking.total_price_cents / 100).toFixed(2)}`;
+                    const isCancelling = cancellingId === booking.id;
+
+                    return (
+                      <div
+                        key={booking.id}
+                        className="rounded-lg border bg-background transition-colors"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedBookingId(
+                              isExpanded ? null : booking.id
+                            )
+                          }
+                          className="flex w-full flex-col gap-1 p-3 text-left"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono text-[11px] text-muted-foreground">
+                              {booking.confirmation_code}
+                            </span>
+                            {isExpanded ? (
+                              <ChevronUp className="h-3 w-3 text-muted-foreground" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                            )}
+                          </div>
+                          <p className="text-sm font-medium">{bayName}</p>
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs text-muted-foreground">
+                              {formatBookingDate(booking.date)} &middot;{" "}
+                              {formatTime(booking.start_time, timezone)}{" "}
+                              &ndash;{" "}
+                              {formatTime(booking.end_time, timezone)}
+                            </p>
+                            <span className="text-xs font-semibold">
+                              {price}
+                            </span>
+                          </div>
+                        </button>
+                        {isExpanded && (
+                          <div className="border-t px-3 py-2.5">
+                            {booking.notes && (
+                              <p className="mb-2 text-xs text-muted-foreground">
+                                {booking.notes}
+                              </p>
+                            )}
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="h-7 w-full text-xs"
+                              disabled={isCancelling}
+                              onClick={() =>
+                                handleCancelBooking(booking.id)
+                              }
+                            >
+                              {isCancelling ? (
+                                <>
+                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                  Cancelling...
+                                </>
+                              ) : (
+                                "Cancel Booking"
+                              )}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 p-6 text-center">
+              <LogIn className="h-8 w-8 text-muted-foreground/20" />
+              <div>
+                <p className="text-sm font-medium">Your Bookings</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Sign in to see your confirmed bookings
+                </p>
+              </div>
+              <AuthModal
+                trigger={
+                  <Button variant="outline" size="sm" className="gap-2">
+                    <LogIn className="h-3.5 w-3.5" />
+                    Sign In
+                  </Button>
+                }
+              />
+            </div>
           )}
-        </nav>
+        </div>
 
         {/* Chat Assistant — pinned to bottom of sidebar */}
         {facilitySlug && (
-          <div className="mt-auto border-t">
+          <div className="shrink-0 border-t">
             <button
               type="button"
               onClick={() => setChatExpanded((v) => !v)}
@@ -435,7 +545,7 @@ export function AvailabilityWidget({
               )}
             </button>
             {chatExpanded && (
-              <div className="px-2 pb-2">
+              <div className="h-[28rem] px-2 pb-2">
                 <ChatWidget
                   facilitySlug={facilitySlug}
                   orgName={orgName}
@@ -447,8 +557,52 @@ export function AvailabilityWidget({
         )}
       </div>
 
-      {/* Slot content */}
+      {/* ===== Main content ===== */}
       <div className="min-w-0 flex-1 overflow-hidden rounded-xl border bg-card shadow-sm">
+        {/* Horizontal Bay Tabs — scrollable */}
+        <div className="border-b">
+          <div className="flex gap-2 overflow-x-auto px-4 py-3">
+            {bays.map((bay) => {
+              const count = slotCountsByBay[bay.id] || 0;
+              const isActive = bay.id === selectedBayId;
+
+              return (
+                <button
+                  key={bay.id}
+                  type="button"
+                  onClick={() => setSelectedBayId(bay.id)}
+                  className={`inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                    isActive
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+                  }`}
+                >
+                  <span>{bay.name}</span>
+                  {bay.resource_type && (
+                    <span
+                      className={`text-xs ${
+                        isActive
+                          ? "text-primary-foreground/70"
+                          : ""
+                      }`}
+                    >
+                      &middot; {bay.resource_type}
+                    </span>
+                  )}
+                  <Badge
+                    variant={isActive ? "secondary" : "outline"}
+                    className={`text-xs ${
+                      isActive ? "" : count === 0 ? "opacity-50" : ""
+                    }`}
+                  >
+                    {loading ? "..." : count}
+                  </Badge>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Date Navigation Header */}
         <div className="flex items-center justify-between border-b px-5 py-3">
           <div className="flex items-center gap-2">

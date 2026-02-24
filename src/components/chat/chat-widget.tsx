@@ -163,15 +163,13 @@ export function ChatWidget({
     : ["Any slots open today?", "Show my bookings", "What are your prices?"];
 
   return (
-    <div className={`flex flex-col gap-2 ${isPanel ? "h-full p-3" : ""}`}>
+    <div className={`flex flex-col gap-2 ${isPanel || isSidebar ? "h-full" : ""} ${isPanel ? "p-3" : ""}`}>
       {/* Messages area */}
       <div
         className={`flex flex-col gap-2 overflow-y-auto rounded-lg border bg-background p-2.5 ${
-          isPanel
+          isPanel || isSidebar
             ? "min-h-0 flex-1"
-            : isSidebar
-              ? "max-h-[32rem] min-h-40"
-              : "max-h-80 min-h-40"
+            : "max-h-80 min-h-40"
         }`}
       >
         {messages.length === 0 && (

@@ -148,6 +148,7 @@ export default async function FacilityHomePage() {
                 todayStr={todayStr}
                 minBookingLeadMinutes={minBookingLeadMinutes}
                 facilitySlug={slug}
+                isAuthenticated={!!auth}
               />
             ) : (
               <div className="rounded-xl border bg-card p-12 text-center">
@@ -254,6 +255,7 @@ export default async function FacilityHomePage() {
               todayStr={todayStr}
               minBookingLeadMinutes={minBookingLeadMinutes}
               facilitySlug={slug}
+              isAuthenticated={!!auth}
             />
           ) : (
             <div className="rounded-xl border bg-card p-8 text-center">
