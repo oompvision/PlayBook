@@ -137,9 +137,63 @@ export function AvailabilityWidget({
   const [selectedSlotIds, setSelectedSlotIds] = useState<Set<string>>(new Set());
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [autoAdvancedFrom, setAutoAdvancedFrom] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  // On initial mount, check if today has availability. If not, jump to the next date that does.
+  useEffect(() => {
+    async function checkAndAutoAdvance() {
+      const supabase = createClient();
+
+      // Compute effective start for today (now + lead time)
+      let effectiveStart: string;
+      if (minBookingLeadMinutes > 0) {
+        const cutoff = new Date(Date.now() + minBookingLeadMinutes * 60_000);
+        effectiveStart = cutoff.toISOString();
+      } else {
+        effectiveStart = toTimestamp(todayStr, "00:00:00", timezone);
+      }
+
+      const todayEnd = toTimestamp(addDays(todayStr, 1), "00:00:00", timezone);
+
+      // Quick count: does today have any available slots?
+      const { count } = await supabase
+        .from("bay_schedule_slots")
+        .select("id", { count: "exact", head: true })
+        .eq("org_id", orgId)
+        .eq("status", "available")
+        .gte("start_time", effectiveStart)
+        .lt("start_time", todayEnd);
+
+      if (count && count > 0) return; // Today has availability, stay put
+
+      // Find the earliest future available slot
+      const { data: nextSlot } = await supabase
+        .from("bay_schedule_slots")
+        .select("start_time")
+        .eq("org_id", orgId)
+        .eq("status", "available")
+        .gte("start_time", todayEnd)
+        .order("start_time")
+        .limit(1)
+        .single();
+
+      if (nextSlot) {
+        // Extract the date in the facility timezone
+        const nextDate = new Date(nextSlot.start_time).toLocaleDateString(
+          "en-CA",
+          { timeZone: timezone }
+        );
+        setAutoAdvancedFrom(todayStr);
+        setSelectedDate(nextDate);
+      }
+    }
+
+    checkAndAutoAdvance();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const isToday = selectedDate === todayStr;
@@ -231,6 +285,7 @@ export function AvailabilityWidget({
     const newDate = addDays(selectedDate, delta);
     if (newDate < todayStr) return;
     setSelectedDate(newDate);
+    setAutoAdvancedFrom(null);
   }
 
   function handleCalendarSelect(date: Date | undefined) {
@@ -242,6 +297,7 @@ export function AvailabilityWidget({
     if (newDate < todayStr) return;
     setSelectedDate(newDate);
     setCalendarOpen(false);
+    setAutoAdvancedFrom(null);
   }
 
   function toggleSlot(slotId: string) {
@@ -330,6 +386,14 @@ export function AvailabilityWidget({
 
         {/* Main Content */}
         <div className="flex flex-1 flex-col">
+          {/* Auto-advance banner */}
+          {autoAdvancedFrom && (
+            <div className="border-b bg-amber-50 px-5 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+              No availability today &mdash; showing{" "}
+              <span className="font-medium">{formatDateLabel(selectedDate)}</span>
+            </div>
+          )}
+
           {/* Date Navigation Header */}
           <div className="flex items-center justify-between border-b px-5 py-3">
             <div className="flex items-center gap-2">
