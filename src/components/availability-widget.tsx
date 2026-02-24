@@ -342,11 +342,97 @@ export function AvailabilityWidget({
   const selectedBay = bays.find((b) => b.id === selectedBayId);
 
   return (
-    <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
-      {/* Shared header row — single border-b ensures sidebar and date nav lines align */}
-      <div className="flex border-b">
-        <div className="w-56 shrink-0 border-r bg-muted/30 px-4 py-3" />
-        <div className="flex flex-1 items-center justify-between px-5 py-3">
+    <div className="flex items-start gap-6">
+      {/* Sticky sidebar — bays + chat assistant */}
+      <div className="sticky top-[4.5rem] w-72 shrink-0 overflow-hidden rounded-xl border bg-card shadow-sm">
+        <nav className="p-2">
+          {(showAllBays ? bays : bays.slice(0, MAX_VISIBLE_BAYS)).map((bay) => {
+            const count = slotCountsByBay[bay.id] || 0;
+            const isActive = bay.id === selectedBayId;
+
+            return (
+              <button
+                key={bay.id}
+                type="button"
+                onClick={() => setSelectedBayId(bay.id)}
+                className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-accent"
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-medium">
+                    {bay.name}
+                  </p>
+                  {bay.resource_type && (
+                    <p
+                      className={`truncate text-xs ${
+                        isActive
+                          ? "text-primary-foreground/70"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {bay.resource_type}
+                    </p>
+                  )}
+                </div>
+                <Badge
+                  variant={isActive ? "secondary" : "outline"}
+                  className={`ml-2 shrink-0 text-xs ${
+                    isActive ? "" : count === 0 ? "opacity-50" : ""
+                  }`}
+                >
+                  {loading ? "..." : count}
+                </Badge>
+              </button>
+            );
+          })}
+          {!showAllBays && (
+            <button
+              type="button"
+              onClick={() => setShowAllBays(true)}
+              className="mt-1 flex w-full items-center justify-center gap-1 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              Show all {bays.length} facilities
+              <ChevronDown className="h-3 w-3" />
+            </button>
+          )}
+        </nav>
+
+        {/* Chat Assistant — collapsible, right under bays */}
+        {facilitySlug && (
+          <div className="border-t">
+            <button
+              type="button"
+              onClick={() => setChatExpanded((v) => !v)}
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              <span className="flex-1">Availability Assistant</span>
+              {chatExpanded ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronUp className="h-3.5 w-3.5" />
+              )}
+            </button>
+            {chatExpanded && (
+              <div className="px-2 pb-2">
+                <ChatWidget
+                  facilitySlug={facilitySlug}
+                  orgName={orgName}
+                  mode="sidebar"
+                />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Slot content */}
+      <div className="min-w-0 flex-1 overflow-hidden rounded-xl border bg-card shadow-sm">
+        {/* Date Navigation Header */}
+        <div className="flex items-center justify-between border-b px-5 py-3">
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -395,193 +481,101 @@ export function AvailabilityWidget({
             </PopoverContent>
           </Popover>
         </div>
-      </div>
 
-      {/* Auto-advance banner */}
-      {autoAdvancedFrom && (
-        <div className="border-b bg-amber-50 px-5 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-          No availability today &mdash; showing{" "}
-          <span className="font-medium">{formatDateLabel(selectedDate)}</span>
-        </div>
-      )}
+        {/* Auto-advance banner */}
+        {autoAdvancedFrom && (
+          <div className="border-b bg-amber-50 px-5 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+            No availability today &mdash; showing{" "}
+            <span className="font-medium">{formatDateLabel(selectedDate)}</span>
+          </div>
+        )}
 
-      {/* Content area */}
-      <div className="flex min-h-[480px]">
-        {/* Bay Sidebar */}
-        <div className="flex w-56 shrink-0 flex-col border-r bg-muted/30">
-          <nav className="p-2">
-            {(showAllBays ? bays : bays.slice(0, MAX_VISIBLE_BAYS)).map((bay) => {
-              const count = slotCountsByBay[bay.id] || 0;
-              const isActive = bay.id === selectedBayId;
+        {/* Slot List */}
+        <div className="px-5 py-4">
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : slots.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <Clock className="mb-3 h-10 w-10 text-muted-foreground/30" />
+              <p className="font-medium text-muted-foreground">
+                No available slots
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground/70">
+                {selectedBay?.name} has no availability on{" "}
+                {formatShortDate(selectedDate)}. Try another date or facility.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {slots.map((slot) => {
+                const startTime = formatTime(slot.start_time, timezone);
+                const endTime = formatTime(slot.end_time, timezone);
+                const price = `$${(slot.price_cents / 100).toFixed(2)}`;
+                const isSelected = selectedSlotIds.has(slot.id);
 
-              return (
-                <button
-                  key={bay.id}
-                  type="button"
-                  onClick={() => setSelectedBayId(bay.id)}
-                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-accent"
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <p className={`truncate font-medium ${isActive ? "" : ""}`}>
-                      {bay.name}
-                    </p>
-                    {bay.resource_type && (
-                      <p
-                        className={`truncate text-xs ${
-                          isActive
-                            ? "text-primary-foreground/70"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        {bay.resource_type}
-                      </p>
-                    )}
-                  </div>
-                  <Badge
-                    variant={isActive ? "secondary" : "outline"}
-                    className={`ml-2 shrink-0 text-xs ${
-                      isActive ? "" : count === 0 ? "opacity-50" : ""
+                return (
+                  <button
+                    key={slot.id}
+                    type="button"
+                    onClick={() => toggleSlot(slot.id)}
+                    className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-all ${
+                      isSelected
+                        ? "border-primary bg-primary/5 ring-1 ring-primary"
+                        : "hover:border-foreground/20 hover:bg-accent"
                     }`}
                   >
-                    {loading ? "..." : count}
-                  </Badge>
-                </button>
-              );
-            })}
-            {!showAllBays && (
-              <button
-                type="button"
-                onClick={() => setShowAllBays(true)}
-                className="mt-1 flex w-full items-center justify-center gap-1 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              >
-                Show all {bays.length} facilities
-                <ChevronDown className="h-3 w-3" />
-              </button>
-            )}
-          </nav>
-
-          {/* Chat Assistant — collapsible section */}
-          {facilitySlug && (
-            <div className="mt-auto border-t">
-              <button
-                type="button"
-                onClick={() => setChatExpanded((v) => !v)}
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              >
-                <MessageSquare className="h-3.5 w-3.5" />
-                <span className="flex-1">Availability Assistant</span>
-                {chatExpanded ? (
-                  <ChevronDown className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronUp className="h-3.5 w-3.5" />
-                )}
-              </button>
-              {chatExpanded && (
-                <div className="px-2 pb-2">
-                  <ChatWidget
-                    facilitySlug={facilitySlug}
-                    orgName={orgName}
-                    mode="sidebar"
-                  />
-                </div>
-              )}
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`flex h-9 w-9 items-center justify-center rounded-full ${
+                          isSelected
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted"
+                        }`}
+                      >
+                        <Clock className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">
+                          {startTime} &ndash; {endTime}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {selectedBay?.name}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-semibold">{price}</span>
+                      <div
+                        className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors ${
+                          isSelected
+                            ? "border-primary bg-primary"
+                            : "border-muted-foreground/30"
+                        }`}
+                      >
+                        {isSelected && (
+                          <svg
+                            className="h-3 w-3 text-primary-foreground"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth={3}
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M5 13l4 4L19 7"
+                            />
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
-        </div>
-
-        {/* Main Content */}
-        <div className="flex flex-1 flex-col">
-          {/* Slot List */}
-          <div className="flex-1 overflow-y-auto px-5 py-4">
-            {loading ? (
-              <div className="flex h-full items-center justify-center py-16">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : slots.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center py-16 text-center">
-                <Clock className="mb-3 h-10 w-10 text-muted-foreground/30" />
-                <p className="font-medium text-muted-foreground">
-                  No available slots
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground/70">
-                  {selectedBay?.name} has no availability on{" "}
-                  {formatShortDate(selectedDate)}. Try another date or facility.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {slots.map((slot) => {
-                  const startTime = formatTime(slot.start_time, timezone);
-                  const endTime = formatTime(slot.end_time, timezone);
-                  const price = `$${(slot.price_cents / 100).toFixed(2)}`;
-                  const isSelected = selectedSlotIds.has(slot.id);
-
-                  return (
-                    <button
-                      key={slot.id}
-                      type="button"
-                      onClick={() => toggleSlot(slot.id)}
-                      className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-all ${
-                        isSelected
-                          ? "border-primary bg-primary/5 ring-1 ring-primary"
-                          : "hover:border-foreground/20 hover:bg-accent"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div
-                          className={`flex h-9 w-9 items-center justify-center rounded-full ${
-                            isSelected
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-muted"
-                          }`}
-                        >
-                          <Clock className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium">
-                            {startTime} &ndash; {endTime}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {selectedBay?.name}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-semibold">{price}</span>
-                        <div
-                          className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors ${
-                            isSelected
-                              ? "border-primary bg-primary"
-                              : "border-muted-foreground/30"
-                          }`}
-                        >
-                          {isSelected && (
-                            <svg
-                              className="h-3 w-3 text-primary-foreground"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                              strokeWidth={3}
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                d="M5 13l4 4L19 7"
-                              />
-                            </svg>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
