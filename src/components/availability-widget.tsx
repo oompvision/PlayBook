@@ -25,6 +25,7 @@ import {
   MessageSquare,
   LogIn,
   X,
+  ExternalLink,
 } from "lucide-react";
 import { ChatWidget } from "@/components/chat/chat-widget";
 import { AuthModal } from "@/components/auth-modal";
@@ -219,7 +220,7 @@ export function AvailabilityWidget({
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [autoAdvancedFrom, setAutoAdvancedFrom] = useState<string | null>(null);
-  const [chatExpanded, setChatExpanded] = useState(true);
+  const [chatExpanded, setChatExpanded] = useState(false);
 
   // Booking panel state
   const [panelOpen, setPanelOpen] = useState(false);
@@ -684,7 +685,14 @@ export function AvailabilityWidget({
             <div className="p-3">
               <div className="mb-3 flex items-center gap-2 px-1">
                 <CalendarCheck className="h-4 w-4 text-muted-foreground" />
-                <h3 className="text-sm font-semibold">Confirmed Bookings</h3>
+                <h3 className="flex-1 text-sm font-semibold">Confirmed Bookings</h3>
+                <a
+                  href="/my-bookings"
+                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  title="View all bookings"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
               </div>
               {bookingsLoading ? (
                 <div className="flex items-center justify-center py-8">
@@ -757,9 +765,9 @@ export function AvailabilityWidget({
                               </p>
                             )}
                             <Button
-                              variant="destructive"
+                              variant="outline"
                               size="sm"
-                              className="h-7 w-full text-xs"
+                              className="h-7 w-full text-xs text-destructive hover:bg-destructive/10"
                               disabled={isCancelling}
                               onClick={() =>
                                 handleCancelBooking(booking.id)
