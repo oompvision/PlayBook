@@ -17,6 +17,7 @@ interface BookingCardExpandableProps {
   };
   customerName: string;
   customerEmail: string;
+  isGuest?: boolean;
   bayName: string;
   timeStr: string;
   dateStr: string;
@@ -27,6 +28,7 @@ export function BookingCardExpandable({
   booking,
   customerName,
   customerEmail,
+  isGuest,
   bayName,
   timeStr,
   dateStr,
@@ -48,6 +50,11 @@ export function BookingCardExpandable({
             <p className="truncate text-sm font-semibold text-gray-800 dark:text-white/90">
               {customerName}
             </p>
+            {isGuest && (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                Guest
+              </span>
+            )}
             <span
               className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                 booking.status === "confirmed"
@@ -83,7 +90,14 @@ export function BookingCardExpandable({
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500 dark:text-gray-400">Customer</span>
-              <span className="text-gray-800 dark:text-white/90">{customerName}</span>
+              <span className="flex items-center gap-1.5 text-gray-800 dark:text-white/90">
+                {customerName}
+                {isGuest && (
+                  <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                    Guest
+                  </span>
+                )}
+              </span>
             </div>
             {customerEmail && customerEmail !== customerName && (
               <div className="flex justify-between">

@@ -11,6 +11,7 @@ import {
   List,
   Search,
   SlidersHorizontal,
+  UserPlus,
   X,
 } from "lucide-react";
 
@@ -37,6 +38,8 @@ export default async function BookingsListPage({
     bay?: string;
     q?: string;
     cancelled?: string;
+    guest_booked?: string;
+    codes?: string;
     error?: string;
   }>;
 }) {
@@ -58,11 +61,11 @@ export default async function BookingsListPage({
     .order("sort_order")
     .order("created_at");
 
-  // Build bookings query
+  // Build bookings query (includes guest fields)
   let query = supabase
     .from("bookings")
     .select(
-      "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, created_at, customer_id, bay_id"
+      "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, created_at, customer_id, bay_id, is_guest, guest_name, guest_email, guest_phone"
     )
     .eq("org_id", org.id)
     .order("date", { ascending: false })
@@ -89,9 +92,9 @@ export default async function BookingsListPage({
     console.error("Failed to load bookings:", bookingsError.message);
   }
 
-  // Look up customer names and bay names
+  // Look up customer names and bay names (filter out null customer_ids from guest bookings)
   const customerIds = [
-    ...new Set(bookings?.map((b) => b.customer_id) ?? []),
+    ...new Set(bookings?.map((b) => b.customer_id).filter(Boolean) ?? []),
   ];
   let customerMap: Record<string, { full_name: string | null; email: string }> =
     {};
@@ -114,12 +117,35 @@ export default async function BookingsListPage({
     }
   }
 
+  // Helper to resolve display name/email for a booking (handles guest + registered)
+  function getCustomerDisplay(booking: (typeof bookings extends (infer T)[] | null ? T : never)) {
+    if (booking.is_guest) {
+      return {
+        name: booking.guest_name || "Guest",
+        email: booking.guest_email || null,
+        isGuest: true,
+      };
+    }
+    const c = booking.customer_id ? customerMap[booking.customer_id] : null;
+    return {
+      name: c?.full_name || c?.email || "Unknown",
+      email: c?.full_name ? c.email : null,
+      isGuest: false,
+    };
+  }
+
   // Filter by customer search (name or email) — client-side since we join manually
   const search = params.q?.trim().toLowerCase();
   let filtered = bookings ?? [];
   if (search) {
     filtered = filtered.filter((b) => {
-      const c = customerMap[b.customer_id];
+      if (b.is_guest) {
+        return (
+          (b.guest_name && b.guest_name.toLowerCase().includes(search)) ||
+          (b.guest_email && b.guest_email.toLowerCase().includes(search))
+        );
+      }
+      const c = b.customer_id ? customerMap[b.customer_id] : null;
       if (!c) return false;
       return (
         c.email.toLowerCase().includes(search) ||
@@ -156,13 +182,22 @@ export default async function BookingsListPage({
   return (
     <div>
       {/* Page Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
-          Bookings
-        </h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          View, filter, and manage all bookings.
-        </p>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
+            Bookings
+          </h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            View, filter, and manage all bookings.
+          </p>
+        </div>
+        <a
+          href="/admin/bookings/guest"
+          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500"
+        >
+          <UserPlus className="h-4 w-4" />
+          Guest Booking
+        </a>
       </div>
 
       {/* Alerts */}
@@ -179,6 +214,11 @@ export default async function BookingsListPage({
       {params.cancelled && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
           Booking cancelled successfully.
+        </div>
+      )}
+      {params.guest_booked && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
+          Guest booking created successfully.{params.codes ? ` Confirmation: ${params.codes}` : ""}
         </div>
       )}
 
@@ -347,7 +387,7 @@ export default async function BookingsListPage({
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
                       {filtered.map((booking) => {
-                        const customer = customerMap[booking.customer_id];
+                        const display = getCustomerDisplay(booking);
                         const timeStr = `${formatTimeInZone(booking.start_time, org!.timezone)} – ${formatTimeInZone(booking.end_time, org!.timezone)}`;
                         const dateStr = new Date(booking.date).toLocaleDateString("en-US", {
                           weekday: "short",
@@ -362,12 +402,19 @@ export default async function BookingsListPage({
                           >
                             <td className="px-5 py-4">
                               <div>
-                                <p className="text-sm font-medium text-gray-800 dark:text-white/90">
-                                  {customer?.full_name || customer?.email || "Unknown"}
-                                </p>
-                                {customer?.full_name && customer?.email && (
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-medium text-gray-800 dark:text-white/90">
+                                    {display.name}
+                                  </p>
+                                  {display.isGuest && (
+                                    <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                      Guest
+                                    </span>
+                                  )}
+                                </div>
+                                {display.email && (
                                   <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                                    {customer.email}
+                                    {display.email}
                                   </p>
                                 )}
                               </div>
@@ -446,7 +493,7 @@ export default async function BookingsListPage({
             )}
 
             {filtered.map((booking) => {
-              const customer = customerMap[booking.customer_id];
+              const display = getCustomerDisplay(booking);
               const timeStr = `${formatTimeInZone(booking.start_time, org!.timezone)} – ${formatTimeInZone(booking.end_time, org!.timezone)}`;
               const dateStr = new Date(booking.date).toLocaleDateString("en-US", {
                 weekday: "short",
@@ -458,8 +505,9 @@ export default async function BookingsListPage({
                 <BookingCardExpandable
                   key={booking.id}
                   booking={booking}
-                  customerName={customer?.full_name || customer?.email || "Unknown"}
-                  customerEmail={customer?.email || ""}
+                  customerName={display.name}
+                  customerEmail={display.email || ""}
+                  isGuest={display.isGuest}
                   bayName={bayMap[booking.bay_id] ?? "Unknown"}
                   timeStr={timeStr}
                   dateStr={dateStr}

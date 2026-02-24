@@ -69,6 +69,8 @@ type AvailabilityWidgetProps = {
   userEmail?: string;
   userFullName?: string | null;
   userProfileId?: string;
+  /** "customer" (default) = normal booking flow; "admin-guest" = admin books for a guest */
+  mode?: "customer" | "admin-guest";
 };
 
 type ToastData = {
@@ -209,6 +211,7 @@ export function AvailabilityWidget({
   userEmail,
   userFullName,
   userProfileId,
+  mode = "customer",
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(todayStr);
@@ -240,6 +243,11 @@ export function AvailabilityWidget({
   const [signUpError, setSignUpError] = useState("");
   const [signUpLoading, setSignUpLoading] = useState(false);
   const [signUpSuccess, setSignUpSuccess] = useState(false);
+
+  // Guest booking state (admin-guest mode)
+  const [guestName, setGuestName] = useState("");
+  const [guestEmail, setGuestEmail] = useState("");
+  const [guestPhone, setGuestPhone] = useState("");
 
   // Toast state
   const [toastData, setToastData] = useState<ToastData | null>(null);
@@ -282,9 +290,9 @@ export function AvailabilityWidget({
     }
   }, [mounted, orgId]);
 
-  // Fetch upcoming confirmed bookings for the current user
+  // Fetch upcoming confirmed bookings for the current user (skip in admin-guest mode)
   const fetchBookings = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || mode === "admin-guest") return;
     setBookingsLoading(true);
     const supabase = createClient();
     const { data } = await supabase
@@ -297,7 +305,7 @@ export function AvailabilityWidget({
       .order("start_time");
     setBookings(data || []);
     setBookingsLoading(false);
-  }, [isAuthenticated, orgId, todayStr]);
+  }, [isAuthenticated, orgId, todayStr, mode]);
 
   useEffect(() => {
     fetchBookings();
@@ -507,6 +515,10 @@ export function AvailabilityWidget({
     setSignUpError("");
     setSignUpSuccess(false);
     setAuthTab("signin");
+    // Reset guest fields
+    setGuestName("");
+    setGuestEmail("");
+    setGuestPhone("");
   }
 
   // Save selection to localStorage before auth reload
@@ -649,6 +661,55 @@ export function AvailabilityWidget({
     fetchBookings();
   }
 
+  // Confirm guest booking — admin creates on behalf of a guest
+  async function handleConfirmGuestBooking() {
+    if (!guestName.trim()) return;
+
+    setBookingInProgress(true);
+    setBookingError("");
+
+    const supabase = createClient();
+    const slotIdsArray = Array.from(selectedSlotIds);
+
+    // Re-validate slot availability
+    const { data: freshSlots } = await supabase
+      .from("bay_schedule_slots")
+      .select("id, status")
+      .in("id", slotIdsArray);
+
+    const unavailable = freshSlots?.filter((s) => s.status !== "available") || [];
+    if (unavailable.length > 0) {
+      setBookingError("One or more selected slots are no longer available. Please close and select different time slots.");
+      setBookingInProgress(false);
+      return;
+    }
+
+    const { data, error } = await supabase.rpc("create_guest_booking", {
+      p_org_id: orgId,
+      p_bay_id: selectedBayId,
+      p_date: selectedDate,
+      p_slot_ids: slotIdsArray,
+      p_guest_name: guestName.trim(),
+      p_guest_email: guestEmail.trim() || null,
+      p_guest_phone: guestPhone.trim() || null,
+      p_notes: notes || null,
+    });
+
+    if (error) {
+      setBookingError(error.message);
+      setBookingInProgress(false);
+      return;
+    }
+
+    const bookingResults = Array.isArray(data) ? data : [data];
+    const codes = bookingResults.map(
+      (r: { confirmation_code: string }) => r.confirmation_code
+    );
+
+    // Redirect back to admin bookings with success message
+    router.push(`/admin/bookings?guest_booked=true&codes=${codes.join(",")}`);
+  }
+
   async function handleCancelBooking(bookingId: string) {
     setCancellingId(bookingId);
     const supabase = createClient();
@@ -675,9 +736,12 @@ export function AvailabilityWidget({
     ? groupConsecutiveSlots(Array.from(selectedSlotIds), slotMap, timezone)
     : [];
 
+  const isAdminGuest = mode === "admin-guest";
+
   return (
-    <div className="flex items-start gap-6">
-      {/* ===== Sidebar — Confirmed Bookings + Chat Assistant (desktop only) ===== */}
+    <div className={isAdminGuest ? "" : "flex items-start gap-6"}>
+      {/* ===== Sidebar — Confirmed Bookings + Chat Assistant (desktop only, hidden in admin-guest mode) ===== */}
+      {!isAdminGuest && (
       <div className="sticky top-[4.5rem] hidden w-72 shrink-0 flex-col rounded-xl border bg-card shadow-sm lg:flex max-h-[calc(100vh-5.5rem)]">
         {/* Bookings section — scrollable */}
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -839,6 +903,7 @@ export function AvailabilityWidget({
           </div>
         )}
       </div>
+      )}
 
       {/* ===== Main content ===== */}
       <div className="min-w-0 flex-1 overflow-hidden rounded-xl border bg-card shadow-sm">
@@ -1092,7 +1157,122 @@ export function AvailabilityWidget({
                     </button>
                   </div>
 
-                  {!isAuthenticated ? (
+                  {isAdminGuest ? (
+                    /* ---- Admin guest booking: guest info form + confirm ---- */
+                    <div>
+                      {/* Error banner */}
+                      {bookingError && (
+                        <div className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                          {bookingError}
+                        </div>
+                      )}
+
+                      {/* Booking summary */}
+                      <div className="mb-4 rounded-lg border p-4">
+                        <div className="mb-3 flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{selectedBay?.name}</p>
+                            {selectedBay?.resource_type && (
+                              <Badge variant="outline" className="mt-1">
+                                {selectedBay.resource_type}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          {selectedGroups.map((group) => (
+                            <div
+                              key={group.start_time}
+                              className="flex items-center justify-between text-sm"
+                            >
+                              <span>
+                                {formatTime(group.start_time, timezone)} &ndash;{" "}
+                                {formatTime(group.end_time, timezone)}
+                                {group.slot_count > 1 && (
+                                  <span className="ml-2 text-xs text-muted-foreground">
+                                    ({group.slot_count} slots)
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-muted-foreground">
+                                ${(group.price_cents / 100).toFixed(2)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-3 border-t pt-3">
+                          <div className="flex items-center justify-between font-bold">
+                            <span>Total</span>
+                            <span>${(totalCents / 100).toFixed(2)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Guest info form */}
+                      <div className="mb-4 space-y-3">
+                        <p className="text-sm font-medium">Guest Information</p>
+                        <div className="space-y-2">
+                          <Label htmlFor="guest-name">Name *</Label>
+                          <Input
+                            id="guest-name"
+                            type="text"
+                            placeholder="Guest name"
+                            value={guestName}
+                            onChange={(e) => setGuestName(e.target.value)}
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="guest-email">Email (optional)</Label>
+                          <Input
+                            id="guest-email"
+                            type="email"
+                            placeholder="guest@example.com"
+                            value={guestEmail}
+                            onChange={(e) => setGuestEmail(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="guest-phone">Phone (optional)</Label>
+                          <Input
+                            id="guest-phone"
+                            type="tel"
+                            placeholder="(555) 123-4567"
+                            value={guestPhone}
+                            onChange={(e) => setGuestPhone(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Notes */}
+                      <div className="mb-4 space-y-2">
+                        <Label htmlFor="guest-booking-notes">Notes (optional)</Label>
+                        <Input
+                          id="guest-booking-notes"
+                          placeholder="Any special requests..."
+                          value={notes}
+                          onChange={(e) => setNotes(e.target.value)}
+                        />
+                      </div>
+
+                      {/* Confirm button */}
+                      <Button
+                        className="w-full"
+                        size="lg"
+                        disabled={bookingInProgress || !guestName.trim()}
+                        onClick={handleConfirmGuestBooking}
+                      >
+                        {bookingInProgress ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Booking...
+                          </>
+                        ) : (
+                          "Confirm Guest Booking"
+                        )}
+                      </Button>
+                    </div>
+                  ) : !isAuthenticated ? (
                     /* ---- Auth form for unauthenticated users ---- */
                     <div>
                       {/* Show booking summary preview above auth */}
