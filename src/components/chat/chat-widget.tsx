@@ -170,7 +170,7 @@ export function ChatWidget({
           isPanel
             ? "min-h-0 flex-1"
             : isSidebar
-              ? "max-h-64 min-h-32"
+              ? "max-h-[32rem] min-h-40"
               : "max-h-80 min-h-40"
         }`}
       >

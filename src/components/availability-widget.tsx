@@ -36,8 +36,15 @@ type Slot = {
   bay_id: string;
 };
 
-/** Number of bays to show before collapsing with a "Show all" button */
-const MAX_VISIBLE_BAYS = 4;
+/**
+ * Sidebar layout constants (approx px) for computing how many bays fit.
+ * The sidebar has a fixed max-height; bays fill the space above the chat.
+ */
+const SIDEBAR_MAX_PX = 832; // 52rem
+const CHAT_EXPANDED_PX = 600; // toggle bar + messages (512) + input + gaps
+const CHAT_COLLAPSED_PX = 40; // just the toggle bar
+const BAY_ITEM_PX = 44; // each bay button height (py-2.5 + content)
+const SIDEBAR_CHROME_PX = 20; // nav padding + borders
 
 type AvailabilityWidgetProps = {
   orgId: string;
@@ -147,8 +154,15 @@ export function AvailabilityWidget({
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [autoAdvancedFrom, setAutoAdvancedFrom] = useState<string | null>(null);
-  const [showAllBays, setShowAllBays] = useState(bays.length <= MAX_VISIBLE_BAYS);
+  const [showAllBays, setShowAllBays] = useState(false);
   const [chatExpanded, setChatExpanded] = useState(true);
+
+  // Dynamically compute how many bays fit above the chat in the sidebar
+  const chatHeightPx = chatExpanded ? CHAT_EXPANDED_PX : CHAT_COLLAPSED_PX;
+  const availableForBaysPx = SIDEBAR_MAX_PX - chatHeightPx - SIDEBAR_CHROME_PX;
+  const maxVisibleBays = Math.max(2, Math.floor(availableForBaysPx / BAY_ITEM_PX));
+  const needsTruncation = !showAllBays && bays.length > maxVisibleBays;
+  const visibleBays = needsTruncation ? bays.slice(0, maxVisibleBays) : bays;
 
   useEffect(() => {
     setMounted(true);
@@ -343,10 +357,14 @@ export function AvailabilityWidget({
 
   return (
     <div className="flex items-start gap-6">
-      {/* Sticky sidebar — bays + chat assistant */}
-      <div className="sticky top-[4.5rem] w-72 shrink-0 overflow-hidden rounded-xl border bg-card shadow-sm">
-        <nav className="p-2">
-          {(showAllBays ? bays : bays.slice(0, MAX_VISIBLE_BAYS)).map((bay) => {
+      {/* Sticky sidebar — bays + chat assistant pinned to bottom */}
+      <div
+        className={`sticky top-[4.5rem] flex w-72 shrink-0 flex-col rounded-xl border bg-card shadow-sm ${
+          showAllBays ? "" : "max-h-[52rem]"
+        }`}
+      >
+        <nav className="shrink-0 p-2">
+          {visibleBays.map((bay) => {
             const count = slotCountsByBay[bay.id] || 0;
             const isActive = bay.id === selectedBayId;
 
@@ -388,21 +406,21 @@ export function AvailabilityWidget({
               </button>
             );
           })}
-          {!showAllBays && (
+          {needsTruncation && (
             <button
               type="button"
               onClick={() => setShowAllBays(true)}
               className="mt-1 flex w-full items-center justify-center gap-1 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
-              Show all {bays.length} facilities
+              Show {bays.length - maxVisibleBays} more
               <ChevronDown className="h-3 w-3" />
             </button>
           )}
         </nav>
 
-        {/* Chat Assistant — collapsible, right under bays */}
+        {/* Chat Assistant — pinned to bottom of sidebar */}
         {facilitySlug && (
-          <div className="border-t">
+          <div className="mt-auto border-t">
             <button
               type="button"
               onClick={() => setChatExpanded((v) => !v)}
