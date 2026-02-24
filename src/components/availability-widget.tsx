@@ -332,12 +332,72 @@ export function AvailabilityWidget({
 
   return (
     <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      {/* Shared header row — single border-b ensures sidebar and date nav lines align */}
+      <div className="flex border-b">
+        <div className="w-56 shrink-0 border-r bg-muted/30 px-4 py-3" />
+        <div className="flex flex-1 items-center justify-between px-5 py-3">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              disabled={!canGoBack}
+              onClick={() => handleDateChange(-1)}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => handleDateChange(1)}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <div className="ml-1">
+              <p className="text-sm font-semibold">
+                {formatDateLabel(selectedDate)}
+              </p>
+              {isToday && (
+                <p className="text-xs text-muted-foreground">Today</p>
+              )}
+            </div>
+          </div>
+          <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <CalendarIcon className="h-4 w-4" />
+                <span className="hidden sm:inline">
+                  {formatShortDate(selectedDate)}
+                </span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="end">
+              <Calendar
+                mode="single"
+                selected={new Date(selectedDate + "T12:00:00")}
+                onSelect={handleCalendarSelect}
+                disabled={{ before: new Date(todayStr + "T12:00:00") }}
+                startMonth={new Date(todayStr + "T12:00:00")}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+      </div>
+
+      {/* Auto-advance banner */}
+      {autoAdvancedFrom && (
+        <div className="border-b bg-amber-50 px-5 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          No availability today &mdash; showing{" "}
+          <span className="font-medium">{formatDateLabel(selectedDate)}</span>
+        </div>
+      )}
+
+      {/* Content area */}
       <div className="flex min-h-[480px]">
         {/* Bay Sidebar */}
         <div className="w-56 shrink-0 border-r bg-muted/30">
-          <div className="border-b px-4 py-3">
-            <div className="h-8" />
-          </div>
           <nav className="p-2">
             {bays.map((bay) => {
               const count = slotCountsByBay[bay.id] || 0;
@@ -386,65 +446,6 @@ export function AvailabilityWidget({
 
         {/* Main Content */}
         <div className="flex flex-1 flex-col">
-          {/* Auto-advance banner */}
-          {autoAdvancedFrom && (
-            <div className="border-b bg-amber-50 px-5 py-2 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-              No availability today &mdash; showing{" "}
-              <span className="font-medium">{formatDateLabel(selectedDate)}</span>
-            </div>
-          )}
-
-          {/* Date Navigation Header */}
-          <div className="flex items-center justify-between border-b px-5 py-3">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                disabled={!canGoBack}
-                onClick={() => handleDateChange(-1)}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => handleDateChange(1)}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <div className="ml-1">
-                <p className="text-sm font-semibold">
-                  {formatDateLabel(selectedDate)}
-                </p>
-                {isToday && (
-                  <p className="text-xs text-muted-foreground">Today</p>
-                )}
-              </div>
-            </div>
-            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-2">
-                  <CalendarIcon className="h-4 w-4" />
-                  <span className="hidden sm:inline">
-                    {formatShortDate(selectedDate)}
-                  </span>
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="end">
-                <Calendar
-                  mode="single"
-                  selected={new Date(selectedDate + "T12:00:00")}
-                  onSelect={handleCalendarSelect}
-                  disabled={{ before: new Date(todayStr + "T12:00:00") }}
-                  startMonth={new Date(todayStr + "T12:00:00")}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-
           {/* Slot List */}
           <div className="flex-1 overflow-y-auto px-5 py-4">
             {loading ? (
@@ -532,7 +533,6 @@ export function AvailabilityWidget({
               </div>
             )}
           </div>
-
         </div>
       </div>
 
