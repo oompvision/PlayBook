@@ -6,7 +6,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { SignOutButton } from "@/components/sign-out-button";
-import { ChatWidget } from "@/components/chat/chat-widget";
 import { OrgHeader } from "@/components/org-header";
 import { AuthModal } from "@/components/auth-modal";
 import { AvailabilityWidget } from "@/components/availability-widget";
@@ -148,6 +147,8 @@ export default async function FacilityHomePage() {
                 bays={bays}
                 todayStr={todayStr}
                 minBookingLeadMinutes={minBookingLeadMinutes}
+                facilitySlug={slug}
+                isAuthenticated={!!auth}
               />
             ) : (
               <div className="rounded-xl border bg-card p-12 text-center">
@@ -160,7 +161,7 @@ export default async function FacilityHomePage() {
         </div>
       </div>
 
-      {/* =========== MOBILE LAYOUT (unchanged) =========== */}
+      {/* =========== MOBILE LAYOUT =========== */}
       <div className="flex min-h-screen flex-col lg:hidden">
         {/* Cover photo hero */}
         {coverPhotoUrl && (
@@ -196,10 +197,10 @@ export default async function FacilityHomePage() {
           </div>
         )}
 
-        <div className="flex flex-1 flex-col items-center p-8">
+        <div className="flex flex-1 flex-col p-6">
           {/* Show org header when no cover photo */}
           {!coverPhotoUrl && (
-            <div className="flex flex-1 flex-col items-center justify-center">
+            <div className="mb-6 flex flex-col items-center text-center">
               <div className="flex flex-col items-center gap-3">
                 {logoUrl ? (
                   <Image
@@ -211,55 +212,58 @@ export default async function FacilityHomePage() {
                     unoptimized
                   />
                 ) : null}
-                <h1 className="text-4xl font-bold tracking-tight capitalize">
+                <h1 className="text-3xl font-bold tracking-tight capitalize">
                   {orgName}
                 </h1>
               </div>
-              <p className="mt-4 text-lg text-muted-foreground">
+              <p className="mt-2 text-sm text-muted-foreground">
                 Browse availability and book your session
               </p>
             </div>
           )}
 
-          {/* CTA section */}
-          <div className={`flex flex-col items-center ${coverPhotoUrl ? "mt-8" : ""}`}>
-            {coverPhotoUrl && (
-              <p className="mb-6 text-lg text-muted-foreground">
-                Browse availability and book your session
-              </p>
-            )}
-            <div className="flex gap-4">
-              <a href="#availability">
-                <Button size="lg">View Availability</Button>
-              </a>
+          {/* Navigation / auth row */}
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex gap-3">
               {auth ? (
                 <Link href="/my-bookings">
-                  <Button variant="outline" size="lg">
+                  <Button variant="outline" size="sm">
                     My Bookings
                   </Button>
                 </Link>
               ) : (
-                <Link href="/auth/login">
-                  <Button variant="outline" size="lg">
-                    Sign In
-                  </Button>
-                </Link>
+                <AuthModal />
               )}
             </div>
             {auth && (
-              <div className="mt-4 flex flex-col items-center gap-1">
-                <p className="text-sm text-muted-foreground">
-                  Signed in as {auth.profile.email}
-                </p>
-                <SignOutButton variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" />
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {auth.profile.email}
+                </span>
+                <SignOutButton variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" />
               </div>
             )}
           </div>
 
-          {/* Inline availability assistant */}
-          <div id="availability" className="mt-8 w-full max-w-lg">
-            <ChatWidget facilitySlug={slug} orgName={orgName} inline />
-          </div>
+          {/* Mobile availability widget with embedded chat */}
+          {org && bays && bays.length > 0 ? (
+            <AvailabilityWidget
+              orgId={org.id}
+              orgName={orgName}
+              timezone={timezone}
+              bays={bays}
+              todayStr={todayStr}
+              minBookingLeadMinutes={minBookingLeadMinutes}
+              facilitySlug={slug}
+              isAuthenticated={!!auth}
+            />
+          ) : (
+            <div className="rounded-xl border bg-card p-8 text-center">
+              <p className="text-muted-foreground">
+                No facilities are currently available for booking.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>
