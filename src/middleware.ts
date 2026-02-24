@@ -49,16 +49,27 @@ export async function middleware(request: NextRequest) {
   // Extract facility slug from subdomain
   let facilitySlug = extractFacilitySlug(hostname);
 
+  // Determine if running on localhost (dev mode)
+  const host = hostname.split(":")[0];
+  const isLocalhost = host === "localhost" || host === "127.0.0.1";
+
   // Fallback: check for ?facility= query param and persist via cookie
   const facilityParam = request.nextUrl.searchParams.get("facility");
   if (!facilitySlug && facilityParam) {
     facilitySlug = facilityParam;
   }
 
-  // Fallback: check cookie (set by ?facility= param or super admin "Enter as Admin" flow)
+  // Fallback: check cookies — but only in appropriate contexts.
+  // On localhost (dev): always read cookies (no subdomains available).
+  // On production: only read admin-org cookie for /admin routes (Enter as Admin flow).
+  // This prevents stale cookies from overriding the bare domain landing page.
   if (!facilitySlug) {
-    facilitySlug = request.cookies.get("playbook-facility")?.value ||
-      request.cookies.get("playbook-admin-org")?.value || null;
+    if (isLocalhost) {
+      facilitySlug = request.cookies.get("playbook-facility")?.value ||
+        request.cookies.get("playbook-admin-org")?.value || null;
+    } else if (pathname.startsWith("/admin")) {
+      facilitySlug = request.cookies.get("playbook-admin-org")?.value || null;
+    }
   }
 
   // Pass facility slug as a REQUEST header so server components read it
