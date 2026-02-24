@@ -9,6 +9,7 @@ import { SignOutButton } from "@/components/sign-out-button";
 import { OrgHeader } from "@/components/org-header";
 import { AuthModal } from "@/components/auth-modal";
 import { AvailabilityWidget } from "@/components/availability-widget";
+import { UserCircle } from "lucide-react";
 
 export default async function FacilityHomePage() {
   const slug = await getFacilitySlug();
@@ -96,6 +97,13 @@ export default async function FacilityHomePage() {
                   <span className="text-sm text-muted-foreground">
                     {auth.profile.email}
                   </span>
+                  <Link
+                    href="/account"
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20"
+                    title="My Account"
+                  >
+                    <UserCircle className="h-5 w-5" />
+                  </Link>
                   <SignOutButton variant="outline" size="sm" />
                 </>
               ) : (
@@ -248,6 +256,13 @@ export default async function FacilityHomePage() {
                 <span className="text-xs text-muted-foreground">
                   {auth.profile.email}
                 </span>
+                <Link
+                  href="/account"
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20"
+                  title="My Account"
+                >
+                  <UserCircle className="h-4 w-4" />
+                </Link>
                 <SignOutButton variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" />
               </div>
             )}
