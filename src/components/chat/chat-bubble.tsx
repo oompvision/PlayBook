@@ -12,7 +12,7 @@ type ChatBubbleProps = {
 };
 
 // Pages where the floating bubble should NOT appear at all
-const HIDDEN_PATHS = ["/admin", "/super-admin"];
+const HIDDEN_PATHS = ["/", "/admin", "/super-admin"];
 
 export function ChatBubble({ facilitySlug, orgName }: ChatBubbleProps) {
   const pathname = usePathname();

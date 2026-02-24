@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChatMessage, TypingIndicator, type Message } from "./chat-message";
 import { SendHorizontal, MessageSquare } from "lucide-react";
 
@@ -12,13 +11,14 @@ const QUICK_REPLIES_DELIMITER = "\n\n<<QUICK_REPLIES>>\n";
 type ChatWidgetProps = {
   facilitySlug: string;
   orgName: string;
-  inline?: boolean;
+  /** "sidebar" = narrow sidebar embed, "inline" = full-width mobile embed, "panel" = floating popup */
+  mode?: "sidebar" | "inline" | "panel";
 };
 
 export function ChatWidget({
   facilitySlug,
   orgName,
-  inline = false,
+  mode = "panel",
 }: ChatWidgetProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -155,92 +155,88 @@ export function ChatWidget({
     sendMessage(text, messages);
   }
 
-  const containerClass = inline
-    ? "w-full"
-    : "flex h-full flex-col";
+  const isSidebar = mode === "sidebar";
+  const isPanel = mode === "panel";
+
+  const suggestions = isSidebar
+    ? ["Open today?", "Prices?", "My bookings"]
+    : ["Any slots open today?", "Show my bookings", "What are your prices?"];
 
   return (
-    <Card className={containerClass}>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <MessageSquare className="h-4 w-4" />
-          Availability Assistant
-        </CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Ask about available times, facilities, or pricing
-        </p>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 pt-0">
-        {/* Messages area */}
-        <div
-          className={
-            inline
-              ? "flex max-h-80 min-h-40 flex-col gap-2.5 overflow-y-auto rounded-lg border bg-background p-3"
-              : "flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto rounded-lg border bg-background p-3"
-          }
-        >
-          {messages.length === 0 && (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
-              <MessageSquare className="h-8 w-8 text-muted-foreground/30" />
-              <p className="text-sm text-muted-foreground">
-                Hi! Ask me about availability at {orgName}.
-              </p>
-              <div className="mt-1 flex flex-wrap justify-center gap-1.5">
-                {[
-                  "Any slots open today?",
-                  "Show my bookings",
-                  "What are your prices?",
-                ].map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    className="rounded-full border px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    onClick={() => handleQuickReply(suggestion)}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
+    <div className={`flex flex-col gap-2 ${isPanel ? "h-full p-3" : ""}`}>
+      {/* Messages area */}
+      <div
+        className={`flex flex-col gap-2 overflow-y-auto rounded-lg border bg-background p-2.5 ${
+          isPanel
+            ? "min-h-0 flex-1"
+            : isSidebar
+              ? "max-h-64 min-h-32"
+              : "max-h-80 min-h-40"
+        }`}
+      >
+        {messages.length === 0 && (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 py-4 text-center">
+            <MessageSquare className="h-6 w-6 text-muted-foreground/30" />
+            <p className={`text-muted-foreground ${isSidebar ? "text-xs" : "text-sm"}`}>
+              {isSidebar
+                ? `Ask about ${orgName}`
+                : `Hi! Ask me about availability at ${orgName}.`}
+            </p>
+            <div className="mt-1 flex flex-wrap justify-center gap-1">
+              {suggestions.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  className={`rounded-full border px-2.5 py-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground ${
+                    isSidebar ? "text-[11px]" : "text-xs"
+                  }`}
+                  onClick={() => handleQuickReply(suggestion)}
+                >
+                  {suggestion}
+                </button>
+              ))}
             </div>
-          )}
-          {messages.map((msg, i) => (
-            <ChatMessage
-              key={i}
-              message={msg}
-              onQuickReply={
-                i === messages.length - 1 &&
-                msg.role === "model" &&
-                !isLoading
-                  ? handleQuickReply
-                  : undefined
-              }
-            />
-          ))}
-          {isLoading && messages[messages.length - 1]?.role !== "model" && (
-            <TypingIndicator />
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input */}
-        <form onSubmit={handleSubmit} className="flex gap-2">
-          <Input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about availability..."
-            disabled={isLoading}
-            className="flex-1"
+          </div>
+        )}
+        {messages.map((msg, i) => (
+          <ChatMessage
+            key={i}
+            message={msg}
+            compact={isSidebar}
+            onQuickReply={
+              i === messages.length - 1 &&
+              msg.role === "model" &&
+              !isLoading
+                ? handleQuickReply
+                : undefined
+            }
           />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={isLoading || !input.trim()}
-          >
-            <SendHorizontal className="h-4 w-4" />
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+        ))}
+        {isLoading && messages[messages.length - 1]?.role !== "model" && (
+          <TypingIndicator />
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input */}
+      <form onSubmit={handleSubmit} className="flex gap-1.5">
+        <Input
+          ref={inputRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder={isSidebar ? "Ask anything..." : "Ask about availability..."}
+          disabled={isLoading}
+          className={`flex-1 ${isSidebar ? "h-8 text-xs" : ""}`}
+        />
+        <Button
+          type="submit"
+          size="icon"
+          disabled={isLoading || !input.trim()}
+          className={isSidebar ? "h-8 w-8" : ""}
+        >
+          <SendHorizontal className={isSidebar ? "h-3.5 w-3.5" : "h-4 w-4"} />
+        </Button>
+      </form>
+    </div>
   );
 }

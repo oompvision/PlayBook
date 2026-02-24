@@ -11,11 +11,15 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   CalendarIcon,
   Clock,
   Loader2,
   ArrowRight,
+  MessageSquare,
 } from "lucide-react";
+import { ChatWidget } from "@/components/chat/chat-widget";
 
 type Bay = {
   id: string;
@@ -32,6 +36,9 @@ type Slot = {
   bay_id: string;
 };
 
+/** Number of bays to show before collapsing with a "Show all" button */
+const MAX_VISIBLE_BAYS = 4;
+
 type AvailabilityWidgetProps = {
   orgId: string;
   orgName: string;
@@ -39,6 +46,7 @@ type AvailabilityWidgetProps = {
   bays: Bay[];
   todayStr: string;
   minBookingLeadMinutes: number;
+  facilitySlug?: string;
 };
 
 function formatTime(timestamp: string, timezone: string) {
@@ -127,6 +135,7 @@ export function AvailabilityWidget({
   bays,
   todayStr,
   minBookingLeadMinutes,
+  facilitySlug,
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(todayStr);
@@ -138,6 +147,8 @@ export function AvailabilityWidget({
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [autoAdvancedFrom, setAutoAdvancedFrom] = useState<string | null>(null);
+  const [showAllBays, setShowAllBays] = useState(bays.length <= MAX_VISIBLE_BAYS);
+  const [chatExpanded, setChatExpanded] = useState(true);
 
   useEffect(() => {
     setMounted(true);
@@ -397,9 +408,9 @@ export function AvailabilityWidget({
       {/* Content area */}
       <div className="flex min-h-[480px]">
         {/* Bay Sidebar */}
-        <div className="w-56 shrink-0 border-r bg-muted/30">
+        <div className="flex w-56 shrink-0 flex-col border-r bg-muted/30">
           <nav className="p-2">
-            {bays.map((bay) => {
+            {(showAllBays ? bays : bays.slice(0, MAX_VISIBLE_BAYS)).map((bay) => {
               const count = slotCountsByBay[bay.id] || 0;
               const isActive = bay.id === selectedBayId;
 
@@ -441,7 +452,45 @@ export function AvailabilityWidget({
                 </button>
               );
             })}
+            {!showAllBays && (
+              <button
+                type="button"
+                onClick={() => setShowAllBays(true)}
+                className="mt-1 flex w-full items-center justify-center gap-1 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                Show all {bays.length} facilities
+                <ChevronDown className="h-3 w-3" />
+              </button>
+            )}
           </nav>
+
+          {/* Chat Assistant — collapsible section */}
+          {facilitySlug && (
+            <div className="mt-auto border-t">
+              <button
+                type="button"
+                onClick={() => setChatExpanded((v) => !v)}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                <span className="flex-1">Availability Assistant</span>
+                {chatExpanded ? (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronUp className="h-3.5 w-3.5" />
+                )}
+              </button>
+              {chatExpanded && (
+                <div className="px-2 pb-2">
+                  <ChatWidget
+                    facilitySlug={facilitySlug}
+                    orgName={orgName}
+                    mode="sidebar"
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Main Content */}
