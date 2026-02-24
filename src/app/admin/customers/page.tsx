@@ -15,7 +15,7 @@ async function getOrg() {
   return data;
 }
 
-function getInitials(name: string | null, email: string): string {
+function getInitials(name: string | null, email: string | null): string {
   if (name) {
     return name
       .split(" ")
@@ -24,7 +24,8 @@ function getInitials(name: string | null, email: string): string {
       .toUpperCase()
       .slice(0, 2);
   }
-  return email[0].toUpperCase();
+  if (email) return email[0].toUpperCase();
+  return "?";
 }
 
 const avatarColors = [
@@ -44,6 +45,17 @@ function getAvatarColor(id: string): string {
   return avatarColors[Math.abs(hash) % avatarColors.length];
 }
 
+// Unified customer entry for both registered and guest customers
+type CustomerEntry = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  bookingCount: number;
+  date: string;
+  isGuest: boolean;
+};
+
 export default async function CustomerListPage({
   searchParams,
 }: {
@@ -54,24 +66,25 @@ export default async function CustomerListPage({
   if (!org) redirect("/");
 
   const supabase = await createClient();
+  const search = params.q?.trim();
 
-  let query = supabase
+  // ---- Registered customers ----
+  let profileQuery = supabase
     .from("profiles")
     .select("id, email, full_name, phone, role, created_at")
     .eq("org_id", org.id)
     .eq("role", "customer")
     .order("created_at", { ascending: false });
 
-  const search = params.q?.trim();
   if (search) {
-    query = query.or(
+    profileQuery = profileQuery.or(
       `full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`
     );
   }
 
-  const { data: customers } = await query;
+  const { data: customers } = await profileQuery;
 
-  // Get booking counts per customer
+  // Get booking counts per registered customer
   const customerIds = customers?.map((c) => c.id) ?? [];
   let bookingCounts: Record<string, number> = {};
   if (customerIds.length > 0) {
@@ -89,6 +102,72 @@ export default async function CustomerListPage({
     }
   }
 
+  // ---- Guest customers (aggregated from bookings) ----
+  const { data: guestBookingsRaw } = await supabase
+    .from("bookings")
+    .select("guest_name, guest_email, guest_phone, created_at")
+    .eq("org_id", org.id)
+    .eq("is_guest", true)
+    .order("created_at", { ascending: true });
+
+  // Deduplicate guests by email (if present) or by name
+  const guestDeduped = new Map<
+    string,
+    { name: string | null; email: string | null; phone: string | null; count: number; firstBooked: string }
+  >();
+  for (const gb of guestBookingsRaw ?? []) {
+    const key = gb.guest_email || `name:${gb.guest_name}`;
+    const existing = guestDeduped.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      guestDeduped.set(key, {
+        name: gb.guest_name,
+        email: gb.guest_email,
+        phone: gb.guest_phone,
+        count: 1,
+        firstBooked: gb.created_at,
+      });
+    }
+  }
+
+  // Build unified list
+  const registeredEntries: CustomerEntry[] = (customers ?? []).map((c) => ({
+    id: c.id,
+    name: c.full_name,
+    email: c.email,
+    phone: c.phone,
+    bookingCount: bookingCounts[c.id] || 0,
+    date: c.created_at,
+    isGuest: false,
+  }));
+
+  let guestEntries: CustomerEntry[] = Array.from(guestDeduped.entries()).map(
+    ([key, g]) => ({
+      id: `guest-${key}`,
+      name: g.name,
+      email: g.email,
+      phone: g.phone,
+      bookingCount: g.count,
+      date: g.firstBooked,
+      isGuest: true,
+    })
+  );
+
+  // Apply search filter to guest entries (registered already filtered server-side)
+  if (search) {
+    const s = search.toLowerCase();
+    guestEntries = guestEntries.filter(
+      (g) =>
+        (g.name && g.name.toLowerCase().includes(s)) ||
+        (g.email && g.email.toLowerCase().includes(s)) ||
+        (g.phone && g.phone.toLowerCase().includes(s))
+    );
+  }
+
+  const allEntries = [...registeredEntries, ...guestEntries];
+  const totalCount = (customers?.length ?? 0) + guestDeduped.size;
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -98,11 +177,11 @@ export default async function CustomerListPage({
             Customers
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            View and search registered customers.
+            View and search registered customers and guests.
           </p>
         </div>
         <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-          {customers?.length ?? 0} total
+          {totalCount} total
         </span>
       </div>
 
@@ -146,7 +225,7 @@ export default async function CustomerListPage({
 
       {/* Customers Table */}
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-        {(!customers || customers.length === 0) ? (
+        {allEntries.length === 0 ? (
           <div className="px-6 py-16 text-center">
             <Users className="mx-auto h-10 w-10 text-gray-300 dark:text-gray-600" />
             <p className="mt-3 text-sm font-medium text-gray-500 dark:text-gray-400">
@@ -154,7 +233,7 @@ export default async function CustomerListPage({
             </p>
             {!search && (
               <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">
-                Customers will appear here once they register.
+                Customers will appear here once they register or are booked as guests.
               </p>
             )}
           </div>
@@ -176,36 +255,47 @@ export default async function CustomerListPage({
                         Bookings
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                        Joined
+                        Since
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
-                    {customers.map((customer) => (
+                    {allEntries.map((entry) => (
                       <tr
-                        key={customer.id}
+                        key={entry.id}
                         className="transition-colors hover:bg-gray-50/50 dark:hover:bg-white/[0.02]"
                       >
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
                             <div
-                              className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold ${getAvatarColor(customer.id)}`}
+                              className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold ${getAvatarColor(entry.id)}`}
                             >
-                              {getInitials(customer.full_name, customer.email)}
+                              {getInitials(entry.name, entry.email)}
                             </div>
                             <div>
-                              <p className="text-sm font-medium text-gray-800 dark:text-white/90">
-                                {customer.full_name || "No name"}
-                              </p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium text-gray-800 dark:text-white/90">
+                                  {entry.name || "No name"}
+                                </p>
+                                {entry.isGuest && (
+                                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                    Guest
+                                  </span>
+                                )}
+                              </div>
                               <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                                {customer.email}
+                                {entry.email || (
+                                  <span className="text-gray-400 dark:text-gray-500">
+                                    No email
+                                  </span>
+                                )}
                               </p>
                             </div>
                           </div>
                         </td>
                         <td className="px-6 py-4">
                           <span className="text-sm text-gray-800 dark:text-white/90">
-                            {customer.phone || (
+                            {entry.phone || (
                               <span className="text-gray-400 dark:text-gray-500">
                                 —
                               </span>
@@ -213,10 +303,10 @@ export default async function CustomerListPage({
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          {bookingCounts[customer.id] > 0 ? (
+                          {entry.bookingCount > 0 ? (
                             <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                              {bookingCounts[customer.id]} booking
-                              {bookingCounts[customer.id] !== 1 ? "s" : ""}
+                              {entry.bookingCount} booking
+                              {entry.bookingCount !== 1 ? "s" : ""}
                             </span>
                           ) : (
                             <span className="text-xs text-gray-400 dark:text-gray-500">
@@ -226,7 +316,7 @@ export default async function CustomerListPage({
                         </td>
                         <td className="px-6 py-4">
                           <span className="text-sm text-gray-500 dark:text-gray-400">
-                            {new Date(customer.created_at).toLocaleDateString(
+                            {new Date(entry.date).toLocaleDateString(
                               "en-US",
                               {
                                 month: "short",
@@ -245,32 +335,37 @@ export default async function CustomerListPage({
 
             {/* Mobile Card View */}
             <div className="divide-y divide-gray-100 md:hidden dark:divide-white/[0.05]">
-              {customers.map((customer) => (
-                <div key={customer.id} className="px-5 py-4">
+              {allEntries.map((entry) => (
+                <div key={entry.id} className="px-5 py-4">
                   <div className="flex items-center gap-3">
                     <div
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${getAvatarColor(customer.id)}`}
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${getAvatarColor(entry.id)}`}
                     >
-                      {getInitials(customer.full_name, customer.email)}
+                      {getInitials(entry.name, entry.email)}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-medium text-gray-800 dark:text-white/90">
-                          {customer.full_name || "No name"}
+                          {entry.name || "No name"}
                         </p>
-                        {bookingCounts[customer.id] > 0 && (
+                        {entry.isGuest && (
+                          <span className="inline-flex shrink-0 items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                            Guest
+                          </span>
+                        )}
+                        {entry.bookingCount > 0 && (
                           <span className="inline-flex shrink-0 items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                            {bookingCounts[customer.id]}
+                            {entry.bookingCount}
                           </span>
                         )}
                       </div>
                       <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                        {customer.email}
-                        {customer.phone ? ` · ${customer.phone}` : ""}
+                        {entry.email || "No email"}
+                        {entry.phone ? ` · ${entry.phone}` : ""}
                       </p>
                     </div>
                     <div className="shrink-0 text-right text-xs text-gray-400 dark:text-gray-500">
-                      {new Date(customer.created_at).toLocaleDateString(
+                      {new Date(entry.date).toLocaleDateString(
                         "en-US",
                         {
                           month: "short",

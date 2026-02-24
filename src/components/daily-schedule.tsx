@@ -14,6 +14,10 @@ export interface DailyBooking {
   notes: string | null;
   customer_id: string;
   bay_id: string;
+  is_guest?: boolean;
+  guest_name?: string | null;
+  guest_email?: string | null;
+  guest_phone?: string | null;
 }
 
 export interface DailyScheduleProps {
@@ -332,8 +336,10 @@ export function DailySchedule({
                     const top = ((bStart - startHour) / totalHours) * 100;
                     const height = ((bEnd - bStart) / totalHours) * 100;
                     const isExpanded = expandedId === booking.id;
-                    const customer = customerMap[booking.customer_id];
-                    const name = customer?.full_name || customer?.email || "Unknown";
+                    const customer = booking.customer_id ? customerMap[booking.customer_id] : null;
+                    const name = booking.is_guest
+                      ? (booking.guest_name || "Guest")
+                      : (customer?.full_name || customer?.email || "Unknown");
                     const associatedCancelled = cancelledByActiveId.get(booking.id);
                     const hasCancelledExpanded = showCancelledForId === booking.id;
                     const needsAutoHeight = isExpanded || hasCancelledExpanded;
@@ -397,11 +403,12 @@ export function DailySchedule({
                             </div>
                             <div className="divide-y divide-gray-100 dark:divide-white/[0.05]">
                               {associatedCancelled.map((cb) => {
-                                const cbCustomer = customerMap[cb.customer_id];
-                                const cbName =
-                                  cbCustomer?.full_name ||
+                                const cbCustomer = cb.customer_id ? customerMap[cb.customer_id] : null;
+                                const cbName = cb.is_guest
+                                  ? (cb.guest_name || "Guest")
+                                  : (cbCustomer?.full_name ||
                                   cbCustomer?.email ||
-                                  "Unknown";
+                                  "Unknown");
                                 return (
                                   <div
                                     key={cb.id}
@@ -433,15 +440,28 @@ export function DailySchedule({
                             <div className="space-y-1.5">
                               <div className="flex justify-between">
                                 <span className="text-gray-500 dark:text-gray-400">Customer</span>
-                                <span className="text-gray-800 dark:text-white/90">
-                                  {customer?.full_name || "N/A"}
+                                <span className="flex items-center gap-1.5 text-gray-800 dark:text-white/90">
+                                  {booking.is_guest ? (booking.guest_name || "Guest") : (customer?.full_name || "N/A")}
+                                  {booking.is_guest && (
+                                    <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[8px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                      Guest
+                                    </span>
+                                  )}
                                 </span>
                               </div>
-                              {customer?.email && (
+                              {(booking.is_guest ? booking.guest_email : customer?.email) && (
                                 <div className="flex justify-between">
                                   <span className="text-gray-500 dark:text-gray-400">Email</span>
                                   <span className="text-gray-800 dark:text-white/90">
-                                    {customer.email}
+                                    {booking.is_guest ? booking.guest_email : customer?.email}
+                                  </span>
+                                </div>
+                              )}
+                              {booking.is_guest && booking.guest_phone && (
+                                <div className="flex justify-between">
+                                  <span className="text-gray-500 dark:text-gray-400">Phone</span>
+                                  <span className="text-gray-800 dark:text-white/90">
+                                    {booking.guest_phone}
                                   </span>
                                 </div>
                               )}
@@ -548,12 +568,14 @@ export function DailySchedule({
                             </div>
                             <div className="divide-y divide-gray-100 dark:divide-white/[0.05]">
                               {cluster.map((cb) => {
-                                const cbCustomer =
-                                  customerMap[cb.customer_id];
-                                const cbName =
-                                  cbCustomer?.full_name ||
+                                const cbCustomer = cb.customer_id
+                                  ? customerMap[cb.customer_id]
+                                  : null;
+                                const cbName = cb.is_guest
+                                  ? (cb.guest_name || "Guest")
+                                  : (cbCustomer?.full_name ||
                                   cbCustomer?.email ||
-                                  "Unknown";
+                                  "Unknown");
                                 return (
                                   <div
                                     key={cb.id}
