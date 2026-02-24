@@ -32,6 +32,7 @@ export function AuthModal({ trigger }: AuthModalProps) {
 
   // Sign-up state
   const [signUpName, setSignUpName] = useState("");
+  const [signUpPhone, setSignUpPhone] = useState("");
   const [signUpEmail, setSignUpEmail] = useState("");
   const [signUpPassword, setSignUpPassword] = useState("");
   const [signUpError, setSignUpError] = useState("");
@@ -71,6 +72,7 @@ export function AuthModal({ trigger }: AuthModalProps) {
       options: {
         data: {
           full_name: signUpName,
+          phone: signUpPhone || undefined,
         },
       },
     });
@@ -91,6 +93,7 @@ export function AuthModal({ trigger }: AuthModalProps) {
     setSignInError("");
     setSignInLoading(false);
     setSignUpName("");
+    setSignUpPhone("");
     setSignUpEmail("");
     setSignUpPassword("");
     setSignUpError("");
@@ -204,6 +207,19 @@ export function AuthModal({ trigger }: AuthModalProps) {
                     value={signUpName}
                     onChange={(e) => setSignUpName(e.target.value)}
                     required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signup-phone">
+                    Phone Number{" "}
+                    <span className="text-muted-foreground font-normal">(optional)</span>
+                  </Label>
+                  <Input
+                    id="signup-phone"
+                    type="tel"
+                    placeholder="(555) 123-4567"
+                    value={signUpPhone}
+                    onChange={(e) => setSignUpPhone(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">

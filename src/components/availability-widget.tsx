@@ -238,6 +238,7 @@ export function AvailabilityWidget({
   const [signInError, setSignInError] = useState("");
   const [signInLoading, setSignInLoading] = useState(false);
   const [signUpName, setSignUpName] = useState("");
+  const [signUpPhone, setSignUpPhone] = useState("");
   const [signUpEmail, setSignUpEmail] = useState("");
   const [signUpPassword, setSignUpPassword] = useState("");
   const [signUpError, setSignUpError] = useState("");
@@ -568,7 +569,7 @@ export function AvailabilityWidget({
       email: signUpEmail,
       password: signUpPassword,
       options: {
-        data: { full_name: signUpName },
+        data: { full_name: signUpName, phone: signUpPhone || undefined },
       },
     });
 
@@ -1373,6 +1374,19 @@ export function AvailabilityWidget({
                                   value={signUpName}
                                   onChange={(e) => setSignUpName(e.target.value)}
                                   required
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="panel-signup-phone">
+                                  Phone Number{" "}
+                                  <span className="text-muted-foreground font-normal">(optional)</span>
+                                </Label>
+                                <Input
+                                  id="panel-signup-phone"
+                                  type="tel"
+                                  placeholder="(555) 123-4567"
+                                  value={signUpPhone}
+                                  onChange={(e) => setSignUpPhone(e.target.value)}
                                 />
                               </div>
                               <div className="space-y-2">
