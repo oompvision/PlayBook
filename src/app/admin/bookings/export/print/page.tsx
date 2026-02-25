@@ -5,12 +5,46 @@ import { redirect } from "next/navigation";
 import { formatTimeInZone } from "@/lib/utils";
 import { PrintPageClient } from "./print-client";
 
+const ROW_HEIGHT = 60; // px per hour for timeline grid
+
+/** Extract decimal hour (e.g. 9.5 for 9:30 AM) from a timestamptz string in a given timezone */
+function getHourInTimezone(timestamp: string, timezone: string): number {
+  const d = new Date(timestamp);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  }).formatToParts(d);
+  let hour = 0;
+  let minute = 0;
+  for (const p of parts) {
+    if (p.type === "hour") hour = parseInt(p.value, 10);
+    if (p.type === "minute") minute = parseInt(p.value, 10);
+  }
+  return hour + minute / 60;
+}
+
+/** Format hour number to label: 0→"12 AM", 8→"8 AM", 13→"1 PM", 12→"12 PM" */
+function formatHourLabel(hour: number): string {
+  if (hour === 0 || hour === 24) return "12 AM";
+  if (hour === 12) return "12 PM";
+  if (hour < 12) return `${hour} AM`;
+  return `${hour - 12} PM`;
+}
+
 export default async function PrintPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string; bay?: string }>;
+  searchParams: Promise<{
+    from?: string;
+    to?: string;
+    bay?: string;
+    layout?: string;
+  }>;
 }) {
   const params = await searchParams;
+  const isTimeline = params.layout === "timeline";
   const slug = await getFacilitySlug();
   if (!slug) redirect("/");
 
@@ -119,11 +153,16 @@ export default async function PrintPage({
               /* Page settings */
               @page { margin: 0.5in 0.6in; size: letter; }
               /* Page breaks between dates */
-              .print-date-page { break-after: page; }
-              .print-date-page:last-child { break-after: auto; }
+              .print-date-page, .print-timeline-page { break-after: page; }
+              .print-date-page:last-child, .print-timeline-page:last-child { break-after: auto; }
               /* Ensure zebra stripes print */
               .print-row-even { background: #f9fafb !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
               .print-guest-badge { background: #fef3c7 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              /* Timeline booking blocks */
+              .print-booking-block { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              .print-timeline-hour-stripe:nth-child(even) { background: #f9fafb !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              /* Landscape for timeline */
+              .print-timeline-page { break-inside: avoid; }
             }
           `,
         }}
@@ -140,7 +179,238 @@ export default async function PrintPage({
               No confirmed bookings found for the selected dates.
             </p>
           </div>
+        ) : isTimeline ? (
+          /* ============ TIMELINE GRID LAYOUT ============ */
+          dates.map((date) => {
+            const dayBookings = bookingsByDate[date];
+            const totalRevenue = dayBookings.reduce(
+              (sum, b) => sum + b.total_price_cents,
+              0
+            );
+            const dateFormatted = new Date(
+              date + "T12:00:00"
+            ).toLocaleDateString("en-US", {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            });
+
+            // Determine which bays to show columns for
+            const displayBays = params.bay
+              ? (bays ?? []).filter((b) => b.id === params.bay)
+              : (bays ?? []);
+
+            // Calculate hour range from bookings
+            let startHour = 8;
+            let endHour = 18;
+            if (dayBookings.length > 0) {
+              const hours = dayBookings.flatMap((b) => [
+                getHourInTimezone(b.start_time, org.timezone),
+                getHourInTimezone(b.end_time, org.timezone),
+              ]);
+              startHour = Math.floor(Math.min(...hours));
+              endHour = Math.ceil(Math.max(...hours));
+              // Ensure at least 2 hour range
+              if (endHour - startHour < 2) endHour = startHour + 2;
+            }
+            const totalHours = endHour - startHour;
+            const gridHeight = totalHours * ROW_HEIGHT;
+
+            // Group bookings by bay
+            const bookingsByBay: Record<string, typeof dayBookings> = {};
+            for (const b of dayBookings) {
+              if (!bookingsByBay[b.bay_id]) bookingsByBay[b.bay_id] = [];
+              bookingsByBay[b.bay_id].push(b);
+            }
+
+            return (
+              <div
+                key={date}
+                className="print-timeline-page bg-white p-6 sm:p-8 dark:bg-gray-950"
+              >
+                {/* Header */}
+                <div className="mb-4 border-b-2 border-gray-900 pb-3 dark:border-white">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                    {org.name}
+                  </h2>
+                  <p className="text-base font-medium text-gray-600 dark:text-gray-300">
+                    {dateFormatted}
+                  </p>
+                  <div className="mt-1.5 flex gap-6 text-sm text-gray-500 dark:text-gray-400">
+                    <span>
+                      Bookings:{" "}
+                      <strong className="text-gray-900 dark:text-white">
+                        {dayBookings.length}
+                      </strong>
+                    </span>
+                    <span>
+                      Revenue:{" "}
+                      <strong className="text-gray-900 dark:text-white">
+                        ${(totalRevenue / 100).toFixed(2)}
+                      </strong>
+                    </span>
+                  </div>
+                  {filteredBayName && (
+                    <p className="mt-1 text-xs text-gray-400">
+                      Filtered to: {filteredBayName}
+                    </p>
+                  )}
+                </div>
+
+                {/* Timeline Grid */}
+                <div
+                  className="relative border border-gray-200 dark:border-gray-700"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: `50px repeat(${displayBays.length}, 1fr)`,
+                  }}
+                >
+                  {/* Bay header row */}
+                  <div className="border-b-2 border-gray-300 bg-gray-50 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-500" />
+                  {displayBays.map((bay) => (
+                    <div
+                      key={bay.id}
+                      className="border-b-2 border-l border-gray-300 bg-gray-50 px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"
+                    >
+                      {bay.name}
+                    </div>
+                  ))}
+
+                  {/* Hour labels column + bay columns */}
+                  <div
+                    className="relative border-r border-gray-200 dark:border-gray-700"
+                    style={{ height: gridHeight }}
+                  >
+                    {Array.from({ length: totalHours }, (_, i) => {
+                      const hour = startHour + i;
+                      return (
+                        <div
+                          key={hour}
+                          className="absolute right-0 left-0 border-b border-dashed border-gray-200 dark:border-gray-800"
+                          style={{
+                            top: i * ROW_HEIGHT,
+                            height: ROW_HEIGHT,
+                          }}
+                        >
+                          <span className="absolute -top-[7px] left-1 text-[10px] font-medium text-gray-400 dark:text-gray-500">
+                            {formatHourLabel(hour)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Bay columns with bookings */}
+                  {displayBays.map((bay) => {
+                    const bayBookings = bookingsByBay[bay.id] ?? [];
+                    return (
+                      <div
+                        key={bay.id}
+                        className="relative border-l border-gray-200 dark:border-gray-700"
+                        style={{ height: gridHeight }}
+                      >
+                        {/* Hour gridlines */}
+                        {Array.from({ length: totalHours }, (_, i) => (
+                          <div
+                            key={i}
+                            className={`absolute right-0 left-0 border-b border-dashed border-gray-100 dark:border-gray-800 ${
+                              i % 2 === 1
+                                ? "print-timeline-hour-stripe bg-gray-50/50"
+                                : ""
+                            }`}
+                            style={{
+                              top: i * ROW_HEIGHT,
+                              height: ROW_HEIGHT,
+                            }}
+                          />
+                        ))}
+
+                        {/* Booking blocks */}
+                        {bayBookings.map((booking) => {
+                          const bStart = getHourInTimezone(
+                            booking.start_time,
+                            org.timezone
+                          );
+                          const bEnd = getHourInTimezone(
+                            booking.end_time,
+                            org.timezone
+                          );
+                          const topPct =
+                            ((bStart - startHour) / totalHours) * 100;
+                          const heightPct =
+                            ((bEnd - bStart) / totalHours) * 100;
+
+                          let name: string;
+                          let isGuest = false;
+                          if (booking.is_guest) {
+                            name = booking.guest_name || "Guest";
+                            isGuest = true;
+                          } else {
+                            const c = booking.customer_id
+                              ? customerMap[booking.customer_id]
+                              : null;
+                            name = c?.full_name || c?.email || "Unknown";
+                          }
+
+                          const startTime = formatTimeInZone(
+                            booking.start_time,
+                            org.timezone
+                          );
+                          const endTime = formatTimeInZone(
+                            booking.end_time,
+                            org.timezone
+                          );
+
+                          return (
+                            <div
+                              key={booking.id}
+                              className={`print-booking-block absolute right-1 left-1 overflow-hidden rounded ${
+                                isGuest
+                                  ? "border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30"
+                                  : "border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30"
+                              }`}
+                              style={{
+                                top: `${topPct}%`,
+                                height: `${heightPct}%`,
+                                padding: "2px 4px",
+                                minHeight: "20px",
+                              }}
+                            >
+                              <div className="flex items-center gap-1">
+                                <p
+                                  className={`truncate text-[9px] font-bold leading-tight ${
+                                    isGuest
+                                      ? "text-amber-900 dark:text-amber-300"
+                                      : "text-blue-900 dark:text-blue-300"
+                                  }`}
+                                >
+                                  {name}
+                                </p>
+                                {isGuest && (
+                                  <span className="print-guest-badge shrink-0 rounded bg-amber-200 px-1 text-[7px] font-bold text-amber-800 dark:bg-amber-800 dark:text-amber-200">
+                                    G
+                                  </span>
+                                )}
+                              </div>
+                              <p className="truncate text-[8px] leading-tight text-gray-600 dark:text-gray-400">
+                                {startTime} – {endTime}
+                              </p>
+                              <p className="truncate font-mono text-[8px] leading-tight text-gray-400 dark:text-gray-500">
+                                {booking.confirmation_code}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })
         ) : (
+          /* ============ TABLE LAYOUT ============ */
           dates.map((date) => {
             const dayBookings = bookingsByDate[date];
             const totalRevenue = dayBookings.reduce(

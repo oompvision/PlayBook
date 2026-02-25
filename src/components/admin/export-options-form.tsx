@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatTimeInZone } from "@/lib/utils";
-import { Download, Printer, Loader2 } from "lucide-react";
+import { CalendarDays, Download, Printer, Loader2 } from "lucide-react";
 
 type Bay = { id: string; name: string };
 
@@ -25,7 +25,7 @@ export function ExportOptionsForm({
   const [dateMode, setDateMode] = useState<"single" | "range">("single");
   const [fromDate, setFromDate] = useState(defaultDate);
   const [toDate, setToDate] = useState(defaultDate);
-  const [format, setFormat] = useState<"pdf" | "csv">("pdf");
+  const [format, setFormat] = useState<"pdf" | "timeline" | "csv">("pdf");
   const [bayFilter, setBayFilter] = useState("");
   const [includeCancelled, setIncludeCancelled] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -33,11 +33,12 @@ export function ExportOptionsForm({
 
   const effectiveToDate = dateMode === "single" ? fromDate : toDate;
 
-  function handleExportPdf() {
+  function handleExportPrint(layout?: string) {
     const params = new URLSearchParams();
     params.set("from", fromDate);
     params.set("to", effectiveToDate);
     if (bayFilter) params.set("bay", bayFilter);
+    if (layout) params.set("layout", layout);
     window.open(`/admin/bookings/export/print?${params.toString()}`, "_blank");
   }
 
@@ -267,7 +268,7 @@ export function ExportOptionsForm({
         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
           Export Format
         </label>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <button
             type="button"
             onClick={() => setFormat("pdf")}
@@ -292,10 +293,42 @@ export function ExportOptionsForm({
                     : "text-gray-800 dark:text-white/90"
                 }`}
               >
-                PDF (Print)
+                PDF Table
               </p>
               <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                Print-optimized view of confirmed bookings. One page per date.
+                Print-optimized table of confirmed bookings. One page per date.
+              </p>
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFormat("timeline")}
+            className={`flex items-start gap-3 rounded-lg border p-4 text-left transition-colors ${
+              format === "timeline"
+                ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500 dark:border-blue-500 dark:bg-blue-950/30"
+                : "border-gray-200 bg-white hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-600"
+            }`}
+          >
+            <CalendarDays
+              className={`mt-0.5 h-5 w-5 shrink-0 ${
+                format === "timeline"
+                  ? "text-blue-600 dark:text-blue-400"
+                  : "text-gray-400"
+              }`}
+            />
+            <div>
+              <p
+                className={`text-sm font-medium ${
+                  format === "timeline"
+                    ? "text-blue-900 dark:text-blue-300"
+                    : "text-gray-800 dark:text-white/90"
+                }`}
+              >
+                Daily Timeline
+              </p>
+              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                Visual grid with bay columns and hourly rows, like the daily
+                view.
               </p>
             </div>
           </button>
@@ -323,7 +356,7 @@ export function ExportOptionsForm({
                     : "text-gray-800 dark:text-white/90"
                 }`}
               >
-                CSV (Spreadsheet)
+                CSV Spreadsheet
               </p>
               <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                 Downloadable spreadsheet with all booking details.
@@ -380,16 +413,7 @@ export function ExportOptionsForm({
 
       {/* Export Button */}
       <div className="border-t border-gray-200 pt-5 dark:border-gray-700">
-        {format === "pdf" ? (
-          <button
-            type="button"
-            onClick={handleExportPdf}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500"
-          >
-            <Printer className="h-4 w-4" />
-            Open Print Preview
-          </button>
-        ) : (
+        {format === "csv" ? (
           <button
             type="button"
             onClick={handleExportCsv}
@@ -402,6 +426,17 @@ export function ExportOptionsForm({
               <Download className="h-4 w-4" />
             )}
             {exporting ? "Exporting..." : "Download CSV"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() =>
+              handleExportPrint(format === "timeline" ? "timeline" : undefined)
+            }
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500"
+          >
+            <Printer className="h-4 w-4" />
+            Open Print Preview
           </button>
         )}
       </div>
