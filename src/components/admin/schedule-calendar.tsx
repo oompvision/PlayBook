@@ -12,7 +12,16 @@ import {
 } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { X, CalendarDays, Check } from "lucide-react";
+import {
+  X,
+  CalendarDays,
+  Check,
+  ChevronUp,
+  LayoutTemplate,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -28,10 +37,35 @@ type MonthData = {
   dayOfWeekDates: Record<number, string[]>; // 0-6 → dates
 };
 
+type TemplateInfo = {
+  id: string;
+  name: string;
+  slotCount: number;
+};
+
+type BayInfo = {
+  id: string;
+  name: string;
+  hourly_rate_cents: number;
+};
+
+type ApplyResult = {
+  success: boolean;
+  count: number;
+  error?: string;
+};
+
 type ScheduleCalendarProps = {
   today: string;
   totalBays: number;
   coverageMap: Record<string, number>;
+  templates: TemplateInfo[];
+  bays: BayInfo[];
+  onApplyTemplate: (
+    templateId: string,
+    bayIds: string[],
+    dates: string[]
+  ) => Promise<ApplyResult>;
 };
 
 // ─── Constants ───────────────────────────────────────────────────
@@ -163,6 +197,9 @@ export function ScheduleCalendar({
   today,
   totalBays,
   coverageMap,
+  templates,
+  bays,
+  onApplyTemplate,
 }: ScheduleCalendarProps) {
   // --- Data ---
   const months = useMemo(() => generateMonths(today), [today]);
@@ -177,6 +214,13 @@ export function ScheduleCalendar({
   const [lastClickedDate, setLastClickedDate] = useState<string | null>(null);
   const [visibleMonths, setVisibleMonths] = useState<Set<string>>(new Set());
   const [mounted, setMounted] = useState(false);
+
+  // --- Apply Template Panel State ---
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [selectedBayIds, setSelectedBayIds] = useState<Set<string>>(new Set());
+  const [applying, setApplying] = useState(false);
+  const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -265,7 +309,64 @@ export function ScheduleCalendar({
 
   const clearSelection = useCallback(() => {
     setSelectedDates(new Set());
+    setPanelOpen(false);
+    setApplyResult(null);
   }, []);
+
+  // --- Apply Template Panel Handlers ---
+  const openPanel = useCallback(() => {
+    setPanelOpen(true);
+    setSelectedTemplateId("");
+    setSelectedBayIds(new Set(bays.map((b) => b.id)));
+    setApplyResult(null);
+  }, [bays]);
+
+  const closePanel = useCallback(() => {
+    setPanelOpen(false);
+    setApplyResult(null);
+  }, []);
+
+  const toggleBay = useCallback((bayId: string) => {
+    setSelectedBayIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(bayId)) next.delete(bayId);
+      else next.add(bayId);
+      return next;
+    });
+  }, []);
+
+  const toggleAllBays = useCallback(() => {
+    setSelectedBayIds((prev) => {
+      if (prev.size === bays.length) return new Set();
+      return new Set(bays.map((b) => b.id));
+    });
+  }, [bays]);
+
+  const handleApply = useCallback(async () => {
+    if (!selectedTemplateId || selectedBayIds.size === 0 || selectedDates.size === 0) return;
+    setApplying(true);
+    setApplyResult(null);
+    try {
+      const result = await onApplyTemplate(
+        selectedTemplateId,
+        Array.from(selectedBayIds),
+        Array.from(selectedDates)
+      );
+      setApplyResult(result);
+      if (result.success) {
+        // Brief delay to show success, then close panel and clear selection
+        setTimeout(() => {
+          setPanelOpen(false);
+          setSelectedDates(new Set());
+          setApplyResult(null);
+        }, 1500);
+      }
+    } catch {
+      setApplyResult({ success: false, count: 0, error: "An unexpected error occurred" });
+    } finally {
+      setApplying(false);
+    }
+  }, [selectedTemplateId, selectedBayIds, selectedDates, onApplyTemplate]);
 
   // --- Mouse handlers for day cells ---
   const handleMouseDown = useCallback(
@@ -398,6 +499,15 @@ export function ScheduleCalendar({
     () => Array.from(selectedDates).sort(),
     [selectedDates]
   );
+
+  const selectedTemplate = templates.find((t) => t.id === selectedTemplateId);
+  const scheduleCount = selectedCount * selectedBayIds.size;
+  const canApply =
+    selectedCount > 0 &&
+    selectedBayIds.size > 0 &&
+    !!selectedTemplateId &&
+    selectedTemplate &&
+    selectedTemplate.slotCount > 0;
 
   // --- Render helpers ---
   function getDateStatus(
@@ -661,46 +771,233 @@ export function ScheduleCalendar({
         ))}
       </div>
 
-      {/* ─── Sticky Bottom Bar ─── */}
+      {/* ─── Sticky Bottom Panel ─── */}
       {selectedCount > 0 &&
         mounted &&
         createPortal(
           <div className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.08)] lg:left-[280px]">
-            <div className="flex items-center justify-between gap-4 px-4 py-3 md:px-6">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100">
-                  <CalendarDays className="h-4 w-4 text-blue-600" />
+            {panelOpen ? (
+              /* ── Expanded Apply Panel ── */
+              <div>
+                {/* Panel header */}
+                <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 md:px-6">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100">
+                      <LayoutTemplate className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">
+                        Apply Template to {selectedCount}{" "}
+                        {selectedCount === 1 ? "date" : "dates"}
+                      </p>
+                      <p className="truncate text-xs text-gray-500">
+                        {formatDateRangeSummary(selectedArray)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={closePanel}
+                    className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-800">
-                    {selectedCount}{" "}
-                    {selectedCount === 1 ? "date" : "dates"} selected
-                  </p>
-                  <p className="truncate text-xs text-gray-500">
-                    {formatDateRangeSummary(selectedArray)}
-                  </p>
+
+                {/* Panel body */}
+                <div className="max-h-[50vh] overflow-y-auto px-4 py-4 md:px-6">
+                  {/* Result message */}
+                  {applyResult && (
+                    <div
+                      className={cn(
+                        "mb-4 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm",
+                        applyResult.success
+                          ? "border-green-200 bg-green-50 text-green-700"
+                          : "border-red-200 bg-red-50 text-red-700"
+                      )}
+                    >
+                      {applyResult.success ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      ) : (
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                      )}
+                      {applyResult.success
+                        ? `Successfully applied to ${applyResult.count} schedule${applyResult.count !== 1 ? "s" : ""}.`
+                        : applyResult.error || "Failed to apply template."}
+                    </div>
+                  )}
+
+                  <div className="space-y-5">
+                    {/* Template picker */}
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Template
+                      </label>
+                      {templates.length === 0 ? (
+                        <p className="text-sm text-gray-400">
+                          No templates found. Create one in{" "}
+                          <a
+                            href="/admin/templates"
+                            className="text-blue-600 underline"
+                          >
+                            Templates
+                          </a>
+                          .
+                        </p>
+                      ) : (
+                        <select
+                          value={selectedTemplateId}
+                          onChange={(e) => setSelectedTemplateId(e.target.value)}
+                          className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10"
+                        >
+                          <option value="">Select a template...</option>
+                          {templates.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name} ({t.slotCount}{" "}
+                              {t.slotCount === 1 ? "slot" : "slots"})
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {selectedTemplate && selectedTemplate.slotCount === 0 && (
+                        <p className="mt-1.5 text-xs text-amber-600">
+                          This template has no time slots. Add slots before
+                          applying.
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Bay selector */}
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Apply to
+                      </label>
+                      <div className="rounded-lg border border-gray-200">
+                        {/* All bays toggle */}
+                        <label className="flex cursor-pointer items-center gap-3 border-b border-gray-100 px-3 py-2.5 transition-colors hover:bg-gray-50">
+                          <input
+                            type="checkbox"
+                            checked={selectedBayIds.size === bays.length}
+                            onChange={toggleAllBays}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm font-medium text-gray-800">
+                            All bays ({bays.length})
+                          </span>
+                        </label>
+
+                        {/* Individual bays */}
+                        {bays.map((bay) => (
+                          <label
+                            key={bay.id}
+                            className="flex cursor-pointer items-center gap-3 px-3 py-2 pl-7 transition-colors hover:bg-gray-50"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedBayIds.has(bay.id)}
+                              onChange={() => toggleBay(bay.id)}
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">
+                              {bay.name}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              ${(bay.hourly_rate_cents / 100).toFixed(0)}/hr
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Panel footer */}
+                <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 md:px-6">
+                  <div className="text-xs text-gray-500">
+                    {canApply ? (
+                      <>
+                        {scheduleCount} schedule
+                        {scheduleCount !== 1 ? "s" : ""} will be{" "}
+                        {selectedArray.some((d) => (coverageMap[d] ?? 0) > 0)
+                          ? "created or replaced"
+                          : "created"}
+                      </>
+                    ) : selectedTemplateId && selectedTemplate?.slotCount === 0 ? (
+                      "Template has no slots"
+                    ) : !selectedTemplateId ? (
+                      "Select a template"
+                    ) : selectedBayIds.size === 0 ? (
+                      "Select at least one bay"
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={closePanel}
+                      disabled={applying}
+                      className="rounded-lg border-gray-200"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleApply}
+                      disabled={!canApply || applying}
+                      className="gap-1.5 rounded-lg"
+                    >
+                      {applying ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Applying...
+                        </>
+                      ) : (
+                        <>
+                          Apply to {scheduleCount} schedule
+                          {scheduleCount !== 1 ? "s" : ""}
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={clearSelection}
-                  className="gap-1.5 rounded-lg border-gray-200"
-                >
-                  <X className="h-3.5 w-3.5" />
-                  Clear
-                </Button>
-                <Button
-                  size="sm"
-                  disabled
-                  className="rounded-lg opacity-50"
-                  title="Apply template — coming soon"
-                >
-                  Apply Template
-                </Button>
+            ) : (
+              /* ── Collapsed Bar ── */
+              <div className="flex items-center justify-between gap-4 px-4 py-3 md:px-6">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100">
+                    <CalendarDays className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-800">
+                      {selectedCount}{" "}
+                      {selectedCount === 1 ? "date" : "dates"} selected
+                    </p>
+                    <p className="truncate text-xs text-gray-500">
+                      {formatDateRangeSummary(selectedArray)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={clearSelection}
+                    className="gap-1.5 rounded-lg border-gray-200"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Clear
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={openPanel}
+                    className="gap-1.5 rounded-lg"
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" />
+                    Apply Template
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
           </div>,
           document.body
         )}
