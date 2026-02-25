@@ -5,12 +5,11 @@ import { redirect } from "next/navigation";
 import {
   LayoutTemplate,
   Plus,
-  Clock,
   Trash2,
   CheckCircle2,
   Zap,
-  ListOrdered,
 } from "lucide-react";
+import { TemplateSlotEditor } from "@/components/admin/template-slot-editor";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -35,11 +34,19 @@ export default async function TemplatesPage({
 
   const supabase = await createClient();
 
-  const { data: templates } = await supabase
-    .from("schedule_templates")
-    .select("*, template_slots(*)")
-    .eq("org_id", org.id)
-    .order("created_at");
+  const [{ data: templates }, { data: bays }] = await Promise.all([
+    supabase
+      .from("schedule_templates")
+      .select("*, template_slots(*)")
+      .eq("org_id", org.id)
+      .order("created_at"),
+    supabase
+      .from("bays")
+      .select("id, name, hourly_rate_cents")
+      .eq("org_id", org.id)
+      .eq("is_active", true)
+      .order("sort_order"),
+  ]);
 
   async function createTemplate(formData: FormData) {
     "use server";
@@ -90,38 +97,6 @@ export default async function TemplatesPage({
     await supabase.from("schedule_templates").delete().eq("id", id);
     revalidatePath("/admin/templates");
     redirect("/admin/templates");
-  }
-
-  async function addSlot(formData: FormData) {
-    "use server";
-    const supabase = await createClient();
-    const templateId = formData.get("template_id") as string;
-    const startTime = formData.get("start_time") as string;
-    const endTime = formData.get("end_time") as string;
-
-    const { error } = await supabase.from("template_slots").insert({
-      template_id: templateId,
-      start_time: startTime,
-      end_time: endTime,
-    });
-
-    if (error) {
-      redirect(
-        `/admin/templates?edit=${templateId}&error=${encodeURIComponent(error.message)}`
-      );
-    }
-    revalidatePath("/admin/templates");
-    redirect(`/admin/templates?edit=${templateId}`);
-  }
-
-  async function removeSlot(formData: FormData) {
-    "use server";
-    const supabase = await createClient();
-    const slotId = formData.get("slot_id") as string;
-    const templateId = formData.get("template_id") as string;
-    await supabase.from("template_slots").delete().eq("id", slotId);
-    revalidatePath("/admin/templates");
-    redirect(`/admin/templates?edit=${templateId}`);
   }
 
   async function generateSlots(formData: FormData) {
@@ -184,6 +159,21 @@ export default async function TemplatesPage({
     ? templates?.find((t) => t.id === params.edit)
     : null;
 
+  // Fetch per-bay price overrides for the editing template
+  let overrides: {
+    id: string;
+    template_slot_id: string;
+    bay_id: string;
+    price_cents: number;
+  }[] = [];
+  if (editingTemplate) {
+    const { data } = await supabase
+      .from("template_bay_overrides")
+      .select("id, template_slot_id, bay_id, price_cents")
+      .eq("template_id", editingTemplate.id);
+    overrides = data || [];
+  }
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -192,8 +182,8 @@ export default async function TemplatesPage({
           Templates
         </h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Create reusable schedule templates with time slots. Pricing is
-          set automatically from each facility&apos;s hourly rate when applied.
+          Create reusable schedule templates with time slots. Each bay has
+          its own pricing tab, defaulting to its hourly rate.
         </p>
       </div>
 
@@ -361,21 +351,21 @@ export default async function TemplatesPage({
                       >
                         Save Details
                       </button>
-                      <form action={deleteTemplate}>
-                        <input
-                          type="hidden"
-                          name="id"
-                          value={editingTemplate.id}
-                        />
-                        <button
-                          type="submit"
-                          className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 dark:border-gray-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Delete Template
-                        </button>
-                      </form>
                     </div>
+                  </form>
+                  <form action={deleteTemplate} className="mt-2">
+                    <input
+                      type="hidden"
+                      name="id"
+                      value={editingTemplate.id}
+                    />
+                    <button
+                      type="submit"
+                      className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 dark:border-gray-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete Template
+                    </button>
                   </form>
                 </div>
               </div>
@@ -452,117 +442,21 @@ export default async function TemplatesPage({
                 </div>
               </div>
 
-              {/* Slot List Card */}
-              <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-                <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
-                  <div className="flex items-center gap-2">
-                    <ListOrdered className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                    <h2 className="font-semibold text-gray-800 dark:text-white/90">
-                      Time Slots
-                    </h2>
-                  </div>
-                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-                    {editingTemplate.template_slots?.length || 0} slots
-                  </span>
-                </div>
-
-                {(!editingTemplate.template_slots ||
-                  editingTemplate.template_slots.length === 0) && (
-                  <div className="px-6 py-12 text-center">
-                    <Clock className="mx-auto h-8 w-8 text-gray-300 dark:text-gray-600" />
-                    <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                      No slots yet. Use Quick Generate or add manually below.
-                    </p>
-                  </div>
-                )}
-
-                {editingTemplate.template_slots &&
-                  editingTemplate.template_slots.length > 0 && (
-                    <div className="divide-y divide-gray-100 dark:divide-white/[0.05]">
-                      {[...editingTemplate.template_slots]
-                        .sort((a, b) =>
-                          a.start_time.localeCompare(b.start_time)
-                        )
-                        .map((slot) => (
-                          <div
-                            key={slot.id}
-                            className="flex items-center justify-between px-6 py-3 transition-colors hover:bg-gray-50/50 dark:hover:bg-white/[0.02]"
-                          >
-                            <div className="flex items-center gap-4">
-                              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-900/20">
-                                <Clock className="h-4 w-4 text-blue-500" />
-                              </div>
-                              <span className="font-mono text-sm text-gray-800 dark:text-white/90">
-                                {slot.start_time.slice(0, 5)} –{" "}
-                                {slot.end_time.slice(0, 5)}
-                              </span>
-                            </div>
-                            <form action={removeSlot}>
-                              <input
-                                type="hidden"
-                                name="slot_id"
-                                value={slot.id}
-                              />
-                              <input
-                                type="hidden"
-                                name="template_id"
-                                value={editingTemplate.id}
-                              />
-                              <button
-                                type="submit"
-                                className="rounded-lg p-1.5 text-red-400 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </form>
-                          </div>
-                        ))}
-                    </div>
-                  )}
-
-                {/* Add slot form */}
-                <div className="border-t border-gray-200 bg-gray-50/50 p-6 dark:border-white/[0.05] dark:bg-white/[0.02]">
-                  <form
-                    action={addSlot}
-                    className="flex flex-wrap items-end gap-3"
-                  >
-                    <input
-                      type="hidden"
-                      name="template_id"
-                      value={editingTemplate.id}
-                    />
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                        Start
-                      </label>
-                      <input
-                        name="start_time"
-                        type="time"
-                        required
-                        className="h-10 w-32 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                        End
-                      </label>
-                      <input
-                        name="end_time"
-                        type="time"
-                        required
-                        className="h-10 w-32 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add Slot
-                    </button>
-                  </form>
-                </div>
-              </div>
+              {/* Time Slots & Pricing (bay-tabbed client component) */}
+              <TemplateSlotEditor
+                templateId={editingTemplate.id}
+                initialSlots={
+                  editingTemplate.template_slots?.map(
+                    (s: { id: string; start_time: string; end_time: string }) => ({
+                      id: s.id,
+                      start_time: s.start_time,
+                      end_time: s.end_time,
+                    })
+                  ) || []
+                }
+                bays={bays || []}
+                initialOverrides={overrides}
+              />
             </div>
           )}
         </div>
