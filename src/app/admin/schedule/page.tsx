@@ -88,7 +88,7 @@ export default async function ScheduleManagerPage({
   const [baysResult, templatesResult, schedulesResult] = await Promise.all([
     supabase
       .from("bays")
-      .select("id, name, is_active, sort_order")
+      .select("id, name, is_active, sort_order, hourly_rate_cents")
       .eq("org_id", org.id)
       .eq("is_active", true)
       .order("sort_order"),
@@ -184,8 +184,23 @@ export default async function ScheduleManagerPage({
       current.setDate(current.getDate() + 1);
     }
 
+    // Fetch bay hourly rates for price calculation
+    const { data: bayData } = await supabase
+      .from("bays")
+      .select("id, hourly_rate_cents")
+      .in("id", bayIds);
+
+    const bayRateMap = new Map<string, number>();
+    if (bayData) {
+      for (const b of bayData) {
+        bayRateMap.set(b.id, b.hourly_rate_cents);
+      }
+    }
+
     // For each bay + date, create bay_schedule and bay_schedule_slots
     for (const bayId of bayIds) {
+      const hourlyRateCents = bayRateMap.get(bayId) || 0;
+
       for (const date of dates) {
         // Upsert bay_schedule
         const { data: schedule, error: schedError } = await supabase
@@ -211,14 +226,22 @@ export default async function ScheduleManagerPage({
           .eq("bay_schedule_id", schedule.id);
 
         // Create concrete slots from template (timezone-aware)
-        const concreteSlots = templateSlots.map((ts) => ({
-          bay_schedule_id: schedule.id,
-          org_id: org.id,
-          start_time: toTimestamp(date, ts.start_time, org.timezone),
-          end_time: toTimestamp(date, ts.end_time, org.timezone),
-          price_cents: ts.price_cents || 0,
-          status: "available" as const,
-        }));
+        // Price is pro-rated from the bay's hourly rate based on slot duration
+        const concreteSlots = templateSlots.map((ts) => {
+          const [startH, startM] = ts.start_time.split(":").map(Number);
+          const [endH, endM] = ts.end_time.split(":").map(Number);
+          const durationMinutes = (endH * 60 + endM) - (startH * 60 + startM);
+          const priceCents = Math.round(hourlyRateCents * (durationMinutes / 60));
+
+          return {
+            bay_schedule_id: schedule.id,
+            org_id: org.id,
+            start_time: toTimestamp(date, ts.start_time, org.timezone),
+            end_time: toTimestamp(date, ts.end_time, org.timezone),
+            price_cents: priceCents,
+            status: "available" as const,
+          };
+        });
 
         await supabase.from("bay_schedule_slots").insert(concreteSlots);
       }

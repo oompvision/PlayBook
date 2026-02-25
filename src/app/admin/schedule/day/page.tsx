@@ -80,7 +80,7 @@ export default async function DayEditorPage({
   const [baysResult, templatesResult] = await Promise.all([
     supabase
       .from("bays")
-      .select("id, name, is_active, sort_order")
+      .select("id, name, is_active, sort_order, hourly_rate_cents")
       .eq("org_id", org.id)
       .eq("is_active", true)
       .order("sort_order"),
@@ -167,15 +167,32 @@ export default async function DayEditorPage({
       .delete()
       .eq("bay_schedule_id", schedule.id);
 
+    // Fetch bay hourly rate for price calculation
+    const { data: bayData } = await supabase
+      .from("bays")
+      .select("hourly_rate_cents")
+      .eq("id", bayId)
+      .single();
+
+    const hourlyRateCents = bayData?.hourly_rate_cents || 0;
+
     // Insert new (timezone-aware)
-    const concreteSlots = templateSlots.map((ts) => ({
-      bay_schedule_id: schedule.id,
-      org_id: org.id,
-      start_time: toTimestamp(date, ts.start_time, org.timezone),
-      end_time: toTimestamp(date, ts.end_time, org.timezone),
-      price_cents: ts.price_cents || 0,
-      status: "available" as const,
-    }));
+    // Price is pro-rated from the bay's hourly rate based on slot duration
+    const concreteSlots = templateSlots.map((ts) => {
+      const [startH, startM] = ts.start_time.split(":").map(Number);
+      const [endH, endM] = ts.end_time.split(":").map(Number);
+      const durationMinutes = (endH * 60 + endM) - (startH * 60 + startM);
+      const priceCents = Math.round(hourlyRateCents * (durationMinutes / 60));
+
+      return {
+        bay_schedule_id: schedule.id,
+        org_id: org.id,
+        start_time: toTimestamp(date, ts.start_time, org.timezone),
+        end_time: toTimestamp(date, ts.end_time, org.timezone),
+        price_cents: priceCents,
+        status: "available" as const,
+      };
+    });
 
     await supabase.from("bay_schedule_slots").insert(concreteSlots);
 
