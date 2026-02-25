@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useMemo, useEffect, Fragment } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import {
   startOfMonth,
   endOfMonth,
@@ -21,7 +22,9 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  Pencil,
 } from "lucide-react";
+import { ScheduleDayDrawer } from "@/components/admin/schedule-day-drawer";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -61,6 +64,8 @@ type ScheduleCalendarProps = {
   coverageMap: Record<string, number>;
   templates: TemplateInfo[];
   bays: BayInfo[];
+  orgId: string;
+  timezone: string;
   onApplyTemplate: (
     templateId: string,
     bayIds: string[],
@@ -199,14 +204,18 @@ export function ScheduleCalendar({
   coverageMap,
   templates,
   bays,
+  orgId,
+  timezone,
   onApplyTemplate,
 }: ScheduleCalendarProps) {
   // --- Data ---
   const months = useMemo(() => generateMonths(today), [today]);
   const allDatesFlat = useMemo(() => months.flatMap((m) => m.days), [months]);
+  const router = useRouter();
 
   // --- State ---
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
+  const [editingDate, setEditingDate] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState<string | null>(null);
   const [dragEnd, setDragEnd] = useState<string | null>(null);
@@ -988,6 +997,21 @@ export function ScheduleCalendar({
                     Clear
                   </Button>
                   <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const editDate =
+                        lastClickedDate && selectedDates.has(lastClickedDate)
+                          ? lastClickedDate
+                          : selectedArray[0];
+                      if (editDate) setEditingDate(editDate);
+                    }}
+                    className="gap-1.5 rounded-lg border-gray-200"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit Schedule
+                  </Button>
+                  <Button
                     size="sm"
                     onClick={openPanel}
                     className="gap-1.5 rounded-lg"
@@ -1001,6 +1025,21 @@ export function ScheduleCalendar({
           </div>,
           document.body
         )}
+
+      {/* ─── Day Editor Drawer ─── */}
+      {editingDate && (
+        <ScheduleDayDrawer
+          date={editingDate}
+          orgId={orgId}
+          timezone={timezone}
+          bays={bays}
+          templates={templates}
+          onClose={() => {
+            setEditingDate(null);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

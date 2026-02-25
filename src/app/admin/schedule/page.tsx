@@ -205,6 +205,8 @@ export default async function ScheduleManagerPage() {
       coverageMap={coverageMap}
       templates={templates}
       bays={bays}
+      orgId={org.id}
+      timezone={org.timezone}
       onApplyTemplate={applyTemplateAction}
     />
   );
