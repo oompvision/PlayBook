@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Pencil,
+  Trash2,
 } from "lucide-react";
 import { ScheduleDayDrawer } from "@/components/admin/schedule-day-drawer";
 
@@ -58,6 +59,13 @@ type ApplyResult = {
   error?: string;
 };
 
+type ClearResult = {
+  success: boolean;
+  cleared: number;
+  skippedWithBookings: number;
+  error?: string;
+};
+
 type ScheduleCalendarProps = {
   today: string;
   totalBays: number;
@@ -71,6 +79,10 @@ type ScheduleCalendarProps = {
     bayIds: string[],
     dates: string[]
   ) => Promise<ApplyResult>;
+  onClearSchedules: (
+    bayIds: string[],
+    dates: string[]
+  ) => Promise<ClearResult>;
 };
 
 // ─── Constants ───────────────────────────────────────────────────
@@ -207,6 +219,7 @@ export function ScheduleCalendar({
   orgId,
   timezone,
   onApplyTemplate,
+  onClearSchedules,
 }: ScheduleCalendarProps) {
   // --- Data ---
   const months = useMemo(() => generateMonths(today), [today]);
@@ -224,12 +237,21 @@ export function ScheduleCalendar({
   const [visibleMonths, setVisibleMonths] = useState<Set<string>>(new Set());
   const [mounted, setMounted] = useState(false);
 
+  // --- Panel Mode (apply template / clear schedule / collapsed) ---
+  const [panelMode, setPanelMode] = useState<"apply" | "clear" | null>(null);
+
   // --- Apply Template Panel State ---
-  const [panelOpen, setPanelOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedBayIds, setSelectedBayIds] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
+
+  // --- Clear Schedule Panel State ---
+  const [clearBayIds, setClearBayIds] = useState<Set<string>>(new Set());
+  const [clearConfirmStep, setClearConfirmStep] = useState(false);
+  const [clearConfirmText, setClearConfirmText] = useState("");
+  const [clearing, setClearing] = useState(false);
+  const [clearResult, setClearResult] = useState<ClearResult | null>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -318,20 +340,21 @@ export function ScheduleCalendar({
 
   const clearSelection = useCallback(() => {
     setSelectedDates(new Set());
-    setPanelOpen(false);
+    setPanelMode(null);
     setApplyResult(null);
+    setClearResult(null);
   }, []);
 
   // --- Apply Template Panel Handlers ---
   const openPanel = useCallback(() => {
-    setPanelOpen(true);
+    setPanelMode("apply");
     setSelectedTemplateId("");
     setSelectedBayIds(new Set(bays.map((b) => b.id)));
     setApplyResult(null);
   }, [bays]);
 
   const closePanel = useCallback(() => {
-    setPanelOpen(false);
+    setPanelMode(null);
     setApplyResult(null);
   }, []);
 
@@ -365,7 +388,7 @@ export function ScheduleCalendar({
       if (result.success) {
         // Brief delay to show success, then close panel and clear selection
         setTimeout(() => {
-          setPanelOpen(false);
+          setPanelMode(null);
           setSelectedDates(new Set());
           setApplyResult(null);
         }, 1500);
@@ -376,6 +399,69 @@ export function ScheduleCalendar({
       setApplying(false);
     }
   }, [selectedTemplateId, selectedBayIds, selectedDates, onApplyTemplate]);
+
+  // --- Clear Schedule Panel Handlers ---
+  const openClearPanel = useCallback(() => {
+    setPanelMode("clear");
+    setClearBayIds(new Set(bays.map((b) => b.id)));
+    setClearConfirmStep(false);
+    setClearConfirmText("");
+    setClearResult(null);
+  }, [bays]);
+
+  const closeClearPanel = useCallback(() => {
+    setPanelMode(null);
+    setClearResult(null);
+    setClearConfirmStep(false);
+    setClearConfirmText("");
+  }, []);
+
+  const toggleClearBay = useCallback((bayId: string) => {
+    setClearBayIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(bayId)) next.delete(bayId);
+      else next.add(bayId);
+      return next;
+    });
+  }, []);
+
+  const toggleAllClearBays = useCallback(() => {
+    setClearBayIds((prev) => {
+      if (prev.size === bays.length) return new Set();
+      return new Set(bays.map((b) => b.id));
+    });
+  }, [bays]);
+
+  const handleClear = useCallback(async () => {
+    if (clearBayIds.size === 0 || selectedDates.size === 0) return;
+    setClearing(true);
+    setClearResult(null);
+    try {
+      const result = await onClearSchedules(
+        Array.from(clearBayIds),
+        Array.from(selectedDates)
+      );
+      setClearResult(result);
+      if (result.success && result.skippedWithBookings === 0) {
+        setTimeout(() => {
+          setPanelMode(null);
+          setSelectedDates(new Set());
+          setClearResult(null);
+          setClearConfirmStep(false);
+          setClearConfirmText("");
+        }, 1500);
+      }
+    } catch {
+      setClearResult({
+        success: false,
+        cleared: 0,
+        skippedWithBookings: 0,
+        error: "An unexpected error occurred",
+      });
+    } finally {
+      setClearing(false);
+    }
+  }, [clearBayIds, selectedDates, onClearSchedules]);
 
   // --- Mouse handlers for day cells ---
   const handleMouseDown = useCallback(
@@ -517,6 +603,11 @@ export function ScheduleCalendar({
     !!selectedTemplateId &&
     selectedTemplate &&
     selectedTemplate.slotCount > 0;
+
+  // Clear schedule derived values
+  const clearScheduleCount = selectedCount * clearBayIds.size;
+  const clearConfirmPhrase = `CLEAR ${clearScheduleCount} ${clearScheduleCount === 1 ? "SCHEDULE" : "SCHEDULES"}`;
+  const clearConfirmValid = clearConfirmText === clearConfirmPhrase;
 
   // --- Render helpers ---
   function getDateStatus(
@@ -785,7 +876,7 @@ export function ScheduleCalendar({
         mounted &&
         createPortal(
           <div className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.08)] lg:left-[280px]">
-            {panelOpen ? (
+            {panelMode === "apply" ? (
               /* ── Expanded Apply Panel ── */
               <div>
                 {/* Panel header */}
@@ -969,6 +1060,192 @@ export function ScheduleCalendar({
                   </div>
                 </div>
               </div>
+            ) : panelMode === "clear" ? (
+              /* ── Expanded Clear Panel ── */
+              <div>
+                {/* Panel header */}
+                <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 md:px-6">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-100">
+                      <Trash2 className="h-4 w-4 text-red-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">
+                        Clear Schedule for {selectedCount}{" "}
+                        {selectedCount === 1 ? "date" : "dates"}
+                      </p>
+                      <p className="truncate text-xs text-gray-500">
+                        {formatDateRangeSummary(selectedArray)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={closeClearPanel}
+                    className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Panel body */}
+                <div className="max-h-[50vh] overflow-y-auto px-4 py-4 md:px-6">
+                  {/* Result message */}
+                  {clearResult && (
+                    <div
+                      className={cn(
+                        "mb-4 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm",
+                        clearResult.success &&
+                          clearResult.skippedWithBookings === 0
+                          ? "border-green-200 bg-green-50 text-green-700"
+                          : clearResult.success &&
+                              clearResult.skippedWithBookings > 0
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : "border-red-200 bg-red-50 text-red-700"
+                      )}
+                    >
+                      {clearResult.success &&
+                      clearResult.skippedWithBookings === 0 ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      ) : (
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                      )}
+                      {clearResult.success
+                        ? clearResult.skippedWithBookings > 0
+                          ? `Cleared ${clearResult.cleared} schedule${clearResult.cleared !== 1 ? "s" : ""}. ${clearResult.skippedWithBookings} schedule${clearResult.skippedWithBookings !== 1 ? "s" : ""} had active bookings — only non-booked slots were removed.`
+                          : `Successfully cleared ${clearResult.cleared} schedule${clearResult.cleared !== 1 ? "s" : ""}.`
+                        : clearResult.error || "Failed to clear schedules."}
+                    </div>
+                  )}
+
+                  <div className="space-y-5">
+                    {/* Bay selector — hidden during confirmation step */}
+                    {!clearConfirmStep && (
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                          Facilities
+                        </label>
+                        <div className="rounded-lg border border-gray-200">
+                          <label className="flex cursor-pointer items-center gap-3 border-b border-gray-100 px-3 py-2.5 transition-colors hover:bg-gray-50">
+                            <input
+                              type="checkbox"
+                              checked={clearBayIds.size === bays.length}
+                              onChange={toggleAllClearBays}
+                              className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                            />
+                            <span className="text-sm font-medium text-gray-800">
+                              All bays ({bays.length})
+                            </span>
+                          </label>
+                          {bays.map((bay) => (
+                            <label
+                              key={bay.id}
+                              className="flex cursor-pointer items-center gap-3 px-3 py-2 pl-7 transition-colors hover:bg-gray-50"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={clearBayIds.has(bay.id)}
+                                onChange={() => toggleClearBay(bay.id)}
+                                className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                              />
+                              <span className="text-sm text-gray-700">
+                                {bay.name}
+                              </span>
+                              <span className="text-xs text-gray-400">
+                                ${(bay.hourly_rate_cents / 100).toFixed(0)}/hr
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Confirmation step */}
+                    {clearConfirmStep && (
+                      <div>
+                        <p className="mb-2 text-sm text-gray-600">
+                          Type{" "}
+                          <span className="font-mono font-semibold text-red-600">
+                            {clearConfirmPhrase}
+                          </span>{" "}
+                          to confirm this action.
+                        </p>
+                        <input
+                          type="text"
+                          value={clearConfirmText}
+                          onChange={(e) =>
+                            setClearConfirmText(e.target.value.toUpperCase())
+                          }
+                          placeholder={clearConfirmPhrase}
+                          autoFocus
+                          className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 font-mono text-sm uppercase text-gray-800 shadow-sm focus:border-red-500 focus:outline-none focus:ring-3 focus:ring-red-500/10"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Panel footer */}
+                <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 md:px-6">
+                  <div className="text-xs text-gray-500">
+                    {clearConfirmStep
+                      ? clearConfirmValid
+                        ? "Ready to clear"
+                        : "Type the confirmation phrase above"
+                      : clearBayIds.size === 0
+                        ? "Select at least one bay"
+                        : `${clearScheduleCount} schedule${clearScheduleCount !== 1 ? "s" : ""} will be cleared`}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={
+                        clearConfirmStep
+                          ? () => {
+                              setClearConfirmStep(false);
+                              setClearConfirmText("");
+                            }
+                          : closeClearPanel
+                      }
+                      disabled={clearing}
+                      className="rounded-lg border-gray-200"
+                    >
+                      {clearConfirmStep ? "Back" : "Cancel"}
+                    </Button>
+                    {clearConfirmStep ? (
+                      <Button
+                        size="sm"
+                        onClick={handleClear}
+                        disabled={!clearConfirmValid || clearing}
+                        className="gap-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700"
+                      >
+                        {clearing ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Clearing...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Confirm Clear
+                          </>
+                        )}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => setClearConfirmStep(true)}
+                        disabled={clearBayIds.size === 0}
+                        className="gap-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Clear {clearScheduleCount} schedule
+                        {clearScheduleCount !== 1 ? "s" : ""}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
             ) : (
               /* ── Collapsed Bar ── */
               <div className="flex items-center justify-between gap-4 px-4 py-3 md:px-6">
@@ -987,6 +1264,20 @@ export function ScheduleCalendar({
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {selectedCount > 1 && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={openClearPanel}
+                        className="gap-1.5 rounded-lg border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Clear Schedule
+                      </Button>
+                      <div className="h-6 w-px bg-gray-200" />
+                    </>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -994,7 +1285,7 @@ export function ScheduleCalendar({
                     className="gap-1.5 rounded-lg border-gray-200"
                   >
                     <X className="h-3.5 w-3.5" />
-                    Clear
+                    Clear Selection
                   </Button>
                   {selectedCount === 1 && (
                     <Button

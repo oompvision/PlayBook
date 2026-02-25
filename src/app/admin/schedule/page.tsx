@@ -198,6 +198,149 @@ export default async function ScheduleManagerPage() {
     return { success: true, count: upsertedSchedules.length };
   }
 
+  // ─── Server Action: Clear schedules for selected dates × bays ───
+
+  async function clearSchedulesAction(
+    bayIds: string[],
+    dates: string[]
+  ): Promise<{
+    success: boolean;
+    cleared: number;
+    skippedWithBookings: number;
+    error?: string;
+  }> {
+    "use server";
+
+    const org = await getOrg();
+    if (!org)
+      return {
+        success: false,
+        cleared: 0,
+        skippedWithBookings: 0,
+        error: "Organization not found",
+      };
+
+    const supabase = await createClient();
+
+    // 1. Find all bay_schedules for the given dates × bays
+    const { data: schedules, error: fetchError } = await supabase
+      .from("bay_schedules")
+      .select("id, bay_id, date")
+      .eq("org_id", org.id)
+      .in("bay_id", bayIds)
+      .in("date", dates)
+      .limit(5000);
+
+    if (fetchError) {
+      return {
+        success: false,
+        cleared: 0,
+        skippedWithBookings: 0,
+        error: fetchError.message,
+      };
+    }
+
+    if (!schedules || schedules.length === 0) {
+      return { success: true, cleared: 0, skippedWithBookings: 0 };
+    }
+
+    const scheduleIds = schedules.map((s) => s.id);
+
+    // 2. Fetch all slots for these schedules (chunked to avoid limit issues)
+    const allSlots: Array<{
+      id: string;
+      bay_schedule_id: string;
+      status: string;
+    }> = [];
+    const FETCH_CHUNK = 200;
+    for (let i = 0; i < scheduleIds.length; i += FETCH_CHUNK) {
+      const chunk = scheduleIds.slice(i, i + FETCH_CHUNK);
+      const { data } = await supabase
+        .from("bay_schedule_slots")
+        .select("id, bay_schedule_id, status")
+        .in("bay_schedule_id", chunk)
+        .limit(10000);
+      if (data) allSlots.push(...data);
+    }
+
+    // Group slots by schedule
+    const slotsBySchedule = new Map<
+      string,
+      Array<{ id: string; status: string }>
+    >();
+    for (const slot of allSlots) {
+      const list = slotsBySchedule.get(slot.bay_schedule_id) || [];
+      list.push(slot);
+      slotsBySchedule.set(slot.bay_schedule_id, list);
+    }
+
+    let cleared = 0;
+    let skippedWithBookings = 0;
+    const slotsToDelete: string[] = [];
+    const schedulesToDelete: string[] = [];
+
+    for (const sched of schedules) {
+      const slots = slotsBySchedule.get(sched.id) || [];
+      const bookedSlots = slots.filter((s) => s.status === "booked");
+      const nonBookedSlots = slots.filter((s) => s.status !== "booked");
+
+      if (bookedSlots.length > 0) {
+        // Has active bookings — only remove non-booked slots
+        skippedWithBookings++;
+        for (const s of nonBookedSlots) {
+          slotsToDelete.push(s.id);
+        }
+      } else {
+        // No bookings — fully clear
+        cleared++;
+        for (const s of slots) {
+          slotsToDelete.push(s.id);
+        }
+        schedulesToDelete.push(sched.id);
+      }
+    }
+
+    // 3. Delete non-booked slots in chunks
+    const DELETE_CHUNK = 500;
+    for (let i = 0; i < slotsToDelete.length; i += DELETE_CHUNK) {
+      const chunk = slotsToDelete.slice(i, i + DELETE_CHUNK);
+      const { error } = await supabase
+        .from("bay_schedule_slots")
+        .delete()
+        .in("id", chunk);
+      if (error) {
+        return {
+          success: false,
+          cleared,
+          skippedWithBookings,
+          error: error.message,
+        };
+      }
+    }
+
+    // 4. Delete empty bay_schedules
+    if (schedulesToDelete.length > 0) {
+      for (let i = 0; i < schedulesToDelete.length; i += DELETE_CHUNK) {
+        const chunk = schedulesToDelete.slice(i, i + DELETE_CHUNK);
+        const { error } = await supabase
+          .from("bay_schedules")
+          .delete()
+          .in("id", chunk);
+        if (error) {
+          return {
+            success: false,
+            cleared,
+            skippedWithBookings,
+            error: error.message,
+          };
+        }
+      }
+    }
+
+    revalidatePath("/admin/schedule");
+    return { success: true, cleared, skippedWithBookings };
+  }
+
   return (
     <ScheduleCalendar
       today={today}
@@ -208,6 +351,7 @@ export default async function ScheduleManagerPage() {
       orgId={org.id}
       timezone={org.timezone}
       onApplyTemplate={applyTemplateAction}
+      onClearSchedules={clearSchedulesAction}
     />
   );
 }
