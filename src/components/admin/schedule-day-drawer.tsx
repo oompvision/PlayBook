@@ -131,6 +131,9 @@ export function ScheduleDayDrawer({
 
   // Apply template
   const [applyTemplateId, setApplyTemplateId] = useState("");
+  const [applyBayIds, setApplyBayIds] = useState<Set<string>>(
+    () => new Set(bays.map((b) => b.id))
+  );
   const [applyLoading, setApplyLoading] = useState(false);
 
   // Save as template
@@ -357,10 +360,11 @@ export function ScheduleDayDrawer({
   }
 
   async function handleApplyTemplate() {
-    if (!applyTemplateId) return;
+    if (!applyTemplateId || applyBayIds.size === 0) return;
     setApplyLoading(true);
     setMessage(null);
 
+    const targetBayIds = Array.from(applyBayIds);
     const supabase = createClient();
 
     // 1. Fetch template slots
@@ -375,98 +379,120 @@ export function ScheduleDayDrawer({
       return;
     }
 
-    // 2. Fetch bay overrides for this template + bay
+    // 2. Fetch per-bay overrides for all target bays
     const { data: overrides } = await supabase
       .from("template_bay_overrides")
-      .select("template_slot_id, price_cents")
+      .select("template_slot_id, bay_id, price_cents")
       .eq("template_id", applyTemplateId)
-      .eq("bay_id", activeBayId);
+      .in("bay_id", targetBayIds);
 
     const overrideMap = new Map<string, number>();
     for (const o of overrides || []) {
-      overrideMap.set(o.template_slot_id, o.price_cents);
+      overrideMap.set(`${o.template_slot_id}:${o.bay_id}`, o.price_cents);
     }
 
-    // 3. Upsert bay_schedule
-    const { data: schedule, error: schedError } = await supabase
-      .from("bay_schedules")
-      .upsert(
-        {
-          bay_id: activeBayId,
-          org_id: orgId,
-          date,
-          template_id: applyTemplateId,
-        },
-        { onConflict: "bay_id,date" }
-      )
-      .select("id")
-      .single();
+    // 3. Build bay hourly rate lookup
+    const bayRateMap = new Map<string, number>();
+    for (const b of bays) {
+      bayRateMap.set(b.id, b.hourly_rate_cents);
+    }
 
-    if (schedError || !schedule) {
+    // 4. Batch upsert bay_schedules for all target bays
+    const scheduleRows = targetBayIds.map((bayId) => ({
+      bay_id: bayId,
+      org_id: orgId,
+      date,
+      template_id: applyTemplateId,
+    }));
+
+    const { data: upsertedSchedules, error: schedError } = await supabase
+      .from("bay_schedules")
+      .upsert(scheduleRows, { onConflict: "bay_id,date" })
+      .select("id, bay_id");
+
+    if (schedError || !upsertedSchedules?.length) {
       setMessage({
         type: "error",
-        text: schedError?.message || "Failed to create schedule",
+        text: schedError?.message || "Failed to create schedules",
       });
       setApplyLoading(false);
       return;
     }
 
-    // 4. Delete old slots
+    // 5. Delete old slots for all affected schedules
+    const scheduleIds = upsertedSchedules.map((s) => s.id);
     await supabase
       .from("bay_schedule_slots")
       .delete()
-      .eq("bay_schedule_id", schedule.id);
+      .in("bay_schedule_id", scheduleIds);
 
-    // 5. Build new slots
-    const bay = bays.find((b) => b.id === activeBayId);
-    const hourlyRate = bay?.hourly_rate_cents || 0;
+    // 6. Build concrete slots for all bays
+    const allNewSlots: Array<{
+      bay_schedule_id: string;
+      org_id: string;
+      start_time: string;
+      end_time: string;
+      price_cents: number;
+      status: "available";
+    }> = [];
 
-    const newSlots = templateSlots.map((ts) => {
-      const [sH, sM] = ts.start_time.split(":").map(Number);
-      const [eH, eM] = ts.end_time.split(":").map(Number);
-      const dur = eH * 60 + eM - (sH * 60 + sM);
-      const overridePrice = overrideMap.get(ts.id);
-      const price =
-        overridePrice !== undefined
-          ? overridePrice
-          : Math.round(hourlyRate * (dur / 60));
+    for (const sched of upsertedSchedules) {
+      const hourlyRate = bayRateMap.get(sched.bay_id) || 0;
+      for (const ts of templateSlots) {
+        const [sH, sM] = ts.start_time.split(":").map(Number);
+        const [eH, eM] = ts.end_time.split(":").map(Number);
+        const dur = eH * 60 + eM - (sH * 60 + sM);
+        const overridePrice = overrideMap.get(`${ts.id}:${sched.bay_id}`);
+        const price =
+          overridePrice !== undefined
+            ? overridePrice
+            : Math.round(hourlyRate * (dur / 60));
 
-      return {
-        bay_schedule_id: schedule.id,
-        org_id: orgId,
-        start_time: toTimestamp(date, ts.start_time, timezone),
-        end_time: toTimestamp(date, ts.end_time, timezone),
-        price_cents: price,
-        status: "available" as const,
-      };
-    });
+        allNewSlots.push({
+          bay_schedule_id: sched.id,
+          org_id: orgId,
+          start_time: toTimestamp(date, ts.start_time, timezone),
+          end_time: toTimestamp(date, ts.end_time, timezone),
+          price_cents: price,
+          status: "available",
+        });
+      }
+    }
 
     const { data: insertedSlots, error: insertError } = await supabase
       .from("bay_schedule_slots")
-      .insert(newSlots)
+      .insert(allNewSlots)
       .select();
 
     if (insertError) {
       setMessage({ type: "error", text: insertError.message });
     } else {
+      // Update local state for all affected bays
       setSchedules((prev) => {
         const next = new Map(prev);
-        next.set(activeBayId, {
-          id: schedule.id,
-          bay_id: activeBayId,
-          template_id: applyTemplateId,
-          slots: [...(insertedSlots || [])].sort((a, b) =>
-            a.start_time.localeCompare(b.start_time)
-          ),
-        });
+        for (const sched of upsertedSchedules) {
+          const baySlots = (insertedSlots || [])
+            .filter((s) => s.bay_schedule_id === sched.id)
+            .sort((a, b) => a.start_time.localeCompare(b.start_time));
+          next.set(sched.bay_id, {
+            id: sched.id,
+            bay_id: sched.bay_id,
+            template_id: applyTemplateId,
+            slots: baySlots,
+          });
+        }
         return next;
       });
       setModifiedBays((prev) => {
         const next = new Set(prev);
-        next.delete(activeBayId);
+        for (const bayId of targetBayIds) next.delete(bayId);
         return next;
       });
-      setMessage({ type: "success", text: "Template applied successfully" });
+      const bayCount = upsertedSchedules.length;
+      setMessage({
+        type: "success",
+        text: `Template applied to ${bayCount} ${bayCount === 1 ? "bay" : "bays"}`,
+      });
       setApplyTemplateId("");
     }
 
@@ -941,7 +967,11 @@ export function ScheduleDayDrawer({
                       size="sm"
                       variant="outline"
                       onClick={handleApplyTemplate}
-                      disabled={applyLoading || !applyTemplateId}
+                      disabled={
+                        applyLoading ||
+                        !applyTemplateId ||
+                        applyBayIds.size === 0
+                      }
                       className="h-9 gap-1.5 rounded-lg"
                     >
                       {applyLoading ? (
@@ -952,12 +982,68 @@ export function ScheduleDayDrawer({
                       Apply
                     </Button>
                   </div>
-                  {sortedSlots.length > 0 && (
-                    <p className="mt-2 text-xs text-amber-600">
-                      Applying a template will replace all existing slots for
-                      this bay.
-                    </p>
-                  )}
+
+                  {/* Bay selection */}
+                  <div className="mt-3">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                      <label className="flex cursor-pointer items-center gap-2 py-1">
+                        <input
+                          type="checkbox"
+                          checked={applyBayIds.size === bays.length}
+                          onChange={() => {
+                            if (applyBayIds.size === bays.length) {
+                              setApplyBayIds(new Set());
+                            } else {
+                              setApplyBayIds(
+                                new Set(bays.map((b) => b.id))
+                              );
+                            }
+                          }}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm font-medium text-gray-700">
+                          All Bays
+                        </span>
+                      </label>
+                      {bays.map((bay) => (
+                        <label
+                          key={bay.id}
+                          className="flex cursor-pointer items-center gap-2 py-1"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={applyBayIds.has(bay.id)}
+                            onChange={() => {
+                              setApplyBayIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(bay.id)) {
+                                  next.delete(bay.id);
+                                } else {
+                                  next.add(bay.id);
+                                }
+                                return next;
+                              });
+                            }}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-600">
+                            {bay.name}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {applyBayIds.size > 0 &&
+                    bays.some(
+                      (b) =>
+                        applyBayIds.has(b.id) &&
+                        (schedules.get(b.id)?.slots.length ?? 0) > 0
+                    ) && (
+                      <p className="mt-2 text-xs text-amber-600">
+                        Existing slots will be replaced for selected bays.
+                      </p>
+                    )}
                 </div>
               )}
 

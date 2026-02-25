@@ -996,21 +996,17 @@ export function ScheduleCalendar({
                     <X className="h-3.5 w-3.5" />
                     Clear
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      const editDate =
-                        lastClickedDate && selectedDates.has(lastClickedDate)
-                          ? lastClickedDate
-                          : selectedArray[0];
-                      if (editDate) setEditingDate(editDate);
-                    }}
-                    className="gap-1.5 rounded-lg border-gray-200"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    Edit Schedule
-                  </Button>
+                  {selectedCount === 1 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEditingDate(selectedArray[0])}
+                      className="gap-1.5 rounded-lg border-gray-200"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit Schedule
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     onClick={openPanel}
