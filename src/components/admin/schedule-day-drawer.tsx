@@ -991,9 +991,8 @@ export function ScheduleDayDrawer({
                                     $
                                   </span>
                                   <input
-                                    type="number"
-                                    step="0.01"
-                                    min="0"
+                                    type="text"
+                                    inputMode="decimal"
                                     value={editPriceValue}
                                     onChange={(e) =>
                                       setEditPriceValue(e.target.value)
