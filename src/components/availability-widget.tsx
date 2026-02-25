@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Calendar } from "@/components/ui/calendar";
@@ -36,13 +35,18 @@ type Bay = {
   resource_type: string | null;
 };
 
-type Slot = {
-  id: string;
+type TimeGroup = {
+  key: string;
   start_time: string;
   end_time: string;
-  price_cents: number;
-  status: string;
-  bay_id: string;
+  min_price_cents: number;
+  all_same_price: boolean;
+  available_bays: Array<{
+    bay_id: string;
+    bay_name: string;
+    slot_id: string;
+    price_cents: number;
+  }>;
 };
 
 type Booking = {
@@ -169,35 +173,6 @@ function getDateParts(date: Date, timezone: string) {
   };
 }
 
-/** Group consecutive slots into combined time ranges for display. */
-function groupConsecutiveSlots(
-  slotIds: string[],
-  slotMap: Map<string, Slot>,
-  timezone: string
-): Array<{ start_time: string; end_time: string; price_cents: number; slot_count: number }> {
-  const sorted = slotIds
-    .map((id) => slotMap.get(id))
-    .filter(Boolean)
-    .sort((a, b) => new Date(a!.start_time).getTime() - new Date(b!.start_time).getTime()) as Slot[];
-
-  const groups: Array<{ start_time: string; end_time: string; price_cents: number; slot_count: number }> = [];
-  for (const slot of sorted) {
-    const last = groups[groups.length - 1];
-    if (last && new Date(slot.start_time).getTime() === new Date(last.end_time).getTime()) {
-      last.end_time = slot.end_time;
-      last.price_cents += slot.price_cents;
-      last.slot_count += 1;
-    } else {
-      groups.push({
-        start_time: slot.start_time,
-        end_time: slot.end_time,
-        price_cents: slot.price_cents,
-        slot_count: 1,
-      });
-    }
-  }
-  return groups;
-}
 
 export function AvailabilityWidget({
   orgId,
@@ -215,11 +190,10 @@ export function AvailabilityWidget({
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(todayStr);
-  const [selectedBayId, setSelectedBayId] = useState(bays[0]?.id ?? "");
-  const [slots, setSlots] = useState<Slot[]>([]);
-  const [slotCountsByBay, setSlotCountsByBay] = useState<Record<string, number>>({});
+  const [timeGroups, setTimeGroups] = useState<TimeGroup[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedSlotIds, setSelectedSlotIds] = useState<Set<string>>(new Set());
+  const [selectedTimeKeys, setSelectedTimeKeys] = useState<Set<string>>(new Set());
+  const [selectedBayIdForBooking, setSelectedBayIdForBooking] = useState("");
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [autoAdvancedFrom, setAutoAdvancedFrom] = useState<string | null>(null);
@@ -279,9 +253,9 @@ export function AvailabilityWidget({
 
       // Restore state
       if (parsed.date) setSelectedDate(parsed.date);
-      if (parsed.bayId) setSelectedBayId(parsed.bayId);
-      if (parsed.slotIds?.length) {
-        setSelectedSlotIds(new Set(parsed.slotIds));
+      if (parsed.bayIdForBooking) setSelectedBayIdForBooking(parsed.bayIdForBooking);
+      if (parsed.timeKeys?.length) {
+        setSelectedTimeKeys(new Set(parsed.timeKeys));
         restoredFromStorage.current = true;
       }
       if (parsed.notes) setNotes(parsed.notes);
@@ -367,14 +341,15 @@ export function AvailabilityWidget({
   const isToday = selectedDate === todayStr;
   const canGoBack = selectedDate > todayStr;
 
-  // Fetch all available slot counts for all bays on the selected date,
-  // plus the detailed slots for the selected bay
-  const fetchSlots = useCallback(
-    async (date: string, bayId: string) => {
+  // Fetch all available slots across all bays for the selected date,
+  // then group them by time
+  const fetchTimeGroups = useCallback(
+    async (date: string) => {
       setLoading(true);
       // Only clear selection if we're NOT restoring from localStorage
       if (!restoredFromStorage.current) {
-        setSelectedSlotIds(new Set());
+        setSelectedTimeKeys(new Set());
+        setSelectedBayIdForBooking("");
       }
       restoredFromStorage.current = false;
 
@@ -416,46 +391,76 @@ export function AvailabilityWidget({
         }
       }
 
-      // Count slots per bay and build detailed slot list for selected bay
-      const counts: Record<string, number> = {};
-      const baySlots: Slot[] = [];
+      // Build a map of bay_id → bay name for quick lookup
+      const bayNameMap: Record<string, string> = {};
+      for (const bay of bays) {
+        bayNameMap[bay.id] = bay.name;
+      }
+
+      // Group slots by start_time across bays
+      const groupMap = new Map<string, TimeGroup>();
 
       if (allSlots) {
         for (const slot of allSlots) {
           const slotBayId = scheduleToBay[slot.bay_schedule_id];
           if (!slotBayId) continue;
+          const bayName = bayNameMap[slotBayId];
+          if (!bayName) continue;
 
-          counts[slotBayId] = (counts[slotBayId] || 0) + 1;
-
-          if (slotBayId === bayId) {
-            baySlots.push({
-              id: slot.id,
+          const key = slot.start_time;
+          let group = groupMap.get(key);
+          if (!group) {
+            group = {
+              key,
               start_time: slot.start_time,
               end_time: slot.end_time,
-              price_cents: slot.price_cents,
-              status: slot.status,
-              bay_id: slotBayId,
-            });
+              min_price_cents: slot.price_cents,
+              all_same_price: true,
+              available_bays: [],
+            };
+            groupMap.set(key, group);
+          }
+
+          group.available_bays.push({
+            bay_id: slotBayId,
+            bay_name: bayName,
+            slot_id: slot.id,
+            price_cents: slot.price_cents,
+          });
+
+          // Update price tracking
+          if (slot.price_cents < group.min_price_cents) {
+            group.min_price_cents = slot.price_cents;
           }
         }
       }
 
-      setSlotCountsByBay(counts);
-      setSlots(baySlots);
+      // Finalize: check if all_same_price holds, sort bays by sort_order
+      const bayOrderMap: Record<string, number> = {};
+      bays.forEach((b, i) => { bayOrderMap[b.id] = i; });
+
+      const groups = Array.from(groupMap.values())
+        .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+
+      for (const group of groups) {
+        const prices = group.available_bays.map((b) => b.price_cents);
+        group.all_same_price = prices.every((p) => p === prices[0]);
+        group.available_bays.sort((a, b) => (bayOrderMap[a.bay_id] ?? 0) - (bayOrderMap[b.bay_id] ?? 0));
+      }
+
+      setTimeGroups(groups);
       setLoading(false);
     },
-    [orgId, timezone, todayStr, minBookingLeadMinutes]
+    [orgId, timezone, todayStr, minBookingLeadMinutes, bays]
   );
 
   useEffect(() => {
-    if (selectedBayId) {
-      fetchSlots(selectedDate, selectedBayId);
-    }
-  }, [selectedDate, selectedBayId, fetchSlots]);
+    fetchTimeGroups(selectedDate);
+  }, [selectedDate, fetchTimeGroups]);
 
   // Auto-open panel after restoring from localStorage (post-auth reload)
   useEffect(() => {
-    if (mounted && selectedSlotIds.size > 0 && isAuthenticated) {
+    if (mounted && selectedTimeKeys.size > 0 && isAuthenticated) {
       // Check if we just restored — the panel should open
       const stored = sessionStorage.getItem("playbook-panel-reopen");
       if (stored) {
@@ -463,7 +468,7 @@ export function AvailabilityWidget({
         setPanelOpen(true);
       }
     }
-  }, [mounted, selectedSlotIds.size, isAuthenticated]);
+  }, [mounted, selectedTimeKeys.size, isAuthenticated]);
 
   function handleDateChange(delta: number) {
     const newDate = addDays(selectedDate, delta);
@@ -484,14 +489,44 @@ export function AvailabilityWidget({
     setAutoAdvancedFrom(null);
   }
 
-  function toggleSlot(slotId: string) {
-    setSelectedSlotIds((prev) => {
+  // Compute eligible bays: bays that have slots for ALL selected time keys
+  function getEligibleBays(keys: Set<string>): Array<{ bay_id: string; bay_name: string }> {
+    if (keys.size === 0) return [];
+    const keysArr = Array.from(keys);
+    // For each time key, get the set of bay_ids that are available
+    const baySetsPerKey = keysArr.map((key) => {
+      const group = timeGroups.find((g) => g.key === key);
+      return new Set(group?.available_bays.map((b) => b.bay_id) ?? []);
+    });
+    // Intersect all sets
+    const intersection = baySetsPerKey.reduce((acc, set) => {
+      return new Set([...acc].filter((id) => set.has(id)));
+    });
+    // Return bay info sorted by original bay order
+    const bayOrderMap: Record<string, number> = {};
+    bays.forEach((b, i) => { bayOrderMap[b.id] = i; });
+    return Array.from(intersection)
+      .map((id) => ({ bay_id: id, bay_name: bays.find((b) => b.id === id)?.name ?? "" }))
+      .sort((a, b) => (bayOrderMap[a.bay_id] ?? 0) - (bayOrderMap[b.bay_id] ?? 0));
+  }
+
+  const eligibleBays = getEligibleBays(selectedTimeKeys);
+
+  function toggleTimeSlot(key: string) {
+    setSelectedTimeKeys((prev) => {
       const next = new Set(prev);
-      if (next.has(slotId)) {
-        next.delete(slotId);
-      } else {
-        next.add(slotId);
+      if (next.has(key)) {
+        next.delete(key);
+        return next;
       }
+      // Check if adding this key would still leave at least one eligible bay
+      const candidate = new Set([...prev, key]);
+      const eligible = getEligibleBays(candidate);
+      if (eligible.length === 0) {
+        // Can't add — no bay covers all selected times
+        return prev;
+      }
+      next.add(key);
       return next;
     });
   }
@@ -526,8 +561,8 @@ export function AvailabilityWidget({
     const data = {
       orgId,
       date: selectedDate,
-      bayId: selectedBayId,
-      slotIds: Array.from(selectedSlotIds),
+      bayIdForBooking: effectiveBayId,
+      timeKeys: Array.from(selectedTimeKeys),
       notes,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -584,13 +619,13 @@ export function AvailabilityWidget({
 
   // Confirm booking — client-side via Supabase RPC
   async function handleConfirmBooking() {
-    if (!userProfileId) return;
+    if (!userProfileId || !effectiveBayId) return;
 
     setBookingInProgress(true);
     setBookingError("");
 
     const supabase = createClient();
-    const slotIdsArray = Array.from(selectedSlotIds);
+    const slotIdsArray = selectedSlotInfo.map((s) => s.slot_id);
 
     // Re-validate slot availability
     const { data: freshSlots } = await supabase
@@ -609,7 +644,7 @@ export function AvailabilityWidget({
     const { data, error } = await supabase.rpc("create_booking", {
       p_org_id: orgId,
       p_customer_id: userProfileId,
-      p_bay_id: selectedBayId,
+      p_bay_id: effectiveBayId,
       p_date: selectedDate,
       p_slot_ids: slotIdsArray,
       p_notes: notes || null,
@@ -642,7 +677,8 @@ export function AvailabilityWidget({
 
     // Desktop: close panel, clear selection, show toast, refresh data
     setPanelOpen(false);
-    setSelectedSlotIds(new Set());
+    setSelectedTimeKeys(new Set());
+    setSelectedBayIdForBooking("");
     setNotes("");
     setBookingInProgress(false);
 
@@ -656,20 +692,20 @@ export function AvailabilityWidget({
     setHighlightedBookingIds(new Set(newBookingIds));
     setTimeout(() => setHighlightedBookingIds(new Set()), 8000);
 
-    // Refresh slots (booked slots should disappear) and bookings list
-    fetchSlots(selectedDate, selectedBayId);
+    // Refresh time groups (booked slots should disappear) and bookings list
+    fetchTimeGroups(selectedDate);
     fetchBookings();
   }
 
   // Confirm guest booking — admin creates on behalf of a guest
   async function handleConfirmGuestBooking() {
-    if (!guestName.trim()) return;
+    if (!guestName.trim() || !effectiveBayId) return;
 
     setBookingInProgress(true);
     setBookingError("");
 
     const supabase = createClient();
-    const slotIdsArray = Array.from(selectedSlotIds);
+    const slotIdsArray = selectedSlotInfo.map((s) => s.slot_id);
 
     // Re-validate slot availability
     const { data: freshSlots } = await supabase
@@ -686,7 +722,7 @@ export function AvailabilityWidget({
 
     const { data, error } = await supabase.rpc("create_guest_booking", {
       p_org_id: orgId,
-      p_bay_id: selectedBayId,
+      p_bay_id: effectiveBayId,
       p_date: selectedDate,
       p_slot_ids: slotIdsArray,
       p_guest_name: guestName.trim(),
@@ -717,24 +753,58 @@ export function AvailabilityWidget({
     if (!error) {
       setBookings((prev) => prev.filter((b) => b.id !== bookingId));
       setExpandedBookingId(null);
-      // Refresh slots in case cancellation freed up availability
-      fetchSlots(selectedDate, selectedBayId);
+      // Refresh time groups in case cancellation freed up availability
+      fetchTimeGroups(selectedDate);
     }
     setCancellingId(null);
   }
 
-  // Calculate totals
-  const totalCents = slots
-    .filter((s) => selectedSlotIds.has(s.id))
-    .reduce((sum, s) => sum + s.price_cents, 0);
+  // Auto-select the first eligible bay when selection changes
+  const effectiveBayId = eligibleBays.some((b) => b.bay_id === selectedBayIdForBooking)
+    ? selectedBayIdForBooking
+    : eligibleBays[0]?.bay_id ?? "";
 
-  const selectedBay = bays.find((b) => b.id === selectedBayId);
+  // Resolve actual slot info for the effective bay and selected time keys
+  function getSelectedSlotInfo(bayId: string) {
+    const result: Array<{ slot_id: string; start_time: string; end_time: string; price_cents: number }> = [];
+    for (const key of selectedTimeKeys) {
+      const group = timeGroups.find((g) => g.key === key);
+      if (!group) continue;
+      const baySlot = group.available_bays.find((b) => b.bay_id === bayId);
+      if (baySlot) {
+        result.push({
+          slot_id: baySlot.slot_id,
+          start_time: group.start_time,
+          end_time: group.end_time,
+          price_cents: baySlot.price_cents,
+        });
+      }
+    }
+    return result.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+  }
 
-  // Build slot map for grouping
-  const slotMap = new Map(slots.map((s) => [s.id, s]));
-  const selectedGroups = selectedSlotIds.size > 0
-    ? groupConsecutiveSlots(Array.from(selectedSlotIds), slotMap, timezone)
-    : [];
+  const selectedSlotInfo = getSelectedSlotInfo(effectiveBayId);
+  const totalCents = selectedSlotInfo.reduce((sum, s) => sum + s.price_cents, 0);
+
+  const selectedBayObj = bays.find((b) => b.id === effectiveBayId);
+
+  // Group consecutive selected slots for display in the confirm panel
+  const selectedGroups: Array<{ start_time: string; end_time: string; price_cents: number; slot_count: number }> = [];
+  for (const slot of selectedSlotInfo) {
+    const last = selectedGroups[selectedGroups.length - 1];
+    if (last && new Date(slot.start_time).getTime() === new Date(last.end_time).getTime()) {
+      last.end_time = slot.end_time;
+      last.price_cents += slot.price_cents;
+      last.slot_count += 1;
+    } else {
+      selectedGroups.push({
+        start_time: slot.start_time,
+        end_time: slot.end_time,
+        price_cents: slot.price_cents,
+        slot_count: 1,
+      });
+    }
+  }
 
   const isAdminGuest = mode === "admin-guest";
 
@@ -907,50 +977,6 @@ export function AvailabilityWidget({
 
       {/* ===== Main content ===== */}
       <div className="min-w-0 flex-1 overflow-hidden rounded-xl border bg-card shadow-sm">
-        {/* Horizontal Bay Tabs — scrollable */}
-        <div className="border-b">
-          <div className="flex gap-2 overflow-x-auto px-4 py-3">
-            {bays.map((bay) => {
-              const count = slotCountsByBay[bay.id] || 0;
-              const isActive = bay.id === selectedBayId;
-
-              return (
-                <button
-                  key={bay.id}
-                  type="button"
-                  onClick={() => setSelectedBayId(bay.id)}
-                  className={`inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
-                  }`}
-                >
-                  <span>{bay.name}</span>
-                  {bay.resource_type && (
-                    <span
-                      className={`text-xs ${
-                        isActive
-                          ? "text-primary-foreground/70"
-                          : ""
-                      }`}
-                    >
-                      &middot; {bay.resource_type}
-                    </span>
-                  )}
-                  <Badge
-                    variant={isActive ? "secondary" : "outline"}
-                    className={`text-xs ${
-                      isActive ? "" : count === 0 ? "opacity-50" : ""
-                    }`}
-                  >
-                    {loading ? "..." : count}
-                  </Badge>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
         {/* Date Navigation Header */}
         <div className="flex items-center justify-between border-b px-5 py-3">
           <div className="flex items-center gap-2">
@@ -1010,40 +1036,51 @@ export function AvailabilityWidget({
           </div>
         )}
 
-        {/* Slot List */}
+        {/* Time Slot List */}
         <div className="px-5 py-4">
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : slots.length === 0 ? (
+          ) : timeGroups.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <Clock className="mb-3 h-10 w-10 text-muted-foreground/30" />
               <p className="font-medium text-muted-foreground">
                 No available slots
               </p>
               <p className="mt-1 text-sm text-muted-foreground/70">
-                {selectedBay?.name} has no availability on{" "}
-                {formatShortDate(selectedDate)}. Try another date or facility.
+                No availability on {formatShortDate(selectedDate)}. Try another date.
               </p>
             </div>
           ) : (
             <div className="space-y-2">
-              {slots.map((slot) => {
-                const startTime = formatTime(slot.start_time, timezone);
-                const endTime = formatTime(slot.end_time, timezone);
-                const price = `$${(slot.price_cents / 100).toFixed(2)}`;
-                const isSelected = selectedSlotIds.has(slot.id);
+              {timeGroups.map((group) => {
+                const startTime = formatTime(group.start_time, timezone);
+                const endTime = formatTime(group.end_time, timezone);
+                const priceLabel = group.all_same_price
+                  ? `$${(group.min_price_cents / 100).toFixed(2)}`
+                  : `from $${(group.min_price_cents / 100).toFixed(2)}`;
+                const isSelected = selectedTimeKeys.has(group.key);
+
+                // Check if this slot could be added (at least one bay in common with current selection)
+                const wouldBeEligible = isSelected || (() => {
+                  if (selectedTimeKeys.size === 0) return true;
+                  const candidate = new Set([...selectedTimeKeys, group.key]);
+                  return getEligibleBays(candidate).length > 0;
+                })();
 
                 return (
                   <button
-                    key={slot.id}
+                    key={group.key}
                     type="button"
-                    onClick={() => toggleSlot(slot.id)}
+                    onClick={() => toggleTimeSlot(group.key)}
+                    disabled={!wouldBeEligible}
                     className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-all ${
                       isSelected
                         ? "border-primary bg-primary/5 ring-1 ring-primary"
-                        : "hover:border-foreground/20 hover:bg-accent"
+                        : !wouldBeEligible
+                          ? "cursor-not-allowed opacity-40"
+                          : "hover:border-foreground/20 hover:bg-accent"
                     }`}
                   >
                     <div className="flex items-center gap-3">
@@ -1060,13 +1097,20 @@ export function AvailabilityWidget({
                         <p className="text-sm font-medium">
                           {startTime} &ndash; {endTime}
                         </p>
-                        <p className="text-xs text-muted-foreground">
-                          {selectedBay?.name}
-                        </p>
+                        <div className="mt-0.5 flex flex-wrap gap-1.5">
+                          {group.available_bays.map((b) => (
+                            <span
+                              key={b.bay_id}
+                              className="inline-block rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                            >
+                              {b.bay_name}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-sm font-semibold">{price}</span>
+                      <span className="text-sm font-semibold">{priceLabel}</span>
                       <div
                         className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors ${
                           isSelected
@@ -1100,7 +1144,7 @@ export function AvailabilityWidget({
       </div>
 
       {/* ===== Booking bar / slide-up panel — portalled to body ===== */}
-      {selectedSlotIds.size > 0 &&
+      {selectedTimeKeys.size > 0 &&
         mounted &&
         createPortal(
           <>
@@ -1125,11 +1169,14 @@ export function AvailabilityWidget({
                 <div className="mx-auto flex max-w-6xl items-center justify-between p-4 px-6">
                   <div>
                     <p className="text-sm font-medium">
-                      {selectedSlotIds.size} slot
-                      {selectedSlotIds.size !== 1 ? "s" : ""} selected
+                      {selectedTimeKeys.size} slot
+                      {selectedTimeKeys.size !== 1 ? "s" : ""} selected
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Total: ${(totalCents / 100).toFixed(2)}
+                      {selectedBayObj && eligibleBays.length > 1 && (
+                        <> &middot; {selectedBayObj.name}</>
+                      )}
                     </p>
                   </div>
                   <Button onClick={handleOpenPanel} className="gap-2">
@@ -1167,17 +1214,50 @@ export function AvailabilityWidget({
                         </div>
                       )}
 
+                      {/* Bay selector */}
+                      {eligibleBays.length > 1 && (
+                        <div className="mb-4">
+                          <p className="mb-2 text-sm font-medium">Select Facility</p>
+                          <div className="space-y-2">
+                            {eligibleBays.map((bay) => (
+                              <label
+                                key={bay.bay_id}
+                                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                                  effectiveBayId === bay.bay_id
+                                    ? "border-primary bg-primary/5 ring-1 ring-primary"
+                                    : "hover:bg-accent"
+                                }`}
+                              >
+                                <input
+                                  type="radio"
+                                  name="bay-select-guest"
+                                  value={bay.bay_id}
+                                  checked={effectiveBayId === bay.bay_id}
+                                  onChange={() => setSelectedBayIdForBooking(bay.bay_id)}
+                                  className="sr-only"
+                                />
+                                <div
+                                  className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
+                                    effectiveBayId === bay.bay_id
+                                      ? "border-primary"
+                                      : "border-muted-foreground/30"
+                                  }`}
+                                >
+                                  {effectiveBayId === bay.bay_id && (
+                                    <div className="h-2 w-2 rounded-full bg-primary" />
+                                  )}
+                                </div>
+                                <span className="text-sm font-medium">{bay.bay_name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Booking summary */}
                       <div className="mb-4 rounded-lg border p-4">
-                        <div className="mb-3 flex items-center justify-between">
-                          <div>
-                            <p className="font-medium">{selectedBay?.name}</p>
-                            {selectedBay?.resource_type && (
-                              <Badge variant="outline" className="mt-1">
-                                {selectedBay.resource_type}
-                              </Badge>
-                            )}
-                          </div>
+                        <div className="mb-3">
+                          <p className="font-medium">{selectedBayObj?.name}</p>
                         </div>
                         <div className="space-y-2">
                           {selectedGroups.map((group) => (
@@ -1279,9 +1359,9 @@ export function AvailabilityWidget({
                       <div className="mb-6 rounded-lg border bg-muted/50 p-4">
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-sm font-medium">{selectedBay?.name}</p>
+                            <p className="text-sm font-medium">{selectedBayObj?.name ?? "Facility"}</p>
                             <p className="text-xs text-muted-foreground">
-                              {selectedSlotIds.size} slot{selectedSlotIds.size !== 1 ? "s" : ""}
+                              {selectedTimeKeys.size} slot{selectedTimeKeys.size !== 1 ? "s" : ""}
                             </p>
                           </div>
                           <span className="text-sm font-bold">
@@ -1416,17 +1496,50 @@ export function AvailabilityWidget({
                         </div>
                       )}
 
+                      {/* Bay selector */}
+                      {eligibleBays.length > 1 && (
+                        <div className="mb-4">
+                          <p className="mb-2 text-sm font-medium">Select Facility</p>
+                          <div className="space-y-2">
+                            {eligibleBays.map((bay) => (
+                              <label
+                                key={bay.bay_id}
+                                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                                  effectiveBayId === bay.bay_id
+                                    ? "border-primary bg-primary/5 ring-1 ring-primary"
+                                    : "hover:bg-accent"
+                                }`}
+                              >
+                                <input
+                                  type="radio"
+                                  name="bay-select-auth"
+                                  value={bay.bay_id}
+                                  checked={effectiveBayId === bay.bay_id}
+                                  onChange={() => setSelectedBayIdForBooking(bay.bay_id)}
+                                  className="sr-only"
+                                />
+                                <div
+                                  className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
+                                    effectiveBayId === bay.bay_id
+                                      ? "border-primary"
+                                      : "border-muted-foreground/30"
+                                  }`}
+                                >
+                                  {effectiveBayId === bay.bay_id && (
+                                    <div className="h-2 w-2 rounded-full bg-primary" />
+                                  )}
+                                </div>
+                                <span className="text-sm font-medium">{bay.bay_name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Booking summary */}
                       <div className="mb-4 rounded-lg border p-4">
-                        <div className="mb-3 flex items-center justify-between">
-                          <div>
-                            <p className="font-medium">{selectedBay?.name}</p>
-                            {selectedBay?.resource_type && (
-                              <Badge variant="outline" className="mt-1">
-                                {selectedBay.resource_type}
-                              </Badge>
-                            )}
-                          </div>
+                        <div className="mb-3">
+                          <p className="font-medium">{selectedBayObj?.name}</p>
                         </div>
                         <div className="space-y-2">
                           {selectedGroups.map((group) => (
