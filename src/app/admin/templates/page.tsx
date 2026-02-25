@@ -351,21 +351,21 @@ export default async function TemplatesPage({
                       >
                         Save Details
                       </button>
-                      <form action={deleteTemplate}>
-                        <input
-                          type="hidden"
-                          name="id"
-                          value={editingTemplate.id}
-                        />
-                        <button
-                          type="submit"
-                          className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 dark:border-gray-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          Delete Template
-                        </button>
-                      </form>
                     </div>
+                  </form>
+                  <form action={deleteTemplate} className="mt-2">
+                    <input
+                      type="hidden"
+                      name="id"
+                      value={editingTemplate.id}
+                    />
+                    <button
+                      type="submit"
+                      className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 dark:border-gray-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete Template
+                    </button>
                   </form>
                 </div>
               </div>
