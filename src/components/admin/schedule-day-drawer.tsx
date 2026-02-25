@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import { cn, formatTimeInZone, toTimestamp } from "@/lib/utils";
@@ -15,6 +15,8 @@ import {
   LayoutTemplate,
   CheckCircle2,
   AlertCircle,
+  Check,
+  Undo2,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────
@@ -104,6 +106,22 @@ function formatDateHeading(dateStr: string): string {
   });
 }
 
+function cloneSchedules(
+  map: Map<string, BayScheduleData>
+): Map<string, BayScheduleData> {
+  return new Map(
+    Array.from(map.entries()).map(([k, v]) => [
+      k,
+      { ...v, slots: v.slots.map((s) => ({ ...s })) },
+    ])
+  );
+}
+
+let tempCounter = 0;
+function tempId(): string {
+  return `temp-${++tempCounter}-${Date.now()}`;
+}
+
 // ─── Component ───────────────────────────────────────────────────
 
 export function ScheduleDayDrawer({
@@ -117,17 +135,23 @@ export function ScheduleDayDrawer({
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Working copy (local edits go here)
   const [schedules, setSchedules] = useState<Map<string, BayScheduleData>>(
     new Map()
   );
+  // Snapshot of last saved/fetched DB state
+  const [savedSchedules, setSavedSchedules] = useState<
+    Map<string, BayScheduleData>
+  >(new Map());
+  // Slot IDs marked for deletion on save
+  const [deletedSlotIds, setDeletedSlotIds] = useState<Set<string>>(new Set());
 
   const [activeBayId, setActiveBayId] = useState(bays[0]?.id || "");
-  const [modifiedBays, setModifiedBays] = useState<Set<string>>(new Set());
 
   // Add slot
   const [addStartTime, setAddStartTime] = useState("");
   const [addEndTime, setAddEndTime] = useState("");
-  const [addLoading, setAddLoading] = useState(false);
 
   // Apply template
   const [applyTemplateId, setApplyTemplateId] = useState("");
@@ -145,6 +169,9 @@ export function ScheduleDayDrawer({
   const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
   const [editPriceValue, setEditPriceValue] = useState("");
 
+  // Save / discard
+  const [saving, setSaving] = useState(false);
+
   // Feedback
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -161,68 +188,79 @@ export function ScheduleDayDrawer({
 
   // Fetch schedule data
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      const supabase = createClient();
-      const { data } = await supabase
-        .from("bay_schedules")
-        .select("id, bay_id, template_id, bay_schedule_slots(*)")
-        .eq("org_id", orgId)
-        .eq("date", date);
-
-      const map = new Map<string, BayScheduleData>();
-      for (const s of data || []) {
-        map.set(s.bay_id, {
-          id: s.id,
-          bay_id: s.bay_id,
-          template_id: s.template_id,
-          slots: [...(s.bay_schedule_slots || [])].sort(
-            (a: ScheduleSlot, b: ScheduleSlot) =>
-              a.start_time.localeCompare(b.start_time)
-          ),
-        });
-      }
-      setSchedules(map);
-      setLoading(false);
-    }
-    load();
+    fetchSchedules();
   }, [date, orgId]);
+
+  async function fetchSchedules() {
+    setLoading(true);
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("bay_schedules")
+      .select("id, bay_id, template_id, bay_schedule_slots(*)")
+      .eq("org_id", orgId)
+      .eq("date", date);
+
+    const map = new Map<string, BayScheduleData>();
+    for (const s of data || []) {
+      map.set(s.bay_id, {
+        id: s.id,
+        bay_id: s.bay_id,
+        template_id: s.template_id,
+        slots: [...(s.bay_schedule_slots || [])].sort(
+          (a: ScheduleSlot, b: ScheduleSlot) =>
+            a.start_time.localeCompare(b.start_time)
+        ),
+      });
+    }
+    setSchedules(map);
+    setSavedSchedules(cloneSchedules(map));
+    setDeletedSlotIds(new Set());
+    setLoading(false);
+  }
+
+  // ─── Unsaved changes detection ────────────────────────────────
+
+  const hasChanges = useMemo(() => {
+    if (deletedSlotIds.size > 0) return true;
+    for (const [bayId, data] of schedules) {
+      if (data.slots.some((s) => s.id.startsWith("temp-"))) return true;
+      const orig = savedSchedules.get(bayId);
+      if (!orig) {
+        if (data.slots.length > 0) return true;
+        continue;
+      }
+      for (const slot of data.slots) {
+        if (slot.id.startsWith("temp-")) continue;
+        const origSlot = orig.slots.find((s) => s.id === slot.id);
+        if (!origSlot) continue;
+        if (
+          slot.price_cents !== origSlot.price_cents ||
+          slot.status !== origSlot.status
+        )
+          return true;
+      }
+    }
+    return false;
+  }, [schedules, savedSchedules, deletedSlotIds]);
 
   // ─── Animated close ──────────────────────────────────────────
 
   function handleClose() {
+    if (hasChanges) {
+      const confirmed = window.confirm(
+        "You have unsaved changes. Discard and close?"
+      );
+      if (!confirmed) return;
+    }
     setVisible(false);
     setTimeout(onClose, 300);
   }
 
-  // ─── Actions ─────────────────────────────────────────────────
+  // ─── Local-only slot edits ───────────────────────────────────
 
-  async function handleAddSlot() {
+  function handleAddSlot() {
     if (!addStartTime || !addEndTime) return;
-    setAddLoading(true);
     setMessage(null);
-
-    const supabase = createClient();
-    const baySchedule = schedules.get(activeBayId);
-    let scheduleId = baySchedule?.id;
-
-    if (!scheduleId) {
-      const { data, error } = await supabase
-        .from("bay_schedules")
-        .insert({ bay_id: activeBayId, org_id: orgId, date })
-        .select("id")
-        .single();
-
-      if (error || !data) {
-        setMessage({
-          type: "error",
-          text: error?.message || "Failed to create schedule",
-        });
-        setAddLoading(false);
-        return;
-      }
-      scheduleId = data.id;
-    }
 
     const bay = bays.find((b) => b.id === activeBayId);
     const hourlyRate = bay?.hourly_rate_cents || 0;
@@ -231,62 +269,46 @@ export function ScheduleDayDrawer({
     const duration = eH * 60 + eM - (sH * 60 + sM);
     const priceCents = Math.round(hourlyRate * (duration / 60));
 
-    const { data: slot, error } = await supabase
-      .from("bay_schedule_slots")
-      .insert({
-        bay_schedule_id: scheduleId,
-        org_id: orgId,
-        start_time: toTimestamp(date, addStartTime, timezone),
-        end_time: toTimestamp(date, addEndTime, timezone),
-        price_cents: priceCents,
-        status: "available",
-      })
-      .select()
-      .single();
+    const existing = schedules.get(activeBayId);
+    const scheduleId = existing?.id || `temp-sched-${activeBayId}`;
 
-    if (error) {
-      setMessage({ type: "error", text: error.message });
-    } else if (slot) {
-      setSchedules((prev) => {
-        const next = new Map(prev);
-        const existing = next.get(activeBayId);
-        if (existing) {
-          next.set(activeBayId, {
-            ...existing,
-            slots: [...existing.slots, slot].sort((a, b) =>
-              a.start_time.localeCompare(b.start_time)
-            ),
-          });
-        } else {
-          next.set(activeBayId, {
-            id: scheduleId!,
-            bay_id: activeBayId,
-            template_id: null,
-            slots: [slot],
-          });
-        }
-        return next;
-      });
-      setModifiedBays((prev) => new Set(prev).add(activeBayId));
-      setAddStartTime("");
-      setAddEndTime("");
-    }
+    const newSlot: ScheduleSlot = {
+      id: tempId(),
+      bay_schedule_id: scheduleId,
+      org_id: orgId,
+      start_time: toTimestamp(date, addStartTime, timezone),
+      end_time: toTimestamp(date, addEndTime, timezone),
+      price_cents: priceCents,
+      status: "available",
+    };
 
-    setAddLoading(false);
+    setSchedules((prev) => {
+      const next = new Map(prev);
+      if (existing) {
+        next.set(activeBayId, {
+          ...existing,
+          slots: [...existing.slots, newSlot].sort((a, b) =>
+            a.start_time.localeCompare(b.start_time)
+          ),
+        });
+      } else {
+        next.set(activeBayId, {
+          id: scheduleId,
+          bay_id: activeBayId,
+          template_id: null,
+          slots: [newSlot],
+        });
+      }
+      return next;
+    });
+    setAddStartTime("");
+    setAddEndTime("");
   }
 
-  async function handleDeleteSlot(slotId: string) {
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("bay_schedule_slots")
-      .delete()
-      .eq("id", slotId);
-
-    if (error) {
-      setMessage({ type: "error", text: error.message });
-      return;
+  function handleDeleteSlot(slotId: string) {
+    if (!slotId.startsWith("temp-")) {
+      setDeletedSlotIds((prev) => new Set(prev).add(slotId));
     }
-
     setSchedules((prev) => {
       const next = new Map(prev);
       const existing = next.get(activeBayId);
@@ -298,69 +320,184 @@ export function ScheduleDayDrawer({
       }
       return next;
     });
-    setModifiedBays((prev) => new Set(prev).add(activeBayId));
   }
 
-  async function handlePriceSave(slotId: string) {
+  function handlePriceSave(slotId: string) {
     const parsed = parseFloat(editPriceValue);
     if (isNaN(parsed) || parsed < 0) {
       setEditingSlotId(null);
       return;
     }
     const newPrice = Math.round(parsed * 100);
-
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("bay_schedule_slots")
-      .update({ price_cents: newPrice })
-      .eq("id", slotId);
-
-    if (!error) {
-      setSchedules((prev) => {
-        const next = new Map(prev);
-        const existing = next.get(activeBayId);
-        if (existing) {
-          next.set(activeBayId, {
-            ...existing,
-            slots: existing.slots.map((s) =>
-              s.id === slotId ? { ...s, price_cents: newPrice } : s
-            ),
-          });
-        }
-        return next;
-      });
-      setModifiedBays((prev) => new Set(prev).add(activeBayId));
-    }
+    setSchedules((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(activeBayId);
+      if (existing) {
+        next.set(activeBayId, {
+          ...existing,
+          slots: existing.slots.map((s) =>
+            s.id === slotId ? { ...s, price_cents: newPrice } : s
+          ),
+        });
+      }
+      return next;
+    });
     setEditingSlotId(null);
   }
 
-  async function handleToggleStatus(slotId: string, currentStatus: string) {
+  function handleToggleStatus(slotId: string, currentStatus: string) {
     const newStatus = currentStatus === "available" ? "blocked" : "available";
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("bay_schedule_slots")
-      .update({ status: newStatus })
-      .eq("id", slotId);
-
-    if (!error) {
-      setSchedules((prev) => {
-        const next = new Map(prev);
-        const existing = next.get(activeBayId);
-        if (existing) {
-          next.set(activeBayId, {
-            ...existing,
-            slots: existing.slots.map((s) =>
-              s.id === slotId ? { ...s, status: newStatus } : s
-            ),
-          });
-        }
-        return next;
-      });
-    }
+    setSchedules((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(activeBayId);
+      if (existing) {
+        next.set(activeBayId, {
+          ...existing,
+          slots: existing.slots.map((s) =>
+            s.id === slotId ? { ...s, status: newStatus } : s
+          ),
+        });
+      }
+      return next;
+    });
   }
+
+  // ─── Save Changes → persist all local edits to DB ────────────
+
+  async function handleSave() {
+    setSaving(true);
+    setMessage(null);
+    const supabase = createClient();
+
+    try {
+      // 1. Delete removed slots
+      if (deletedSlotIds.size > 0) {
+        const { error } = await supabase
+          .from("bay_schedule_slots")
+          .delete()
+          .in("id", Array.from(deletedSlotIds));
+        if (error) throw error;
+      }
+
+      // 2. Insert new slots (temp IDs) — ensure bay_schedules exist first
+      for (const [bayId, data] of schedules) {
+        const tempSlots = data.slots.filter((s) => s.id.startsWith("temp-"));
+        if (tempSlots.length === 0) continue;
+
+        let scheduleId = data.id;
+        if (scheduleId.startsWith("temp-")) {
+          const { data: created, error } = await supabase
+            .from("bay_schedules")
+            .upsert(
+              { bay_id: bayId, org_id: orgId, date },
+              { onConflict: "bay_id,date" }
+            )
+            .select("id")
+            .single();
+          if (error || !created)
+            throw error || new Error("Failed to create schedule");
+          scheduleId = created.id;
+        }
+
+        const inserts = tempSlots.map((s) => ({
+          bay_schedule_id: scheduleId,
+          org_id: orgId,
+          start_time: s.start_time,
+          end_time: s.end_time,
+          price_cents: s.price_cents,
+          status: s.status,
+        }));
+        const { error } = await supabase
+          .from("bay_schedule_slots")
+          .insert(inserts);
+        if (error) throw error;
+      }
+
+      // 3. Update modified slots (price/status changes)
+      const updatePromises: PromiseLike<unknown>[] = [];
+      for (const [bayId, data] of schedules) {
+        const orig = savedSchedules.get(bayId);
+        if (!orig) continue;
+        for (const slot of data.slots) {
+          if (slot.id.startsWith("temp-")) continue;
+          const origSlot = orig.slots.find((s) => s.id === slot.id);
+          if (!origSlot) continue;
+          if (
+            slot.price_cents !== origSlot.price_cents ||
+            slot.status !== origSlot.status
+          ) {
+            updatePromises.push(
+              supabase
+                .from("bay_schedule_slots")
+                .update({
+                  price_cents: slot.price_cents,
+                  status: slot.status,
+                })
+                .eq("id", slot.id)
+            );
+          }
+        }
+      }
+      if (updatePromises.length > 0) {
+        await Promise.all(updatePromises);
+      }
+
+      // 4. Clear template_id for bays whose slots were modified
+      for (const [bayId, data] of schedules) {
+        if (data.id.startsWith("temp-") || !data.template_id) continue;
+        const orig = savedSchedules.get(bayId);
+        if (!orig) continue;
+        const bayDeleted = Array.from(deletedSlotIds).some((id) =>
+          orig.slots.some((s) => s.id === id)
+        );
+        const bayAdded = data.slots.some((s) => s.id.startsWith("temp-"));
+        const bayUpdated = data.slots.some((slot) => {
+          if (slot.id.startsWith("temp-")) return false;
+          const o = orig.slots.find((s) => s.id === slot.id);
+          return (
+            o &&
+            (slot.price_cents !== o.price_cents || slot.status !== o.status)
+          );
+        });
+        if (bayDeleted || bayAdded || bayUpdated) {
+          await supabase
+            .from("bay_schedules")
+            .update({ template_id: null })
+            .eq("id", data.id);
+        }
+      }
+
+      // 5. Re-fetch to get clean state with real IDs
+      await fetchSchedules();
+      setMessage({ type: "success", text: "Changes saved" });
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : "Failed to save changes";
+      setMessage({ type: "error", text: msg });
+    }
+
+    setSaving(false);
+  }
+
+  // ─── Discard Changes → revert to saved state ─────────────────
+
+  function handleDiscard() {
+    setSchedules(cloneSchedules(savedSchedules));
+    setDeletedSlotIds(new Set());
+    setEditingSlotId(null);
+    setMessage({ type: "success", text: "Changes discarded" });
+  }
+
+  // ─── Immediate actions (Apply Template / Clear All / Save as Template) ───
 
   async function handleApplyTemplate() {
     if (!applyTemplateId || applyBayIds.size === 0) return;
+    if (hasChanges) {
+      const confirmed = window.confirm(
+        "You have unsaved changes that will be lost for affected bays. Continue?"
+      );
+      if (!confirmed) return;
+    }
     setApplyLoading(true);
     setMessage(null);
 
@@ -467,8 +604,8 @@ export function ScheduleDayDrawer({
     if (insertError) {
       setMessage({ type: "error", text: insertError.message });
     } else {
-      // Update local state for all affected bays
-      setSchedules((prev) => {
+      // Update both working and saved state for affected bays
+      const updateState = (prev: Map<string, BayScheduleData>) => {
         const next = new Map(prev);
         for (const sched of upsertedSchedules) {
           const baySlots = (insertedSlots || [])
@@ -482,10 +619,18 @@ export function ScheduleDayDrawer({
           });
         }
         return next;
-      });
-      setModifiedBays((prev) => {
+      };
+      setSchedules(updateState);
+      setSavedSchedules((prev) => updateState(cloneSchedules(prev)));
+      // Clean up any pending deletes for affected bays
+      setDeletedSlotIds((prev) => {
         const next = new Set(prev);
-        for (const bayId of targetBayIds) next.delete(bayId);
+        for (const sched of upsertedSchedules) {
+          const orig = savedSchedules.get(sched.bay_id);
+          if (orig) {
+            for (const slot of orig.slots) next.delete(slot.id);
+          }
+        }
         return next;
       });
       const bayCount = upsertedSchedules.length;
@@ -567,9 +712,7 @@ export function ScheduleDayDrawer({
         const [sH, sM] = templateSlot.start_time.split(":").map(Number);
         const [eH, eM] = templateSlot.end_time.split(":").map(Number);
         const dur = eH * 60 + eM - (sH * 60 + sM);
-        const defaultPrice = Math.round(
-          bay.hourly_rate_cents * (dur / 60)
-        );
+        const defaultPrice = Math.round(bay.hourly_rate_cents * (dur / 60));
 
         if (slot.price_cents !== defaultPrice) {
           overrideInserts.push({
@@ -589,21 +732,24 @@ export function ScheduleDayDrawer({
     }
 
     // 4. Update bay_schedule to reference new template
-    await supabase
-      .from("bay_schedules")
-      .update({ template_id: template.id })
-      .eq("id", baySchedule.id);
+    if (!baySchedule.id.startsWith("temp-")) {
+      await supabase
+        .from("bay_schedules")
+        .update({ template_id: template.id })
+        .eq("id", baySchedule.id);
+    }
 
-    setSchedules((prev) => {
+    // Update both working and saved state
+    const updater = (prev: Map<string, BayScheduleData>) => {
       const next = new Map(prev);
-      next.set(activeBayId, { ...baySchedule, template_id: template.id });
+      const existing = next.get(activeBayId);
+      if (existing) {
+        next.set(activeBayId, { ...existing, template_id: template.id });
+      }
       return next;
-    });
-    setModifiedBays((prev) => {
-      const next = new Set(prev);
-      next.delete(activeBayId);
-      return next;
-    });
+    };
+    setSchedules(updater);
+    setSavedSchedules((prev) => updater(cloneSchedules(prev)));
 
     setMessage({
       type: "success",
@@ -616,7 +762,15 @@ export function ScheduleDayDrawer({
 
   async function handleClearAll() {
     const baySchedule = schedules.get(activeBayId);
-    if (!baySchedule) return;
+    if (!baySchedule || baySchedule.id.startsWith("temp-")) {
+      // Local-only schedule, just remove it
+      setSchedules((prev) => {
+        const next = new Map(prev);
+        next.delete(activeBayId);
+        return next;
+      });
+      return;
+    }
 
     const hasBooked = baySchedule.slots.some((s) => s.status === "booked");
     if (hasBooked) {
@@ -638,14 +792,18 @@ export function ScheduleDayDrawer({
       return;
     }
 
-    setSchedules((prev) => {
+    // Update both working and saved state
+    const updater = (prev: Map<string, BayScheduleData>) => {
       const next = new Map(prev);
       next.delete(activeBayId);
       return next;
-    });
-    setModifiedBays((prev) => {
+    };
+    setSchedules(updater);
+    setSavedSchedules((prev) => updater(cloneSchedules(prev)));
+    // Remove any pending deletes for this bay
+    setDeletedSlotIds((prev) => {
       const next = new Set(prev);
-      next.delete(activeBayId);
+      for (const slot of baySchedule.slots) next.delete(slot.id);
       return next;
     });
   }
@@ -655,9 +813,11 @@ export function ScheduleDayDrawer({
   const baySchedule = schedules.get(activeBayId);
   const sortedSlots = baySchedule?.slots || [];
 
+  // Show "Save as Template" only when bay has persisted slots and no template_id
   const showSaveAsTemplate =
     sortedSlots.length > 0 &&
-    (!baySchedule?.template_id || modifiedBays.has(activeBayId));
+    !hasChanges &&
+    !baySchedule?.template_id;
 
   // ─── Render ──────────────────────────────────────────────────
 
@@ -791,6 +951,7 @@ export function ScheduleDayDrawer({
                     <tbody className="divide-y divide-gray-100">
                       {sortedSlots.map((slot) => {
                         const isEditing = editingSlotId === slot.id;
+                        const isNew = slot.id.startsWith("temp-");
                         const colors =
                           STATUS_COLORS[slot.status] ||
                           STATUS_COLORS.available;
@@ -798,7 +959,10 @@ export function ScheduleDayDrawer({
                         return (
                           <tr
                             key={slot.id}
-                            className="transition-colors hover:bg-gray-50"
+                            className={cn(
+                              "transition-colors hover:bg-gray-50",
+                              isNew && "bg-blue-50/40"
+                            )}
                           >
                             <td className="px-4 py-3">
                               <span className="font-mono text-sm text-gray-800">
@@ -812,6 +976,11 @@ export function ScheduleDayDrawer({
                                   timezone
                                 )}
                               </span>
+                              {isNew && (
+                                <span className="ml-2 text-xs text-blue-500">
+                                  new
+                                </span>
+                              )}
                             </td>
                             <td className="px-4 py-3">
                               {isEditing ? (
@@ -930,14 +1099,10 @@ export function ScheduleDayDrawer({
                   <Button
                     size="sm"
                     onClick={handleAddSlot}
-                    disabled={addLoading || !addStartTime || !addEndTime}
+                    disabled={!addStartTime || !addEndTime}
                     className="h-9 gap-1.5 rounded-lg"
                   >
-                    {addLoading ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Plus className="h-3.5 w-3.5" />
-                    )}
+                    <Plus className="h-3.5 w-3.5" />
                     Add Slot
                   </Button>
                 </div>
@@ -1107,21 +1272,59 @@ export function ScheduleDayDrawer({
                   </div>
                 )}
 
-                {baySchedule && baySchedule.slots.length > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleClearAll}
-                    className="gap-1.5 rounded-lg border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Clear All Slots
-                  </Button>
-                )}
+                {baySchedule &&
+                  baySchedule.slots.length > 0 &&
+                  !baySchedule.id.startsWith("temp-") && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleClearAll}
+                      className="gap-1.5 rounded-lg border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Clear All Slots
+                    </Button>
+                  )}
               </div>
             </div>
           )}
         </div>
+
+        {/* ─── Sticky footer: Save / Discard ─── */}
+        {hasChanges && (
+          <div className="border-t border-gray-200 bg-gray-50 px-4 py-3 md:px-6">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                You have unsaved changes
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDiscard}
+                  disabled={saving}
+                  className="gap-1.5 rounded-lg border-gray-200"
+                >
+                  <Undo2 className="h-3.5 w-3.5" />
+                  Discard Changes
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="gap-1.5 rounded-lg"
+                >
+                  {saving ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5" />
+                  )}
+                  Save Changes
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>,
     document.body
