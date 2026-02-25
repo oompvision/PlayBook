@@ -324,7 +324,7 @@ export function ExportOptionsForm({
                     : "text-gray-800 dark:text-white/90"
                 }`}
               >
-                Daily Timeline
+                PDF Timeline
               </p>
               <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                 Visual grid with bay columns and hourly rows, like the daily

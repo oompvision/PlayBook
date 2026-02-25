@@ -132,6 +132,18 @@ export default async function PrintPage({
   // Get the bay name being filtered (if any)
   const filteredBayName = params.bay ? bayMap[params.bay] : null;
 
+  // Generated at timestamp in facility timezone
+  const generatedAt = new Date().toLocaleString("en-US", {
+    timeZone: org.timezone,
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
   return (
     <>
       {/* Print-specific styles: hide admin layout chrome, optimize for paper */}
@@ -256,6 +268,9 @@ export default async function PrintPage({
                       Filtered to: {filteredBayName}
                     </p>
                   )}
+                  <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+                    Generated at: {generatedAt}
+                  </p>
                 </div>
 
                 {/* Timeline Grid */}
@@ -458,6 +473,9 @@ export default async function PrintPage({
                       Filtered to: {filteredBayName}
                     </p>
                   )}
+                  <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+                    Generated at: {generatedAt}
+                  </p>
                 </div>
 
                 {/* Table */}
