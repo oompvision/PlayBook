@@ -165,6 +165,11 @@ export function ScheduleDayDrawer({
   const [saveTemplateName, setSaveTemplateName] = useState("");
   const [saveTemplateLoading, setSaveTemplateLoading] = useState(false);
 
+  // Template slot data for duplicate detection
+  const [templateSlotMap, setTemplateSlotMap] = useState<
+    Map<string, Array<{ start_time: string; end_time: string }>>
+  >(new Map());
+
   // Inline price edit
   const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
   const [editPriceValue, setEditPriceValue] = useState("");
@@ -194,14 +199,21 @@ export function ScheduleDayDrawer({
   async function fetchSchedules() {
     setLoading(true);
     const supabase = createClient();
-    const { data } = await supabase
-      .from("bay_schedules")
-      .select("id, bay_id, template_id, bay_schedule_slots(*)")
-      .eq("org_id", orgId)
-      .eq("date", date);
+
+    const [schedResult, tplResult] = await Promise.all([
+      supabase
+        .from("bay_schedules")
+        .select("id, bay_id, template_id, bay_schedule_slots(*)")
+        .eq("org_id", orgId)
+        .eq("date", date),
+      supabase
+        .from("schedule_templates")
+        .select("id, template_slots(start_time, end_time)")
+        .eq("org_id", orgId),
+    ]);
 
     const map = new Map<string, BayScheduleData>();
-    for (const s of data || []) {
+    for (const s of schedResult.data || []) {
       map.set(s.bay_id, {
         id: s.id,
         bay_id: s.bay_id,
@@ -212,9 +224,27 @@ export function ScheduleDayDrawer({
         ),
       });
     }
+
+    const tplMap = new Map<
+      string,
+      Array<{ start_time: string; end_time: string }>
+    >();
+    for (const t of tplResult.data || []) {
+      tplMap.set(
+        t.id,
+        [...(t.template_slots || [])].sort(
+          (
+            a: { start_time: string; end_time: string },
+            b: { start_time: string; end_time: string }
+          ) => a.start_time.localeCompare(b.start_time)
+        )
+      );
+    }
+
     setSchedules(map);
     setSavedSchedules(cloneSchedules(map));
     setDeletedSlotIds(new Set());
+    setTemplateSlotMap(tplMap);
     setLoading(false);
   }
 
@@ -766,6 +796,18 @@ export function ScheduleDayDrawer({
     setSchedules(updater);
     setSavedSchedules((prev) => updater(cloneSchedules(prev)));
 
+    // Add new template to slot map so duplicate detection picks it up
+    setTemplateSlotMap((prev) => {
+      const next = new Map(prev);
+      next.set(
+        template.id,
+        slotInserts
+          .map((s) => ({ start_time: s.start_time, end_time: s.end_time }))
+          .sort((a, b) => a.start_time.localeCompare(b.start_time))
+      );
+      return next;
+    });
+
     setMessage({
       type: "success",
       text: `Template "${saveTemplateName.trim()}" created`,
@@ -815,11 +857,34 @@ export function ScheduleDayDrawer({
   const baySchedule = schedules.get(activeBayId);
   const sortedSlots = baySchedule?.slots || [];
 
-  // Show "Save as Template" only when bay has persisted slots and no template_id
+  // Check if current bay's slot times match any existing template
+  const matchesExistingTemplate = useMemo(() => {
+    if (sortedSlots.length === 0 || templateSlotMap.size === 0) return false;
+    const currentTimes = sortedSlots
+      .map((s) => ({
+        start: getLocalTimeStr(s.start_time, timezone),
+        end: getLocalTimeStr(s.end_time, timezone),
+      }))
+      .sort((a, b) => a.start.localeCompare(b.start));
+
+    for (const [, tplSlots] of templateSlotMap) {
+      if (tplSlots.length !== currentTimes.length) continue;
+      const match = tplSlots.every(
+        (ts, i) =>
+          ts.start_time === currentTimes[i].start &&
+          ts.end_time === currentTimes[i].end
+      );
+      if (match) return true;
+    }
+    return false;
+  }, [sortedSlots, templateSlotMap, timezone]);
+
+  // Show "Save as Template" only when bay has persisted slots that don't match any template
   const showSaveAsTemplate =
     sortedSlots.length > 0 &&
     !hasChanges &&
-    !baySchedule?.template_id;
+    !baySchedule?.template_id &&
+    !matchesExistingTemplate;
 
   // ─── Render ──────────────────────────────────────────────────
 
