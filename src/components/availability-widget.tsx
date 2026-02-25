@@ -1174,6 +1174,9 @@ export function AvailabilityWidget({
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Total: ${(totalCents / 100).toFixed(2)}
+                      {selectedBayObj && eligibleBays.length > 1 && (
+                        <> &middot; {selectedBayObj.name}</>
+                      )}
                     </p>
                   </div>
                   <Button onClick={handleOpenPanel} className="gap-2">
