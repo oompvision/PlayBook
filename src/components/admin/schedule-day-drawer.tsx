@@ -167,7 +167,11 @@ export function ScheduleDayDrawer({
 
   // Template slot data for duplicate detection
   const [templateSlotMap, setTemplateSlotMap] = useState<
-    Map<string, Array<{ start_time: string; end_time: string }>>
+    Map<string, Array<{ id: string; start_time: string; end_time: string }>>
+  >(new Map());
+  // Override prices keyed by "templateSlotId:bayId"
+  const [templateOverrideMap, setTemplateOverrideMap] = useState<
+    Map<string, number>
   >(new Map());
 
   // Inline price edit
@@ -208,7 +212,7 @@ export function ScheduleDayDrawer({
         .eq("date", date),
       supabase
         .from("schedule_templates")
-        .select("id, template_slots(start_time, end_time)")
+        .select("id, template_slots(id, start_time, end_time)")
         .eq("org_id", orgId),
     ]);
 
@@ -227,24 +231,39 @@ export function ScheduleDayDrawer({
 
     const tplMap = new Map<
       string,
-      Array<{ start_time: string; end_time: string }>
+      Array<{ id: string; start_time: string; end_time: string }>
     >();
+    const templateIds: string[] = [];
     for (const t of tplResult.data || []) {
+      templateIds.push(t.id);
       tplMap.set(
         t.id,
         [...(t.template_slots || [])].sort(
           (
-            a: { start_time: string; end_time: string },
-            b: { start_time: string; end_time: string }
+            a: { id: string; start_time: string; end_time: string },
+            b: { id: string; start_time: string; end_time: string }
           ) => a.start_time.localeCompare(b.start_time)
         )
       );
+    }
+
+    // Fetch template override prices for duplicate detection
+    const ovrMap = new Map<string, number>();
+    if (templateIds.length > 0) {
+      const { data: overridesData } = await supabase
+        .from("template_bay_overrides")
+        .select("template_slot_id, bay_id, price_cents")
+        .in("template_id", templateIds);
+      for (const o of overridesData || []) {
+        ovrMap.set(`${o.template_slot_id}:${o.bay_id}`, o.price_cents);
+      }
     }
 
     setSchedules(map);
     setSavedSchedules(cloneSchedules(map));
     setDeletedSlotIds(new Set());
     setTemplateSlotMap(tplMap);
+    setTemplateOverrideMap(ovrMap);
     setLoading(false);
   }
 
@@ -773,6 +792,15 @@ export function ScheduleDayDrawer({
         await supabase
           .from("template_bay_overrides")
           .insert(overrideInserts);
+
+        // Update override map for duplicate detection
+        setTemplateOverrideMap((prev) => {
+          const next = new Map(prev);
+          for (const o of overrideInserts) {
+            next.set(`${o.template_slot_id}:${o.bay_id}`, o.price_cents);
+          }
+          return next;
+        });
       }
     }
 
@@ -801,8 +829,12 @@ export function ScheduleDayDrawer({
       const next = new Map(prev);
       next.set(
         template.id,
-        slotInserts
-          .map((s) => ({ start_time: s.start_time, end_time: s.end_time }))
+        (createdSlots || [])
+          .map((s) => ({
+            id: s.id,
+            start_time: s.start_time,
+            end_time: s.end_time,
+          }))
           .sort((a, b) => a.start_time.localeCompare(b.start_time))
       );
       return next;
@@ -857,27 +889,50 @@ export function ScheduleDayDrawer({
   const baySchedule = schedules.get(activeBayId);
   const sortedSlots = baySchedule?.slots || [];
 
-  // Check if current bay's slot times match any existing template
+  // Check if current bay's slot times AND prices match any existing template
   const matchesExistingTemplate = useMemo(() => {
     if (sortedSlots.length === 0 || templateSlotMap.size === 0) return false;
-    const currentTimes = sortedSlots
+
+    const bay = bays.find((b) => b.id === activeBayId);
+    const hourlyRate = bay?.hourly_rate_cents || 0;
+
+    const currentSlots = sortedSlots
       .map((s) => ({
         start: getLocalTimeStr(s.start_time, timezone),
         end: getLocalTimeStr(s.end_time, timezone),
+        price: s.price_cents,
       }))
       .sort((a, b) => a.start.localeCompare(b.start));
 
     for (const [, tplSlots] of templateSlotMap) {
-      if (tplSlots.length !== currentTimes.length) continue;
-      const match = tplSlots.every(
-        (ts, i) =>
-          ts.start_time === currentTimes[i].start &&
-          ts.end_time === currentTimes[i].end
-      );
+      if (tplSlots.length !== currentSlots.length) continue;
+      const match = tplSlots.every((ts, i) => {
+        if (
+          ts.start_time !== currentSlots[i].start ||
+          ts.end_time !== currentSlots[i].end
+        )
+          return false;
+
+        // Compute effective price: override for this bay, or pro-rated from hourly rate
+        const overridePrice = templateOverrideMap.get(
+          `${ts.id}:${activeBayId}`
+        );
+        let effectivePrice: number;
+        if (overridePrice !== undefined) {
+          effectivePrice = overridePrice;
+        } else {
+          const [sH, sM] = ts.start_time.split(":").map(Number);
+          const [eH, eM] = ts.end_time.split(":").map(Number);
+          const dur = eH * 60 + eM - (sH * 60 + sM);
+          effectivePrice = Math.round(hourlyRate * (dur / 60));
+        }
+
+        return effectivePrice === currentSlots[i].price;
+      });
       if (match) return true;
     }
     return false;
-  }, [sortedSlots, templateSlotMap, timezone]);
+  }, [sortedSlots, templateSlotMap, templateOverrideMap, activeBayId, bays, timezone]);
 
   // Show "Save as Template" only when bay has persisted slots that don't match any template
   const showSaveAsTemplate =
