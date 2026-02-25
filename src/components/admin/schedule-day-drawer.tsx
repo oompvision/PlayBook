@@ -467,7 +467,22 @@ export function ScheduleDayDrawer({
         }
       }
 
-      // 5. Re-fetch to get clean state with real IDs
+      // 5. Delete empty bay_schedules (all slots cleared)
+      for (const [bayId, data] of schedules) {
+        if (data.id.startsWith("temp-")) continue;
+        const orig = savedSchedules.get(bayId);
+        if (!orig || orig.slots.length === 0) continue;
+        const allDeleted = orig.slots.every((s) => deletedSlotIds.has(s.id));
+        const noNewSlots = !data.slots.some((s) => s.id.startsWith("temp-"));
+        if (allDeleted && noNewSlots) {
+          await supabase
+            .from("bay_schedules")
+            .delete()
+            .eq("id", data.id);
+        }
+      }
+
+      // 6. Re-fetch to get clean state with real IDs
       await fetchSchedules();
       setMessage({ type: "success", text: "Changes saved" });
     } catch (err: unknown) {
@@ -760,17 +775,9 @@ export function ScheduleDayDrawer({
     setSaveTemplateLoading(false);
   }
 
-  async function handleClearAll() {
+  function handleClearAll() {
     const baySchedule = schedules.get(activeBayId);
-    if (!baySchedule || baySchedule.id.startsWith("temp-")) {
-      // Local-only schedule, just remove it
-      setSchedules((prev) => {
-        const next = new Map(prev);
-        next.delete(activeBayId);
-        return next;
-      });
-      return;
-    }
+    if (!baySchedule) return;
 
     const hasBooked = baySchedule.slots.some((s) => s.status === "booked");
     if (hasBooked) {
@@ -781,29 +788,24 @@ export function ScheduleDayDrawer({
       return;
     }
 
-    const supabase = createClient();
-    const { error } = await supabase
-      .from("bay_schedules")
-      .delete()
-      .eq("id", baySchedule.id);
-
-    if (error) {
-      setMessage({ type: "error", text: error.message });
-      return;
-    }
-
-    // Update both working and saved state
-    const updater = (prev: Map<string, BayScheduleData>) => {
-      const next = new Map(prev);
-      next.delete(activeBayId);
-      return next;
-    };
-    setSchedules(updater);
-    setSavedSchedules((prev) => updater(cloneSchedules(prev)));
-    // Remove any pending deletes for this bay
+    // Mark all real (non-temp) slots for deletion
     setDeletedSlotIds((prev) => {
       const next = new Set(prev);
-      for (const slot of baySchedule.slots) next.delete(slot.id);
+      for (const slot of baySchedule.slots) {
+        if (!slot.id.startsWith("temp-")) {
+          next.add(slot.id);
+        }
+      }
+      return next;
+    });
+
+    // Clear working state for this bay
+    setSchedules((prev) => {
+      const next = new Map(prev);
+      next.set(activeBayId, {
+        ...baySchedule,
+        slots: [],
+      });
       return next;
     });
   }
@@ -1273,8 +1275,7 @@ export function ScheduleDayDrawer({
                 )}
 
                 {baySchedule &&
-                  baySchedule.slots.length > 0 &&
-                  !baySchedule.id.startsWith("temp-") && (
+                  baySchedule.slots.length > 0 && (
                     <Button
                       size="sm"
                       variant="outline"
