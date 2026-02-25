@@ -98,13 +98,11 @@ export default async function TemplatesPage({
     const templateId = formData.get("template_id") as string;
     const startTime = formData.get("start_time") as string;
     const endTime = formData.get("end_time") as string;
-    const price = parseFloat(formData.get("price") as string) || 0;
 
     const { error } = await supabase.from("template_slots").insert({
       template_id: templateId,
       start_time: startTime,
       end_time: endTime,
-      price_cents: Math.round(price * 100),
     });
 
     if (error) {
@@ -137,13 +135,10 @@ export default async function TemplatesPage({
     const durationMin =
       parseInt(formData.get("duration") as string) ||
       org.default_slot_duration_minutes;
-    const price = parseFloat(formData.get("slot_price") as string) || 0;
-
     const slots: {
       template_id: string;
       start_time: string;
       end_time: string;
-      price_cents: number;
     }[] = [];
 
     const [openH, openM] = openTime.split(":").map(Number);
@@ -164,7 +159,6 @@ export default async function TemplatesPage({
         template_id: templateId,
         start_time: `${String(sh).padStart(2, "0")}:${String(sm).padStart(2, "0")}`,
         end_time: `${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`,
-        price_cents: Math.round(price * 100),
       });
     }
 
@@ -198,7 +192,8 @@ export default async function TemplatesPage({
           Templates
         </h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Create reusable schedule templates with time slots.
+          Create reusable schedule templates with time slots. Pricing is
+          set automatically from each facility&apos;s hourly rate when applied.
         </p>
       </div>
 
@@ -406,7 +401,7 @@ export default async function TemplatesPage({
                       name="template_id"
                       value={editingTemplate.id}
                     />
-                    <div className="grid gap-4 sm:grid-cols-4">
+                    <div className="grid gap-4 sm:grid-cols-3">
                       <div className="space-y-1.5">
                         <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
                           Open Time
@@ -442,19 +437,6 @@ export default async function TemplatesPage({
                           max={240}
                           step={15}
                           defaultValue={org.default_slot_duration_minutes}
-                          className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                          Price ($)
-                        </label>
-                        <input
-                          name="slot_price"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          defaultValue="0"
                           className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
                         />
                       </div>
@@ -514,11 +496,6 @@ export default async function TemplatesPage({
                                 {slot.start_time.slice(0, 5)} –{" "}
                                 {slot.end_time.slice(0, 5)}
                               </span>
-                              {slot.price_cents != null && (
-                                <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                                  ${(slot.price_cents / 100).toFixed(2)}
-                                </span>
-                              )}
                             </div>
                             <form action={removeSlot}>
                               <input
@@ -574,19 +551,6 @@ export default async function TemplatesPage({
                         type="time"
                         required
                         className="h-10 w-32 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                        Price ($)
-                      </label>
-                      <input
-                        name="price"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        defaultValue="0"
-                        className="h-10 w-24 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
                       />
                     </div>
                     <button
