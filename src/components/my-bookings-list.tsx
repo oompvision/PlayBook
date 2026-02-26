@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { ArrowRight } from "lucide-react";
 import {
   BookingDetailsModal,
   type BookingDetailData,
@@ -20,6 +21,8 @@ type Booking = {
   notes: string | null;
   bay_id: string;
   created_at: string;
+  modified_from: string | null;
+  modified_from_code?: string | null;
 };
 
 type Props = {
@@ -54,6 +57,8 @@ export function MyBookingsList({
       created_at: booking.created_at,
       bayName: bayMap[booking.bay_id] || "Facility",
       canCancel,
+      canModify: canCancel, // Same conditions as cancel: upcoming + confirmed
+      modifiedFrom: booking.modified_from_code || null,
     });
     setModalOpen(true);
   }
@@ -101,6 +106,12 @@ export function MyBookingsList({
                     <p className="mt-0.5 font-mono text-xs text-muted-foreground">
                       {booking.confirmation_code}
                     </p>
+                    {booking.modified_from_code && (
+                      <p className="mt-0.5 flex items-center gap-1 text-[11px] text-blue-600 dark:text-blue-400">
+                        <ArrowRight className="h-3 w-3" />
+                        Modified from {booking.modified_from_code}
+                      </p>
+                    )}
                     {booking.notes && (
                       <p className="mt-1 text-xs italic text-muted-foreground">
                         {booking.notes}

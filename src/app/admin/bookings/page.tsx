@@ -42,6 +42,9 @@ export default async function BookingsListPage({
     guest_booked?: string;
     codes?: string;
     error?: string;
+    modified?: string;
+    old?: string;
+    new?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -62,11 +65,11 @@ export default async function BookingsListPage({
     .order("sort_order")
     .order("created_at");
 
-  // Build bookings query (includes guest fields)
+  // Build bookings query (includes guest fields + modified_from)
   let query = supabase
     .from("bookings")
     .select(
-      "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, created_at, customer_id, bay_id, is_guest, guest_name, guest_email, guest_phone"
+      "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, created_at, customer_id, bay_id, is_guest, guest_name, guest_email, guest_phone, modified_from"
     )
     .eq("org_id", org.id)
     .order("date", { ascending: false })
@@ -93,9 +96,34 @@ export default async function BookingsListPage({
     console.error("Failed to load bookings:", bookingsError.message);
   }
 
+  // Resolve modified_from confirmation codes for display
+  const modifiedFromIds = [
+    ...new Set(bookings?.map((b) => b.modified_from).filter(Boolean) ?? []),
+  ];
+  const modifiedFromCodeMap: Record<string, string> = {};
+  if (modifiedFromIds.length > 0) {
+    const { data: originals } = await supabase
+      .from("bookings")
+      .select("id, confirmation_code")
+      .in("id", modifiedFromIds);
+    if (originals) {
+      for (const o of originals) {
+        modifiedFromCodeMap[o.id] = o.confirmation_code;
+      }
+    }
+  }
+
+  // Enrich bookings with modified_from_code
+  const enrichedBookings = bookings?.map((b) => ({
+    ...b,
+    modified_from_code: b.modified_from
+      ? modifiedFromCodeMap[b.modified_from] ?? null
+      : null,
+  })) ?? [];
+
   // Look up customer names and bay names (filter out null customer_ids from guest bookings)
   const customerIds = [
-    ...new Set(bookings?.map((b) => b.customer_id).filter(Boolean) ?? []),
+    ...new Set(enrichedBookings.map((b) => b.customer_id).filter(Boolean)),
   ];
   let customerMap: Record<string, { full_name: string | null; email: string }> =
     {};
@@ -120,7 +148,7 @@ export default async function BookingsListPage({
 
   // Filter by customer search (name or email) — client-side since we join manually
   const search = params.q?.trim().toLowerCase();
-  let filtered = bookings ?? [];
+  let filtered = enrichedBookings;
   if (search) {
     filtered = filtered.filter((b) => {
       if (b.is_guest) {
@@ -212,6 +240,18 @@ export default async function BookingsListPage({
       {params.guest_booked && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
           Guest booking created successfully.{params.codes ? ` Confirmation: ${params.codes}` : ""}
+        </div>
+      )}
+      {params.modified && (
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400">
+          Booking modified successfully.{" "}
+          {params.old && params.new && (
+            <span>
+              <span className="font-mono font-semibold">{params.old}</span>
+              {" "}has been replaced with{" "}
+              <span className="font-mono font-semibold">{params.new}</span>
+            </span>
+          )}
         </div>
       )}
 
@@ -356,7 +396,7 @@ export default async function BookingsListPage({
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
           <div className="p-4 sm:p-6">
             <DailySchedule
-              bookings={bookings ?? []}
+              bookings={enrichedBookings}
               bays={bays ?? []}
               customerMap={customerMap}
               timezone={org.timezone}

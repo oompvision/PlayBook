@@ -61,6 +61,20 @@ type Booking = {
   notes: string | null;
 };
 
+export type OriginalBookingInfo = {
+  id: string;
+  confirmationCode: string;
+  bayId: string;
+  bayName: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  totalPriceCents: number;
+  notes: string | null;
+  isGuest: boolean;
+  slotIds: string[];
+};
+
 type AvailabilityWidgetProps = {
   orgId: string;
   orgName: string;
@@ -73,8 +87,12 @@ type AvailabilityWidgetProps = {
   userEmail?: string;
   userFullName?: string | null;
   userProfileId?: string;
-  /** "customer" (default) = normal booking flow; "admin-guest" = admin books for a guest */
-  mode?: "customer" | "admin-guest";
+  /** "customer" (default) = normal booking flow; "admin-guest" = admin books for a guest; "modify" = modify existing booking */
+  mode?: "customer" | "admin-guest" | "modify";
+  /** Original booking info when mode is "modify" */
+  originalBooking?: OriginalBookingInfo;
+  /** Where to redirect after modification — e.g. "/my-bookings" or "/admin/bookings" */
+  modifyRedirectBase?: string;
 };
 
 type ToastData = {
@@ -187,9 +205,14 @@ export function AvailabilityWidget({
   userFullName,
   userProfileId,
   mode = "customer",
+  originalBooking,
+  modifyRedirectBase,
 }: AvailabilityWidgetProps) {
   const router = useRouter();
-  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const isModify = mode === "modify";
+  const [selectedDate, setSelectedDate] = useState(
+    isModify && originalBooking ? originalBooking.date : todayStr
+  );
   const [timeGroups, setTimeGroups] = useState<TimeGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTimeKeys, setSelectedTimeKeys] = useState<Set<string>>(new Set());
@@ -201,7 +224,9 @@ export function AvailabilityWidget({
 
   // Booking panel state
   const [panelOpen, setPanelOpen] = useState(false);
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(
+    isModify && originalBooking?.notes ? originalBooking.notes : ""
+  );
   const [bookingInProgress, setBookingInProgress] = useState(false);
   const [bookingError, setBookingError] = useState("");
 
@@ -241,9 +266,9 @@ export function AvailabilityWidget({
     setMounted(true);
   }, []);
 
-  // Restore slot selection from localStorage after auth reload
+  // Restore slot selection from localStorage after auth reload (skip in modify mode)
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || isModify) return;
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (!stored) return;
@@ -265,9 +290,9 @@ export function AvailabilityWidget({
     }
   }, [mounted, orgId]);
 
-  // Fetch upcoming confirmed bookings for the current user (skip in admin-guest mode)
+  // Fetch upcoming confirmed bookings for the current user (skip in admin-guest/modify mode)
   const fetchBookings = useCallback(async () => {
-    if (!isAuthenticated || mode === "admin-guest") return;
+    if (!isAuthenticated || mode === "admin-guest" || isModify) return;
     setBookingsLoading(true);
     const supabase = createClient();
     const { data } = await supabase
@@ -287,7 +312,9 @@ export function AvailabilityWidget({
   }, [fetchBookings]);
 
   // On initial mount, check if today has availability. If not, jump to the next date that does.
+  // Skip in modify mode (date is pre-set from original booking).
   useEffect(() => {
+    if (isModify) return;
     async function checkAndAutoAdvance() {
       const supabase = createClient();
 
@@ -747,6 +774,55 @@ export function AvailabilityWidget({
     router.push(`/admin/bookings?guest_booked=true&codes=${codes.join(",")}`);
   }
 
+  // Confirm modification — cancel old booking and create new one atomically
+  async function handleConfirmModification() {
+    if (!originalBooking || !effectiveBayId) return;
+
+    setBookingInProgress(true);
+    setBookingError("");
+
+    const supabase = createClient();
+    const slotIdsArray = selectedSlotInfo.map((s) => s.slot_id);
+
+    // Detect "no changes" — same bay, same slots
+    const oldSlotsSorted = [...originalBooking.slotIds].sort();
+    const newSlotsSorted = [...slotIdsArray].sort();
+    if (
+      effectiveBayId === originalBooking.bayId &&
+      oldSlotsSorted.length === newSlotsSorted.length &&
+      oldSlotsSorted.every((s, i) => s === newSlotsSorted[i])
+    ) {
+      setBookingError("No changes detected. Select different slots or a different facility to modify your booking.");
+      setBookingInProgress(false);
+      return;
+    }
+
+    const rpcName = originalBooking.isGuest ? "modify_guest_booking" : "modify_booking";
+    const { data, error } = await supabase.rpc(rpcName, {
+      p_booking_id: originalBooking.id,
+      p_new_bay_id: effectiveBayId,
+      p_new_date: selectedDate,
+      p_new_slot_ids: slotIdsArray,
+      p_notes: notes || null,
+    });
+
+    if (error) {
+      setBookingError(error.message);
+      setBookingInProgress(false);
+      return;
+    }
+
+    const result = data as {
+      confirmation_code: string;
+      old_confirmation_code: string;
+    };
+
+    const redirectBase = modifyRedirectBase || "/my-bookings";
+    router.push(
+      `${redirectBase}?modified=true&old=${result.old_confirmation_code}&new=${result.confirmation_code}`
+    );
+  }
+
   async function handleCancelBooking(bookingId: string) {
     setCancellingId(bookingId);
     const supabase = createClient();
@@ -808,11 +884,12 @@ export function AvailabilityWidget({
   }
 
   const isAdminGuest = mode === "admin-guest";
+  const hideSidebar = isAdminGuest || isModify;
 
   return (
-    <div className={isAdminGuest ? "" : "flex items-start gap-6"}>
-      {/* ===== Sidebar — Confirmed Bookings + Chat Assistant (desktop only, hidden in admin-guest mode) ===== */}
-      {!isAdminGuest && (
+    <div className={hideSidebar ? "" : "flex items-start gap-6"}>
+      {/* ===== Sidebar — Confirmed Bookings + Chat Assistant (desktop only, hidden in admin-guest/modify mode) ===== */}
+      {!hideSidebar && (
       <div className="sticky top-[4.5rem] hidden w-72 shrink-0 flex-col rounded-xl border bg-card shadow-sm lg:flex max-h-[calc(100vh-5.5rem)]">
         {/* Bookings section — scrollable */}
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -1181,7 +1258,7 @@ export function AvailabilityWidget({
                     </p>
                   </div>
                   <Button onClick={handleOpenPanel} className="gap-2">
-                    Continue to Book
+                    {isModify ? "Review Changes" : "Continue to Book"}
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </div>
@@ -1191,9 +1268,13 @@ export function AvailabilityWidget({
                   {/* Panel header */}
                   <div className="mb-6 flex items-center justify-between">
                     <div>
-                      <h2 className="text-lg font-bold">Confirm Booking</h2>
+                      <h2 className="text-lg font-bold">
+                        {isModify ? "Review Modification" : "Confirm Booking"}
+                      </h2>
                       <p className="text-sm text-muted-foreground">
-                        {formatDateLabel(selectedDate)}
+                        {isModify && originalBooking
+                          ? `Modifying ${originalBooking.confirmationCode}`
+                          : formatDateLabel(selectedDate)}
                       </p>
                     </div>
                     <button
@@ -1205,7 +1286,149 @@ export function AvailabilityWidget({
                     </button>
                   </div>
 
-                  {isAdminGuest ? (
+                  {isModify && originalBooking ? (
+                    /* ---- Modify booking: old-vs-new comparison + confirm ---- */
+                    <div>
+                      {/* Error banner */}
+                      {bookingError && (
+                        <div className="mb-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                          {bookingError}
+                        </div>
+                      )}
+
+                      {/* Bay selector */}
+                      {eligibleBays.length > 1 && (
+                        <div className="mb-4">
+                          <p className="mb-2 text-sm font-medium">Select Facility</p>
+                          <div className="space-y-2">
+                            {eligibleBays.map((bay) => (
+                              <label
+                                key={bay.bay_id}
+                                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                                  effectiveBayId === bay.bay_id
+                                    ? "border-primary bg-primary/5 ring-1 ring-primary"
+                                    : "hover:bg-accent"
+                                }`}
+                              >
+                                <input
+                                  type="radio"
+                                  name="bay-select-modify"
+                                  value={bay.bay_id}
+                                  checked={effectiveBayId === bay.bay_id}
+                                  onChange={() => setSelectedBayIdForBooking(bay.bay_id)}
+                                  className="sr-only"
+                                />
+                                <div
+                                  className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
+                                    effectiveBayId === bay.bay_id
+                                      ? "border-primary"
+                                      : "border-muted-foreground/30"
+                                  }`}
+                                >
+                                  {effectiveBayId === bay.bay_id && (
+                                    <div className="h-2 w-2 rounded-full bg-primary" />
+                                  )}
+                                </div>
+                                <span className="text-sm font-medium">{bay.bay_name}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Old vs New comparison */}
+                      <div className="mb-4 grid grid-cols-2 gap-3">
+                        {/* Original booking */}
+                        <div className="rounded-lg border border-muted p-3">
+                          <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                            Current Booking
+                          </p>
+                          <p className="text-sm font-medium">{originalBooking.bayName}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {new Date(originalBooking.date + "T12:00:00").toLocaleDateString("en-US", {
+                              weekday: "short",
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatTime(originalBooking.startTime, timezone)} &ndash;{" "}
+                            {formatTime(originalBooking.endTime, timezone)}
+                          </p>
+                          <p className="mt-2 text-sm font-semibold">
+                            ${(originalBooking.totalPriceCents / 100).toFixed(2)}
+                          </p>
+                        </div>
+
+                        {/* New booking */}
+                        <div className="rounded-lg border border-primary/50 bg-primary/5 p-3">
+                          <p className="mb-2 text-xs font-medium uppercase tracking-wider text-primary">
+                            New Booking
+                          </p>
+                          <p className="text-sm font-medium">{selectedBayObj?.name}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", {
+                              weekday: "short",
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </p>
+                          {selectedGroups.map((group) => (
+                            <p key={group.start_time} className="text-xs text-muted-foreground">
+                              {formatTime(group.start_time, timezone)} &ndash;{" "}
+                              {formatTime(group.end_time, timezone)}
+                            </p>
+                          ))}
+                          <p className="mt-2 text-sm font-semibold">
+                            ${(totalCents / 100).toFixed(2)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Price difference */}
+                      {totalCents !== originalBooking.totalPriceCents && (
+                        <div className={`mb-4 rounded-lg border px-3 py-2 text-sm ${
+                          totalCents > originalBooking.totalPriceCents
+                            ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400"
+                            : "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400"
+                        }`}>
+                          Price {totalCents > originalBooking.totalPriceCents ? "increase" : "decrease"}:{" "}
+                          <span className="font-semibold">
+                            {totalCents > originalBooking.totalPriceCents ? "+" : "-"}$
+                            {(Math.abs(totalCents - originalBooking.totalPriceCents) / 100).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Notes */}
+                      <div className="mb-4 space-y-2">
+                        <Label htmlFor="modify-booking-notes">Notes (optional)</Label>
+                        <Input
+                          id="modify-booking-notes"
+                          placeholder="Any special requests..."
+                          value={notes}
+                          onChange={(e) => setNotes(e.target.value)}
+                        />
+                      </div>
+
+                      {/* Confirm button */}
+                      <Button
+                        className="w-full"
+                        size="lg"
+                        disabled={bookingInProgress}
+                        onClick={handleConfirmModification}
+                      >
+                        {bookingInProgress ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Modifying...
+                          </>
+                        ) : (
+                          "Confirm Modification"
+                        )}
+                      </Button>
+                    </div>
+                  ) : isAdminGuest ? (
                     /* ---- Admin guest booking: guest info form + confirm ---- */
                     <div>
                       {/* Error banner */}

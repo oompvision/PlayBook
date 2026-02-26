@@ -25,7 +25,7 @@ async function getOrg() {
 export default async function MyBookingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cancelled?: string; error?: string; success?: string; codes?: string }>;
+  searchParams: Promise<{ cancelled?: string; error?: string; success?: string; codes?: string; modified?: string; old?: string; new?: string }>;
 }) {
   const params = await searchParams;
   const slug = await getFacilitySlug();
@@ -42,12 +42,37 @@ export default async function MyBookingsPage({
   const { data: bookings } = await supabase
     .from("bookings")
     .select(
-      "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, bay_id, created_at"
+      "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, bay_id, created_at, modified_from"
     )
     .eq("org_id", org.id)
     .eq("customer_id", auth.profile.id)
     .order("date", { ascending: false })
     .order("start_time", { ascending: false });
+
+  // Resolve modified_from confirmation codes for display
+  const modifiedFromIds = [
+    ...new Set(bookings?.map((b) => b.modified_from).filter(Boolean) ?? []),
+  ];
+  const modifiedFromCodeMap: Record<string, string> = {};
+  if (modifiedFromIds.length > 0) {
+    const { data: originals } = await supabase
+      .from("bookings")
+      .select("id, confirmation_code")
+      .in("id", modifiedFromIds);
+    if (originals) {
+      for (const o of originals) {
+        modifiedFromCodeMap[o.id] = o.confirmation_code;
+      }
+    }
+  }
+
+  // Attach modified_from_code to each booking
+  const enrichedBookings = bookings?.map((b) => ({
+    ...b,
+    modified_from_code: b.modified_from
+      ? modifiedFromCodeMap[b.modified_from] ?? null
+      : null,
+  })) ?? [];
 
   // Get bay names
   const bayIds = [...new Set(bookings?.map((b) => b.bay_id) ?? [])];
@@ -66,12 +91,12 @@ export default async function MyBookingsPage({
 
   // Split into upcoming and past (using facility timezone)
   const today = getTodayInTimezone(org.timezone);
-  const upcoming = bookings?.filter(
+  const upcoming = enrichedBookings.filter(
     (b) => b.date >= today && b.status === "confirmed"
-  ) ?? [];
-  const past = bookings?.filter(
+  );
+  const past = enrichedBookings.filter(
     (b) => b.date < today || b.status === "cancelled"
-  ) ?? [];
+  );
 
   async function cancelBooking(formData: FormData) {
     "use server";
@@ -128,6 +153,18 @@ export default async function MyBookingsPage({
               <span>
                 Confirmation code{params.codes.includes(",") ? "s" : ""}:{" "}
                 <span className="font-mono font-semibold">{params.codes}</span>
+              </span>
+            )}
+          </div>
+        )}
+        {params.modified && (
+          <div className="mt-4 rounded-md bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+            Booking modified successfully!{" "}
+            {params.old && params.new && (
+              <span>
+                <span className="font-mono font-semibold">{params.old}</span>
+                {" "}has been replaced with{" "}
+                <span className="font-mono font-semibold">{params.new}</span>
               </span>
             )}
           </div>

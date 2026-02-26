@@ -10,6 +10,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 import {
   Calendar,
   Clock,
@@ -19,6 +20,8 @@ import {
   Phone,
   StickyNote,
   X,
+  Pencil,
+  ArrowRight,
 } from "lucide-react";
 
 export type BookingDetailData = {
@@ -33,6 +36,8 @@ export type BookingDetailData = {
   created_at: string;
   bayName: string;
   canCancel?: boolean;
+  canModify?: boolean;
+  modifiedFrom?: string | null;
   // Admin-only fields
   customerName?: string;
   customerEmail?: string | null;
@@ -249,21 +254,43 @@ export function BookingDetailsModal({
               </div>
             </div>
           )}
+
+          {/* Modified from badge */}
+          {booking.modifiedFrom && (
+            <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:bg-blue-950/30 dark:text-blue-400">
+              <ArrowRight className="h-3 w-3" />
+              Modified from{" "}
+              <span className="font-mono font-semibold">
+                {booking.modifiedFrom}
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Footer: Cancel button */}
-        {booking.canCancel && cancelAction && (
-          <div className="mt-2 border-t pt-4">
-            <form action={cancelAction}>
-              <input type="hidden" name="booking_id" value={booking.id} />
-              <button
-                type="submit"
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 dark:border-red-800 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
+        {/* Footer: Modify + Cancel buttons */}
+        {(booking.canModify || (booking.canCancel && cancelAction)) && (
+          <div className="mt-2 space-y-2 border-t pt-4">
+            {booking.canModify && (
+              <Link
+                href={`/modify/${booking.id}`}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-primary/20 bg-white px-4 py-2.5 text-sm font-medium text-primary shadow-sm transition-colors hover:bg-primary/5 dark:border-primary/30 dark:bg-transparent dark:hover:bg-primary/10"
               >
-                <X className="h-4 w-4" />
-                Cancel Booking
-              </button>
-            </form>
+                <Pencil className="h-4 w-4" />
+                Modify Booking
+              </Link>
+            )}
+            {booking.canCancel && cancelAction && (
+              <form action={cancelAction}>
+                <input type="hidden" name="booking_id" value={booking.id} />
+                <button
+                  type="submit"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 dark:border-red-800 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
+                >
+                  <X className="h-4 w-4" />
+                  Cancel Booking
+                </button>
+              </form>
+            )}
           </div>
         )}
       </DialogContent>
