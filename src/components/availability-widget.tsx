@@ -818,8 +818,9 @@ export function AvailabilityWidget({
     };
 
     const redirectBase = modifyRedirectBase || "/my-bookings";
+    const facilityParam = facilitySlug ? `&facility=${facilitySlug}` : "";
     router.push(
-      `${redirectBase}?modified=true&old=${result.old_confirmation_code}&new=${result.confirmation_code}`
+      `${redirectBase}?modified=true&old=${result.old_confirmation_code}&new=${result.confirmation_code}${facilityParam}`
     );
   }
 
