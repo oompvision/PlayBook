@@ -1,10 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getTodayInTimezone } from "@/lib/utils";
+import { getTodayInTimezone, formatTimeInZone } from "@/lib/utils";
 import { AvailabilityWidget } from "@/components/availability-widget";
 import { OrgHeader } from "@/components/org-header";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
 export default async function ModifyBookingPage({
@@ -23,7 +23,7 @@ export default async function ModifyBookingPage({
   const { data: booking } = await supabase
     .from("bookings")
     .select(
-      "id, org_id, customer_id, bay_id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, is_guest, guest_name"
+      "id, org_id, customer_id, bay_id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, is_guest, guest_name, modified_from"
     )
     .eq("id", bookingId)
     .single();
@@ -80,6 +80,25 @@ export default async function ModifyBookingPage({
   const bayName =
     bays?.find((b) => b.id === booking.bay_id)?.name ?? "Unknown";
 
+  // Resolve modified_from info (if this booking was already previously modified)
+  let modifiedFromInfo: { startTime: string; endTime: string; date: string; bayName: string } | null = null;
+  if (booking.modified_from) {
+    const { data: origBooking } = await supabase
+      .from("bookings")
+      .select("start_time, end_time, date, bay_id")
+      .eq("id", booking.modified_from)
+      .single();
+    if (origBooking) {
+      const origBayName = bays?.find((b) => b.id === origBooking.bay_id)?.name ?? "Facility";
+      modifiedFromInfo = {
+        startTime: origBooking.start_time,
+        endTime: origBooking.end_time,
+        date: origBooking.date,
+        bayName: origBayName,
+      };
+    }
+  }
+
   const todayStr = getTodayInTimezone(timezone);
 
   // Determine redirect base: admin goes to /admin/bookings, customer goes to /my-bookings
@@ -113,6 +132,20 @@ export default async function ModifyBookingPage({
             </div>
             <OrgHeader name={org.name} logoUrl={org.logo_url} />
           </div>
+          {modifiedFromInfo && (
+            <div className="mt-3 flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:bg-blue-950/30 dark:text-blue-400">
+              <ArrowRight className="h-3 w-3 shrink-0" />
+              <span>
+                Previously modified from{" "}
+                <span className="font-semibold">
+                  {formatTimeInZone(modifiedFromInfo.startTime, timezone)} &ndash;{" "}
+                  {formatTimeInZone(modifiedFromInfo.endTime, timezone)},{" "}
+                  {new Date(modifiedFromInfo.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })},{" "}
+                  {modifiedFromInfo.bayName}
+                </span>
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Availability Widget in modify mode */}
