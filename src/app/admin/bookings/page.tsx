@@ -3,7 +3,7 @@ import { getFacilitySlug } from "@/lib/facility";
 import { requireAdmin } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getTodayInTimezone } from "@/lib/utils";
+import { getTodayInTimezone, formatTimeInZone } from "@/lib/utils";
 import { DailySchedule } from "@/components/daily-schedule";
 import { AdminBookingsList } from "@/components/admin/bookings-list";
 import {
@@ -96,30 +96,36 @@ export default async function BookingsListPage({
     console.error("Failed to load bookings:", bookingsError.message);
   }
 
-  // Resolve modified_from confirmation codes for display
+  // Resolve modified_from info (time, date, bay) for display
   const modifiedFromIds = [
     ...new Set(bookings?.map((b) => b.modified_from).filter(Boolean) ?? []),
   ];
-  const modifiedFromCodeMap: Record<string, string> = {};
+  const modifiedFromInfoMap: Record<string, { start_time: string; end_time: string; date: string; bay_id: string }> = {};
   if (modifiedFromIds.length > 0) {
     const { data: originals } = await supabase
       .from("bookings")
-      .select("id, confirmation_code")
+      .select("id, start_time, end_time, date, bay_id")
       .in("id", modifiedFromIds);
     if (originals) {
       for (const o of originals) {
-        modifiedFromCodeMap[o.id] = o.confirmation_code;
+        modifiedFromInfoMap[o.id] = { start_time: o.start_time, end_time: o.end_time, date: o.date, bay_id: o.bay_id };
       }
     }
   }
 
-  // Enrich bookings with modified_from_code
-  const enrichedBookings = bookings?.map((b) => ({
-    ...b,
-    modified_from_code: b.modified_from
-      ? modifiedFromCodeMap[b.modified_from] ?? null
-      : null,
-  })) ?? [];
+  // Enrich bookings with modified_from_info
+  const enrichedBookings = bookings?.map((b) => {
+    const info = b.modified_from ? modifiedFromInfoMap[b.modified_from] ?? null : null;
+    return {
+      ...b,
+      modified_from_info: info ? {
+        startTime: info.start_time,
+        endTime: info.end_time,
+        date: info.date,
+        bayName: bayMap[info.bay_id] || "Facility",
+      } : null,
+    };
+  }) ?? [];
 
   // Look up customer names and bay names (filter out null customer_ids from guest bookings)
   const customerIds = [
@@ -164,6 +170,27 @@ export default async function BookingsListPage({
         (c.full_name && c.full_name.toLowerCase().includes(search))
       );
     });
+  }
+
+  // Look up old and new booking details for the modify toast
+  let toastOldLabel = "";
+  let toastNewLabel = "";
+  if (params.modified && params.old && params.new) {
+    const codes = [params.old, params.new];
+    const { data: toastBookings } = await supabase
+      .from("bookings")
+      .select("confirmation_code, start_time, end_time, date, bay_id")
+      .in("confirmation_code", codes);
+    if (toastBookings) {
+      for (const tb of toastBookings) {
+        const timeRange = `${formatTimeInZone(tb.start_time, org.timezone)} – ${formatTimeInZone(tb.end_time, org.timezone)}`;
+        const dateLabel = new Date(tb.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        const bayLabel = bayMap[tb.bay_id] || "Facility";
+        const label = `${timeRange}, ${dateLabel}, ${bayLabel}`;
+        if (tb.confirmation_code === params.old) toastOldLabel = label;
+        if (tb.confirmation_code === params.new) toastNewLabel = label;
+      }
+    }
   }
 
   async function cancelBooking(formData: FormData) {
@@ -245,11 +272,11 @@ export default async function BookingsListPage({
       {params.modified && (
         <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400">
           Booking modified successfully.{" "}
-          {params.old && params.new && (
+          {toastOldLabel && toastNewLabel && (
             <span>
-              <span className="font-mono font-semibold">{params.old}</span>
+              <span className="font-semibold">{toastOldLabel}</span>
               {" "}has been replaced with{" "}
-              <span className="font-mono font-semibold">{params.new}</span>
+              <span className="font-semibold">{toastNewLabel}</span>
             </span>
           )}
         </div>

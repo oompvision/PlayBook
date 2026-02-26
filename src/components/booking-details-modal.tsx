@@ -24,6 +24,13 @@ import {
   ArrowRight,
 } from "lucide-react";
 
+type ModifiedFromInfo = {
+  startTime: string;
+  endTime: string;
+  date: string;
+  bayName: string;
+};
+
 export type BookingDetailData = {
   id: string;
   date: string;
@@ -37,7 +44,7 @@ export type BookingDetailData = {
   bayName: string;
   canCancel?: boolean;
   canModify?: boolean;
-  modifiedFrom?: string | null;
+  modifiedFrom?: ModifiedFromInfo | null;
   // Admin-only fields
   customerName?: string;
   customerEmail?: string | null;
@@ -258,10 +265,14 @@ export function BookingDetailsModal({
           {/* Modified from badge */}
           {booking.modifiedFrom && (
             <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:bg-blue-950/30 dark:text-blue-400">
-              <ArrowRight className="h-3 w-3" />
-              Modified from{" "}
-              <span className="font-mono font-semibold">
-                {booking.modifiedFrom}
+              <ArrowRight className="h-3 w-3 shrink-0" />
+              <span>
+                Modified from{" "}
+                <span className="font-semibold">
+                  {formatTime(booking.modifiedFrom.startTime, timezone)} – {formatTime(booking.modifiedFrom.endTime, timezone)},{" "}
+                  {new Date(booking.modifiedFrom.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })},{" "}
+                  {booking.modifiedFrom.bayName}
+                </span>
               </span>
             </div>
           )}

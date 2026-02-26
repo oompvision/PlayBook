@@ -10,6 +10,13 @@ import {
 } from "@/components/booking-details-modal";
 import { formatTimeInZone } from "@/lib/utils";
 
+type ModifiedFromInfo = {
+  startTime: string;
+  endTime: string;
+  date: string;
+  bayName: string;
+};
+
 type Booking = {
   id: string;
   date: string;
@@ -22,7 +29,7 @@ type Booking = {
   bay_id: string;
   created_at: string;
   modified_from: string | null;
-  modified_from_code?: string | null;
+  modified_from_info?: ModifiedFromInfo | null;
 };
 
 type Props = {
@@ -58,7 +65,7 @@ export function MyBookingsList({
       bayName: bayMap[booking.bay_id] || "Facility",
       canCancel,
       canModify: canCancel, // Same conditions as cancel: upcoming + confirmed
-      modifiedFrom: booking.modified_from_code || null,
+      modifiedFrom: booking.modified_from_info || null,
     });
     setModalOpen(true);
   }
@@ -106,10 +113,15 @@ export function MyBookingsList({
                     <p className="mt-0.5 font-mono text-xs text-muted-foreground">
                       {booking.confirmation_code}
                     </p>
-                    {booking.modified_from_code && (
+                    {booking.modified_from_info && (
                       <p className="mt-0.5 flex items-center gap-1 text-[11px] text-blue-600 dark:text-blue-400">
                         <ArrowRight className="h-3 w-3" />
-                        Modified from {booking.modified_from_code}
+                        Modified from{" "}
+                        <span className="font-semibold">
+                          {formatTimeInZone(booking.modified_from_info.startTime, timezone)} – {formatTimeInZone(booking.modified_from_info.endTime, timezone)},{" "}
+                          {new Date(booking.modified_from_info.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })},{" "}
+                          {booking.modified_from_info.bayName}
+                        </span>
                       </p>
                     )}
                     {booking.notes && (

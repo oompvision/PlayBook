@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button"
-import { getTodayInTimezone } from "@/lib/utils";
+import { getTodayInTimezone, formatTimeInZone } from "@/lib/utils";
 import { SignOutButton } from "@/components/sign-out-button";
 import { OrgHeader } from "@/components/org-header";
 import { MyBookingsList } from "@/components/my-bookings-list";
@@ -49,30 +49,36 @@ export default async function MyBookingsPage({
     .order("date", { ascending: false })
     .order("start_time", { ascending: false });
 
-  // Resolve modified_from confirmation codes for display
+  // Resolve modified_from info (time, date, bay) for display
   const modifiedFromIds = [
     ...new Set(bookings?.map((b) => b.modified_from).filter(Boolean) ?? []),
   ];
-  const modifiedFromCodeMap: Record<string, string> = {};
+  const modifiedFromInfoMap: Record<string, { start_time: string; end_time: string; date: string; bay_id: string }> = {};
   if (modifiedFromIds.length > 0) {
     const { data: originals } = await supabase
       .from("bookings")
-      .select("id, confirmation_code")
+      .select("id, start_time, end_time, date, bay_id")
       .in("id", modifiedFromIds);
     if (originals) {
       for (const o of originals) {
-        modifiedFromCodeMap[o.id] = o.confirmation_code;
+        modifiedFromInfoMap[o.id] = { start_time: o.start_time, end_time: o.end_time, date: o.date, bay_id: o.bay_id };
       }
     }
   }
 
-  // Attach modified_from_code to each booking
-  const enrichedBookings = bookings?.map((b) => ({
-    ...b,
-    modified_from_code: b.modified_from
-      ? modifiedFromCodeMap[b.modified_from] ?? null
-      : null,
-  })) ?? [];
+  // Attach modified_from_info to each booking
+  const enrichedBookings = bookings?.map((b) => {
+    const info = b.modified_from ? modifiedFromInfoMap[b.modified_from] ?? null : null;
+    return {
+      ...b,
+      modified_from_info: info ? {
+        startTime: info.start_time,
+        endTime: info.end_time,
+        date: info.date,
+        bayName: bayMap[info.bay_id] || "Facility",
+      } : null,
+    };
+  }) ?? [];
 
   // Get bay names
   const bayIds = [...new Set(bookings?.map((b) => b.bay_id) ?? [])];
@@ -85,6 +91,27 @@ export default async function MyBookingsPage({
     if (bays) {
       for (const b of bays) {
         bayMap[b.id] = b.name;
+      }
+    }
+  }
+
+  // Look up old and new booking details for the modify toast
+  let toastOldLabel = "";
+  let toastNewLabel = "";
+  if (params.modified && params.old && params.new) {
+    const codes = [params.old, params.new];
+    const { data: toastBookings } = await supabase
+      .from("bookings")
+      .select("confirmation_code, start_time, end_time, date, bay_id")
+      .in("confirmation_code", codes);
+    if (toastBookings) {
+      for (const tb of toastBookings) {
+        const timeRange = `${formatTimeInZone(tb.start_time, org.timezone)} – ${formatTimeInZone(tb.end_time, org.timezone)}`;
+        const dateLabel = new Date(tb.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        const bayLabel = bayMap[tb.bay_id] || "Facility";
+        const label = `${timeRange}, ${dateLabel}, ${bayLabel}`;
+        if (tb.confirmation_code === params.old) toastOldLabel = label;
+        if (tb.confirmation_code === params.new) toastNewLabel = label;
       }
     }
   }
@@ -160,11 +187,11 @@ export default async function MyBookingsPage({
         {params.modified && (
           <div className="mt-4 rounded-md bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-950 dark:text-blue-300">
             Booking modified successfully!{" "}
-            {params.old && params.new && (
+            {toastOldLabel && toastNewLabel && (
               <span>
-                <span className="font-mono font-semibold">{params.old}</span>
+                <span className="font-semibold">{toastOldLabel}</span>
                 {" "}has been replaced with{" "}
-                <span className="font-mono font-semibold">{params.new}</span>
+                <span className="font-semibold">{toastNewLabel}</span>
               </span>
             )}
           </div>

@@ -8,6 +8,13 @@ import {
 import { formatTimeInZone } from "@/lib/utils";
 import { ArrowRight } from "lucide-react";
 
+type ModifiedFromInfo = {
+  startTime: string;
+  endTime: string;
+  date: string;
+  bayName: string;
+};
+
 type Booking = {
   id: string;
   date: string;
@@ -25,7 +32,7 @@ type Booking = {
   guest_email: string | null;
   guest_phone: string | null;
   modified_from: string | null;
-  modified_from_code?: string | null;
+  modified_from_info?: ModifiedFromInfo | null;
 };
 
 type Props = {
@@ -81,7 +88,7 @@ export function AdminBookingsList({
       bayName: bayMap[booking.bay_id] ?? "Unknown",
       canCancel: booking.status === "confirmed",
       canModify: booking.status === "confirmed",
-      modifiedFrom: booking.modified_from_code || null,
+      modifiedFrom: booking.modified_from_info || null,
       customerName: display.name,
       customerEmail: display.email,
       isGuest: display.isGuest,
@@ -165,10 +172,13 @@ export function AdminBookingsList({
                           <span className="font-mono text-sm text-gray-600 dark:text-gray-300">
                             {booking.confirmation_code}
                           </span>
-                          {booking.modified_from_code && (
+                          {booking.modified_from_info && (
                             <p className="mt-0.5 flex items-center gap-1 text-[10px] text-blue-600 dark:text-blue-400">
                               <ArrowRight className="h-2.5 w-2.5" />
-                              from {booking.modified_from_code}
+                              from{" "}
+                              {formatTimeInZone(booking.modified_from_info.startTime, timezone)} – {formatTimeInZone(booking.modified_from_info.endTime, timezone)},{" "}
+                              {new Date(booking.modified_from_info.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })},{" "}
+                              {booking.modified_from_info.bayName}
                             </p>
                           )}
                         </td>
