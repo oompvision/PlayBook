@@ -136,7 +136,7 @@ export function AdminBookingsList({
                     const display = getCustomerDisplay(booking, customerMap);
                     const timeStr = `${formatTimeInZone(booking.start_time, timezone)} – ${formatTimeInZone(booking.end_time, timezone)}`;
                     const dateStr = new Date(
-                      booking.date
+                      booking.date + "T12:00:00"
                     ).toLocaleDateString("en-US", {
                       weekday: "short",
                       month: "short",
@@ -234,7 +234,7 @@ export function AdminBookingsList({
         {bookings.map((booking) => {
           const display = getCustomerDisplay(booking, customerMap);
           const timeStr = `${formatTimeInZone(booking.start_time, timezone)} – ${formatTimeInZone(booking.end_time, timezone)}`;
-          const dateStr = new Date(booking.date).toLocaleDateString("en-US", {
+          const dateStr = new Date(booking.date + "T12:00:00").toLocaleDateString("en-US", {
             weekday: "short",
             month: "short",
             day: "numeric",
