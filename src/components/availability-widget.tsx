@@ -318,14 +318,9 @@ export function AvailabilityWidget({
     async function checkAndAutoAdvance() {
       const supabase = createClient();
 
-      // Compute effective start for today (now + lead time)
-      let effectiveStart: string;
-      if (minBookingLeadMinutes > 0) {
-        const cutoff = new Date(Date.now() + minBookingLeadMinutes * 60_000);
-        effectiveStart = cutoff.toISOString();
-      } else {
-        effectiveStart = toTimestamp(todayStr, "00:00:00", timezone);
-      }
+      // Compute effective start for today (now + lead time, always excludes past slots)
+      const cutoff = new Date(Date.now() + minBookingLeadMinutes * 60_000);
+      const effectiveStart = cutoff.toISOString();
 
       const todayEnd = toTimestamp(addDays(todayStr, 1), "00:00:00", timezone);
 
@@ -388,9 +383,9 @@ export function AvailabilityWidget({
       const dayStart = toTimestamp(date, "00:00:00", timezone);
       const dayEnd = toTimestamp(nextDayStr, "00:00:00", timezone);
 
-      // For today, exclude slots starting within the lead time window
+      // For today, exclude past slots (and respect lead time window)
       let effectiveStart = dayStart;
-      if (date === todayStr && minBookingLeadMinutes > 0) {
+      if (date === todayStr) {
         const cutoff = new Date(Date.now() + minBookingLeadMinutes * 60_000);
         effectiveStart = cutoff.toISOString();
       }
