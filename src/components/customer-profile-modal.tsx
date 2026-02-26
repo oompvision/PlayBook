@@ -201,7 +201,7 @@ export function CustomerProfileModal({
               </DialogTitle>
               <DialogDescription className="mt-0.5">
                 Customer since{" "}
-                {new Date(customer.date).toLocaleDateString("en-US", {
+                {new Date(customer.date + "T12:00:00").toLocaleDateString("en-US", {
                   month: "long",
                   day: "numeric",
                   year: "numeric",

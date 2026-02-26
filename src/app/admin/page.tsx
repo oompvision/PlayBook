@@ -301,7 +301,7 @@ export default async function AdminDashboardPage() {
               {recentBookings.map((booking) => {
                 const customer = customerMap[booking.customer_id];
                 const timeStr = `${formatTimeInZone(booking.start_time, org.timezone)} – ${formatTimeInZone(booking.end_time, org.timezone)}`;
-                const dateStr = new Date(booking.date).toLocaleDateString(
+                const dateStr = new Date(booking.date + "T12:00:00").toLocaleDateString(
                   "en-US",
                   {
                     weekday: "short",

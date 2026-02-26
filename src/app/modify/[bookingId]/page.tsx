@@ -101,9 +101,9 @@ export default async function ModifyBookingPage({
 
   const todayStr = getTodayInTimezone(timezone);
 
-  // Determine redirect base: admin goes to /admin/bookings, customer goes to /my-bookings
-  const redirectBase = isAdmin && !isOwner ? "/admin/bookings" : "/my-bookings";
-  const backHref = isAdmin && !isOwner ? "/admin/bookings" : "/my-bookings";
+  // Determine redirect base: admin always goes to /admin/bookings, customer goes to /my-bookings
+  const redirectBase = isAdmin ? "/admin/bookings" : "/my-bookings";
+  const backHref = isAdmin ? "/admin/bookings" : "/my-bookings";
 
   return (
     <div className="min-h-screen p-8">

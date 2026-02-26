@@ -131,7 +131,7 @@ export function CustomerList({ entries, orgId }: Props) {
                   </td>
                   <td className="px-6 py-4">
                     <span className="text-sm text-gray-500 dark:text-gray-400">
-                      {new Date(entry.date).toLocaleDateString("en-US", {
+                      {new Date(entry.date + "T12:00:00").toLocaleDateString("en-US", {
                         month: "short",
                         day: "numeric",
                         year: "numeric",
@@ -181,7 +181,7 @@ export function CustomerList({ entries, orgId }: Props) {
                 </p>
               </div>
               <div className="shrink-0 text-right text-xs text-gray-400 dark:text-gray-500">
-                {new Date(entry.date).toLocaleDateString("en-US", {
+                {new Date(entry.date + "T12:00:00").toLocaleDateString("en-US", {
                   month: "short",
                   day: "numeric",
                 })}
