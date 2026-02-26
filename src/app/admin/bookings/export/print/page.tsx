@@ -132,18 +132,6 @@ export default async function PrintPage({
   // Get the bay name being filtered (if any)
   const filteredBayName = params.bay ? bayMap[params.bay] : null;
 
-  // Generated at timestamp in facility timezone
-  const generatedAt = new Date().toLocaleString("en-US", {
-    timeZone: org.timezone,
-    weekday: "short",
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-
   return (
     <>
       {/* Print-specific styles: hide admin layout chrome, optimize for paper */}
@@ -162,8 +150,10 @@ export default async function PrintPage({
               main { padding: 0 !important; }
               /* Reset background */
               body, .min-h-screen { background: white !important; }
-              /* Page settings */
-              @page { margin: 0.5in 0.6in; size: letter; }
+              /* Page settings — margin:0 suppresses browser header/footer */
+              @page { margin: 0; size: letter; }
+              /* Content padding replaces page margin */
+              .print-date-page, .print-timeline-page { padding: 0.5in 0.6in !important; }
               /* Page breaks between dates */
               .print-date-page, .print-timeline-page { break-after: page; }
               .print-date-page:last-child, .print-timeline-page:last-child { break-after: auto; }
@@ -268,9 +258,6 @@ export default async function PrintPage({
                       Filtered to: {filteredBayName}
                     </p>
                   )}
-                  <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
-                    Generated at: {generatedAt}
-                  </p>
                 </div>
 
                 {/* Timeline Grid */}
@@ -473,9 +460,6 @@ export default async function PrintPage({
                       Filtered to: {filteredBayName}
                     </p>
                   )}
-                  <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
-                    Generated at: {generatedAt}
-                  </p>
                 </div>
 
                 {/* Table */}
