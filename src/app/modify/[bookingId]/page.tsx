@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import { getFacilitySlug } from "@/lib/facility";
 import { getAuthUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getTodayInTimezone } from "@/lib/utils";
@@ -14,23 +13,13 @@ export default async function ModifyBookingPage({
   params: Promise<{ bookingId: string }>;
 }) {
   const { bookingId } = await params;
-  const slug = await getFacilitySlug();
-  if (!slug) redirect("/");
 
   const supabase = await createClient();
   const auth = await getAuthUser();
   if (!auth) redirect(`/auth/login?redirect=/modify/${bookingId}`);
 
-  // Fetch the org
-  const { data: org } = await supabase
-    .from("organizations")
-    .select("id, name, slug, timezone, min_booking_lead_minutes, logo_url")
-    .eq("slug", slug)
-    .single();
-
-  if (!org) redirect("/");
-
-  // Fetch the booking
+  // Fetch the booking first — derive org from its org_id so this works
+  // without facility slug (preview links, direct URL access, etc.)
   const { data: booking } = await supabase
     .from("bookings")
     .select(
@@ -41,8 +30,14 @@ export default async function ModifyBookingPage({
 
   if (!booking) redirect("/my-bookings");
 
-  // Validate: booking must belong to this org
-  if (booking.org_id !== org.id) redirect("/my-bookings");
+  // Fetch the org from the booking's org_id
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("id, name, slug, timezone, min_booking_lead_minutes, logo_url")
+    .eq("id", booking.org_id)
+    .single();
+
+  if (!org) redirect("/my-bookings");
 
   // Validate: booking must be confirmed
   if (booking.status !== "confirmed") redirect("/my-bookings");
