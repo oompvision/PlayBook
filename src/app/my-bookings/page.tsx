@@ -4,11 +4,11 @@ import { ensureCustomerOrg } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { formatTimeInZone, getTodayInTimezone } from "@/lib/utils";
+import { Button } from "@/components/ui/button"
+import { getTodayInTimezone } from "@/lib/utils";
 import { SignOutButton } from "@/components/sign-out-button";
 import { OrgHeader } from "@/components/org-header";
+import { MyBookingsList } from "@/components/my-bookings-list";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -133,119 +133,13 @@ export default async function MyBookingsPage({
           </div>
         )}
 
-        {/* Upcoming */}
-        <div className="mt-8">
-          <h2 className="text-lg font-semibold">Upcoming</h2>
-          {upcoming.length === 0 && (
-            <p className="mt-4 py-8 text-center text-muted-foreground">
-              No upcoming bookings.{" "}
-              <Link href="/" className="text-primary hover:underline">
-                Book a session
-              </Link>
-            </p>
-          )}
-          <div className="mt-3 space-y-2">
-            {upcoming.map((booking) => {
-              const d = new Date(booking.date + "T12:00:00");
-              const dateStr = d.toLocaleDateString("en-US", {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-              });
-              const timeStr = `${formatTimeInZone(booking.start_time, org!.timezone)} – ${formatTimeInZone(booking.end_time, org!.timezone)}`;
-
-              return (
-                <div
-                  key={booking.id}
-                  className="flex items-center justify-between rounded-lg border p-4"
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium">{dateStr}</p>
-                      <Badge variant="default">Confirmed</Badge>
-                    </div>
-                    <p className="mt-0.5 text-sm text-muted-foreground">
-                      {timeStr} · {bayMap[booking.bay_id] || "Facility"} · $
-                      {(booking.total_price_cents / 100).toFixed(2)}
-                    </p>
-                    <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                      {booking.confirmation_code}
-                    </p>
-                    {booking.notes && (
-                      <p className="mt-1 text-xs italic text-muted-foreground">
-                        {booking.notes}
-                      </p>
-                    )}
-                  </div>
-                  <form action={cancelBooking}>
-                    <input
-                      type="hidden"
-                      name="booking_id"
-                      value={booking.id}
-                    />
-                    <Button
-                      type="submit"
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:bg-destructive/10"
-                    >
-                      Cancel
-                    </Button>
-                  </form>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Past */}
-        {past.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-lg font-semibold">Past & Cancelled</h2>
-            <div className="mt-3 space-y-2">
-              {past.map((booking) => {
-                const d = new Date(booking.date + "T12:00:00");
-                const dateStr = d.toLocaleDateString("en-US", {
-                  weekday: "short",
-                  month: "short",
-                  day: "numeric",
-                });
-                const timeStr = `${formatTimeInZone(booking.start_time, org!.timezone)} – ${formatTimeInZone(booking.end_time, org!.timezone)}`;
-
-                return (
-                  <div
-                    key={booking.id}
-                    className="flex items-center justify-between rounded-lg border p-4 opacity-60"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium">{dateStr}</p>
-                        <Badge
-                          variant={
-                            booking.status === "cancelled"
-                              ? "secondary"
-                              : "outline"
-                          }
-                        >
-                          {booking.status === "cancelled"
-                            ? "Cancelled"
-                            : "Completed"}
-                        </Badge>
-                      </div>
-                      <p className="mt-0.5 text-sm text-muted-foreground">
-                        {timeStr} · {bayMap[booking.bay_id] || "Facility"} · $
-                        {(booking.total_price_cents / 100).toFixed(2)}
-                      </p>
-                      <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                        {booking.confirmation_code}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        <MyBookingsList
+          upcoming={upcoming}
+          past={past}
+          bayMap={bayMap}
+          timezone={org.timezone}
+          cancelAction={cancelBooking}
+        />
       </div>
     </div>
   );

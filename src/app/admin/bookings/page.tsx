@@ -3,9 +3,9 @@ import { getFacilitySlug } from "@/lib/facility";
 import { requireAdmin } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { formatTimeInZone, getTodayInTimezone } from "@/lib/utils";
+import { getTodayInTimezone } from "@/lib/utils";
 import { DailySchedule } from "@/components/daily-schedule";
-import { BookingCardExpandable } from "@/components/admin/booking-card-expandable";
+import { AdminBookingsList } from "@/components/admin/bookings-list";
 import {
   CalendarDays,
   List,
@@ -115,23 +115,6 @@ export default async function BookingsListPage({
     for (const b of bays) {
       bayMap[b.id] = b.name;
     }
-  }
-
-  // Helper to resolve display name/email for a booking (handles guest + registered)
-  function getCustomerDisplay(booking: (typeof bookings extends (infer T)[] | null ? T : never)) {
-    if (booking.is_guest) {
-      return {
-        name: booking.guest_name || "Guest",
-        email: booking.guest_email || null,
-        isGuest: true,
-      };
-    }
-    const c = booking.customer_id ? customerMap[booking.customer_id] : null;
-    return {
-      name: c?.full_name || c?.email || "Unknown",
-      email: c?.full_name ? c.email : null,
-      isGuest: false,
-    };
   }
 
   // Filter by customer search (name or email) — client-side since we join manually
@@ -350,172 +333,13 @@ export default async function BookingsListPage({
             </div>
           </form>
 
-          {/* Desktop Table View (hidden on mobile) */}
-          <div className="hidden md:block">
-            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-              {filtered.length === 0 ? (
-                <div className="px-5 py-16 text-center text-sm text-gray-500 dark:text-gray-400">
-                  No bookings found.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[800px]">
-                    <thead>
-                      <tr className="border-b border-gray-100 dark:border-white/[0.05]">
-                        <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                          Customer
-                        </th>
-                        <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                          Confirmation
-                        </th>
-                        <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                          Date &amp; Time
-                        </th>
-                        <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                          Facility
-                        </th>
-                        <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                          Price
-                        </th>
-                        <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                          Status
-                        </th>
-                        <th className="px-5 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
-                      {filtered.map((booking) => {
-                        const display = getCustomerDisplay(booking);
-                        const timeStr = `${formatTimeInZone(booking.start_time, org!.timezone)} – ${formatTimeInZone(booking.end_time, org!.timezone)}`;
-                        const dateStr = new Date(booking.date).toLocaleDateString("en-US", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        });
-
-                        return (
-                          <tr
-                            key={booking.id}
-                            className="transition-colors hover:bg-gray-50/50 dark:hover:bg-white/[0.02]"
-                          >
-                            <td className="px-5 py-4">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <p className="text-sm font-medium text-gray-800 dark:text-white/90">
-                                    {display.name}
-                                  </p>
-                                  {display.isGuest && (
-                                    <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                                      Guest
-                                    </span>
-                                  )}
-                                </div>
-                                {display.email && (
-                                  <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                                    {display.email}
-                                  </p>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-5 py-4">
-                              <span className="font-mono text-sm text-gray-600 dark:text-gray-300">
-                                {booking.confirmation_code}
-                              </span>
-                            </td>
-                            <td className="px-5 py-4">
-                              <div>
-                                <p className="text-sm text-gray-800 dark:text-white/90">
-                                  {dateStr}
-                                </p>
-                                <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                                  {timeStr}
-                                </p>
-                              </div>
-                            </td>
-                            <td className="px-5 py-4">
-                              <span className="text-sm text-gray-800 dark:text-white/90">
-                                {bayMap[booking.bay_id] ?? "Unknown"}
-                              </span>
-                            </td>
-                            <td className="px-5 py-4">
-                              <span className="text-sm font-semibold text-gray-800 dark:text-white/90">
-                                ${(booking.total_price_cents / 100).toFixed(2)}
-                              </span>
-                            </td>
-                            <td className="px-5 py-4">
-                              <span
-                                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                                  booking.status === "confirmed"
-                                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                    : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                                }`}
-                              >
-                                {booking.status}
-                              </span>
-                            </td>
-                            <td className="px-5 py-4 text-right">
-                              {booking.status === "confirmed" ? (
-                                <form action={cancelBooking} className="inline">
-                                  <input
-                                    type="hidden"
-                                    name="booking_id"
-                                    value={booking.id}
-                                  />
-                                  <button
-                                    type="submit"
-                                    className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 dark:border-gray-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
-                                  >
-                                    Cancel
-                                  </button>
-                                </form>
-                              ) : (
-                                <span className="text-xs text-gray-400">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Mobile Card View (hidden on desktop) */}
-          <div className="space-y-3 md:hidden">
-            {filtered.length === 0 && (
-              <div className="rounded-xl border border-gray-200 bg-white px-5 py-16 text-center text-sm text-gray-500 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-400">
-                No bookings found.
-              </div>
-            )}
-
-            {filtered.map((booking) => {
-              const display = getCustomerDisplay(booking);
-              const timeStr = `${formatTimeInZone(booking.start_time, org!.timezone)} – ${formatTimeInZone(booking.end_time, org!.timezone)}`;
-              const dateStr = new Date(booking.date).toLocaleDateString("en-US", {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-              });
-
-              return (
-                <BookingCardExpandable
-                  key={booking.id}
-                  booking={booking}
-                  customerName={display.name}
-                  customerEmail={display.email || ""}
-                  isGuest={display.isGuest}
-                  bayName={bayMap[booking.bay_id] ?? "Unknown"}
-                  timeStr={timeStr}
-                  dateStr={dateStr}
-                  cancelAction={cancelBooking}
-                />
-              );
-            })}
-          </div>
+          <AdminBookingsList
+            bookings={filtered}
+            bayMap={bayMap}
+            customerMap={customerMap}
+            timezone={org.timezone}
+            cancelAction={cancelBooking}
+          />
         </>
       ) : (
         /* Daily View - wrapped in TailAdmin card */
