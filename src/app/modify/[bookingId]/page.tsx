@@ -160,6 +160,7 @@ export default async function ModifyBookingPage({
             bays={bays}
             todayStr={todayStr}
             minBookingLeadMinutes={minLeadMinutes}
+            facilitySlug={org.slug}
             isAuthenticated={true}
             userEmail={auth.profile.email}
             userFullName={auth.profile.full_name}
