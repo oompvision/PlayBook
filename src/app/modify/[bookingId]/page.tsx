@@ -124,8 +124,11 @@ export default async function ModifyBookingPage({
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
                 Modifying{" "}
-                <span className="font-mono font-semibold">
-                  {booking.confirmation_code}
+                <span className="font-semibold">
+                  {formatTimeInZone(booking.start_time, timezone)} &ndash;{" "}
+                  {formatTimeInZone(booking.end_time, timezone)},{" "}
+                  {new Date(booking.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })},{" "}
+                  {bayName}
                 </span>{" "}
                 &mdash; select new time slots below.
               </p>

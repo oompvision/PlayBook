@@ -1273,7 +1273,7 @@ export function AvailabilityWidget({
                       </h2>
                       <p className="text-sm text-muted-foreground">
                         {isModify && originalBooking
-                          ? `Modifying ${originalBooking.confirmationCode}`
+                          ? `Modifying ${formatTime(originalBooking.startTime, timezone)} – ${formatTime(originalBooking.endTime, timezone)}, ${new Date(originalBooking.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${originalBooking.bayName}`
                           : formatDateLabel(selectedDate)}
                       </p>
                     </div>
