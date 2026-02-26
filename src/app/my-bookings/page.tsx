@@ -49,7 +49,7 @@ export default async function MyBookingsPage({
     .order("date", { ascending: false })
     .order("start_time", { ascending: false });
 
-  // Resolve modified_from info (time, date, bay) for display
+  // Resolve modified_from booking details for display
   const modifiedFromIds = [
     ...new Set(bookings?.map((b) => b.modified_from).filter(Boolean) ?? []),
   ];
@@ -62,6 +62,22 @@ export default async function MyBookingsPage({
     if (originals) {
       for (const o of originals) {
         modifiedFromInfoMap[o.id] = { start_time: o.start_time, end_time: o.end_time, date: o.date, bay_id: o.bay_id };
+      }
+    }
+  }
+
+  // Get bay names (include bay IDs from modified_from bookings)
+  const modifiedFromBayIds = Object.values(modifiedFromInfoMap).map((i) => i.bay_id);
+  const bayIds = [...new Set([...(bookings?.map((b) => b.bay_id) ?? []), ...modifiedFromBayIds])];
+  const bayMap: Record<string, string> = {};
+  if (bayIds.length > 0) {
+    const { data: bays } = await supabase
+      .from("bays")
+      .select("id, name")
+      .in("id", bayIds);
+    if (bays) {
+      for (const b of bays) {
+        bayMap[b.id] = b.name;
       }
     }
   }
@@ -79,21 +95,6 @@ export default async function MyBookingsPage({
       } : null,
     };
   }) ?? [];
-
-  // Get bay names
-  const bayIds = [...new Set(bookings?.map((b) => b.bay_id) ?? [])];
-  let bayMap: Record<string, string> = {};
-  if (bayIds.length > 0) {
-    const { data: bays } = await supabase
-      .from("bays")
-      .select("id, name")
-      .in("id", bayIds);
-    if (bays) {
-      for (const b of bays) {
-        bayMap[b.id] = b.name;
-      }
-    }
-  }
 
   // Look up old and new booking details for the modify toast
   let toastOldLabel = "";

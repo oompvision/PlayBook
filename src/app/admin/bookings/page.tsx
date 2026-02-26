@@ -96,6 +96,14 @@ export default async function BookingsListPage({
     console.error("Failed to load bookings:", bookingsError.message);
   }
 
+  // Build bay map first (needed for modified_from enrichment below)
+  const bayMap: Record<string, string> = {};
+  if (bays) {
+    for (const b of bays) {
+      bayMap[b.id] = b.name;
+    }
+  }
+
   // Resolve modified_from info (time, date, bay) for display
   const modifiedFromIds = [
     ...new Set(bookings?.map((b) => b.modified_from).filter(Boolean) ?? []),
@@ -127,7 +135,7 @@ export default async function BookingsListPage({
     };
   }) ?? [];
 
-  // Look up customer names and bay names (filter out null customer_ids from guest bookings)
+  // Look up customer names (filter out null customer_ids from guest bookings)
   const customerIds = [
     ...new Set(enrichedBookings.map((b) => b.customer_id).filter(Boolean)),
   ];
@@ -142,13 +150,6 @@ export default async function BookingsListPage({
       for (const p of profiles) {
         customerMap[p.id] = { full_name: p.full_name, email: p.email };
       }
-    }
-  }
-
-  const bayMap: Record<string, string> = {};
-  if (bays) {
-    for (const b of bays) {
-      bayMap[b.id] = b.name;
     }
   }
 
