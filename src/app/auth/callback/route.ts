@@ -10,7 +10,29 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
+      const forwardUrl = `${origin}${next}`;
+      const response = NextResponse.redirect(forwardUrl);
+
+      // If this user is an admin, set the org cookie so /admin routes work
+      const { data: profile } = await supabase.rpc("get_my_profile");
+      if (profile?.role === "admin" && profile?.org_id) {
+        const { data: org } = await supabase
+          .from("organizations")
+          .select("slug")
+          .eq("id", profile.org_id)
+          .single();
+
+        if (org) {
+          response.cookies.set("playbook-admin-org", org.slug, {
+            path: "/",
+            httpOnly: true,
+            sameSite: "lax",
+            maxAge: 60 * 60 * 8, // 8 hours
+          });
+        }
+      }
+
+      return response;
     }
   }
 

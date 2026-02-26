@@ -9,6 +9,7 @@ import { SignOutButton } from "@/components/sign-out-button";
 import { OrgHeader } from "@/components/org-header";
 import { AuthModal } from "@/components/auth-modal";
 import { AvailabilityWidget } from "@/components/availability-widget";
+import { AdminLoginForm } from "@/components/admin-login-form";
 import { UserCircle } from "lucide-react";
 
 export default async function FacilityHomePage() {
@@ -16,31 +17,53 @@ export default async function FacilityHomePage() {
   const auth = await getAuthUser();
 
   if (!slug) {
-    // No facility context — show platform landing
+    // No facility context — show platform landing with admin login
+    const isAdmin = auth?.profile.role === "admin";
+    const isSuperAdmin = auth?.profile.role === "super_admin";
+
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-8">
-        <h1 className="text-4xl font-bold tracking-tight">PlayBook</h1>
-        <p className="mt-4 text-lg text-muted-foreground">
+        <h1 className="mb-2 text-4xl font-bold tracking-tight">PlayBook</h1>
+        <p className="mb-8 text-lg text-muted-foreground">
           Sports Facility Booking Platform
         </p>
-        <div className="mt-8 flex gap-4">
-          {auth?.profile.role === "super_admin" ? (
+
+        {isSuperAdmin ? (
+          <div className="flex flex-col items-center gap-4">
             <Link href="/super-admin">
               <Button size="lg">Go to Dashboard</Button>
             </Link>
-          ) : (
-            <Link href="/auth/login?role=super_admin&redirect=/super-admin">
-              <Button size="lg">Super Admin Login</Button>
-            </Link>
-          )}
-        </div>
-        {auth && (
-          <div className="mt-4 flex flex-col items-center gap-1">
-            <p className="text-sm text-muted-foreground">
-              Signed in as {auth.profile.email}
-            </p>
-            <SignOutButton variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" />
+            <div className="flex flex-col items-center gap-1">
+              <p className="text-sm text-muted-foreground">
+                Signed in as {auth.profile.email}
+              </p>
+              <SignOutButton variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" />
+            </div>
           </div>
+        ) : isAdmin && auth.profile.org_id ? (
+          <div className="flex flex-col items-center gap-4">
+            <a href={`/api/admin/enter/${auth.profile.org_id}`}>
+              <Button size="lg">Go to Dashboard</Button>
+            </a>
+            <div className="flex flex-col items-center gap-1">
+              <p className="text-sm text-muted-foreground">
+                Signed in as {auth.profile.email}
+              </p>
+              <SignOutButton variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" />
+            </div>
+          </div>
+        ) : (
+          <>
+            <AdminLoginForm />
+            {auth && (
+              <div className="mt-4 flex flex-col items-center gap-1">
+                <p className="text-sm text-muted-foreground">
+                  Signed in as {auth.profile.email}
+                </p>
+                <SignOutButton variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" />
+              </div>
+            )}
+          </>
         )}
       </div>
     );
