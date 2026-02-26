@@ -3,7 +3,7 @@ import { getFacilitySlug } from "@/lib/facility";
 import { requireAdmin } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getTodayInTimezone } from "@/lib/utils";
+import { getTodayInTimezone, formatTimeInZone } from "@/lib/utils";
 import { DailySchedule } from "@/components/daily-schedule";
 import { AdminBookingsList } from "@/components/admin/bookings-list";
 import {
@@ -42,6 +42,9 @@ export default async function BookingsListPage({
     guest_booked?: string;
     codes?: string;
     error?: string;
+    modified?: string;
+    old?: string;
+    new?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -62,11 +65,11 @@ export default async function BookingsListPage({
     .order("sort_order")
     .order("created_at");
 
-  // Build bookings query (includes guest fields)
+  // Build bookings query (includes guest fields + modified_from)
   let query = supabase
     .from("bookings")
     .select(
-      "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, created_at, customer_id, bay_id, is_guest, guest_name, guest_email, guest_phone"
+      "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, created_at, customer_id, bay_id, is_guest, guest_name, guest_email, guest_phone, modified_from"
     )
     .eq("org_id", org.id)
     .order("date", { ascending: false })
@@ -93,9 +96,48 @@ export default async function BookingsListPage({
     console.error("Failed to load bookings:", bookingsError.message);
   }
 
-  // Look up customer names and bay names (filter out null customer_ids from guest bookings)
+  // Build bay map first (needed for modified_from enrichment below)
+  const bayMap: Record<string, string> = {};
+  if (bays) {
+    for (const b of bays) {
+      bayMap[b.id] = b.name;
+    }
+  }
+
+  // Resolve modified_from info (time, date, bay) for display
+  const modifiedFromIds = [
+    ...new Set(bookings?.map((b) => b.modified_from).filter(Boolean) ?? []),
+  ];
+  const modifiedFromInfoMap: Record<string, { start_time: string; end_time: string; date: string; bay_id: string }> = {};
+  if (modifiedFromIds.length > 0) {
+    const { data: originals } = await supabase
+      .from("bookings")
+      .select("id, start_time, end_time, date, bay_id")
+      .in("id", modifiedFromIds);
+    if (originals) {
+      for (const o of originals) {
+        modifiedFromInfoMap[o.id] = { start_time: o.start_time, end_time: o.end_time, date: o.date, bay_id: o.bay_id };
+      }
+    }
+  }
+
+  // Enrich bookings with modified_from_info
+  const enrichedBookings = bookings?.map((b) => {
+    const info = b.modified_from ? modifiedFromInfoMap[b.modified_from] ?? null : null;
+    return {
+      ...b,
+      modified_from_info: info ? {
+        startTime: info.start_time,
+        endTime: info.end_time,
+        date: info.date,
+        bayName: bayMap[info.bay_id] || "Facility",
+      } : null,
+    };
+  }) ?? [];
+
+  // Look up customer names (filter out null customer_ids from guest bookings)
   const customerIds = [
-    ...new Set(bookings?.map((b) => b.customer_id).filter(Boolean) ?? []),
+    ...new Set(enrichedBookings.map((b) => b.customer_id).filter(Boolean)),
   ];
   let customerMap: Record<string, { full_name: string | null; email: string }> =
     {};
@@ -111,16 +153,9 @@ export default async function BookingsListPage({
     }
   }
 
-  const bayMap: Record<string, string> = {};
-  if (bays) {
-    for (const b of bays) {
-      bayMap[b.id] = b.name;
-    }
-  }
-
   // Filter by customer search (name or email) — client-side since we join manually
   const search = params.q?.trim().toLowerCase();
-  let filtered = bookings ?? [];
+  let filtered = enrichedBookings;
   if (search) {
     filtered = filtered.filter((b) => {
       if (b.is_guest) {
@@ -136,6 +171,27 @@ export default async function BookingsListPage({
         (c.full_name && c.full_name.toLowerCase().includes(search))
       );
     });
+  }
+
+  // Look up old and new booking details for the modify toast
+  let toastOldLabel = "";
+  let toastNewLabel = "";
+  if (params.modified && params.old && params.new) {
+    const codes = [params.old, params.new];
+    const { data: toastBookings } = await supabase
+      .from("bookings")
+      .select("confirmation_code, start_time, end_time, date, bay_id")
+      .in("confirmation_code", codes);
+    if (toastBookings) {
+      for (const tb of toastBookings) {
+        const timeRange = `${formatTimeInZone(tb.start_time, org.timezone)} – ${formatTimeInZone(tb.end_time, org.timezone)}`;
+        const dateLabel = new Date(tb.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        const bayLabel = bayMap[tb.bay_id] || "Facility";
+        const label = `${timeRange}, ${dateLabel}, ${bayLabel}`;
+        if (tb.confirmation_code === params.old) toastOldLabel = label;
+        if (tb.confirmation_code === params.new) toastNewLabel = label;
+      }
+    }
   }
 
   async function cancelBooking(formData: FormData) {
@@ -212,6 +268,18 @@ export default async function BookingsListPage({
       {params.guest_booked && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
           Guest booking created successfully.{params.codes ? ` Confirmation: ${params.codes}` : ""}
+        </div>
+      )}
+      {params.modified && (
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400">
+          Booking modified successfully.{" "}
+          {toastOldLabel && toastNewLabel && (
+            <span>
+              <span className="font-semibold">{toastOldLabel}</span>
+              {" "}has been replaced with{" "}
+              <span className="font-semibold">{toastNewLabel}</span>
+            </span>
+          )}
         </div>
       )}
 
@@ -356,7 +424,7 @@ export default async function BookingsListPage({
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
           <div className="p-4 sm:p-6">
             <DailySchedule
-              bookings={bookings ?? []}
+              bookings={enrichedBookings}
               bays={bays ?? []}
               customerMap={customerMap}
               timezone={org.timezone}
