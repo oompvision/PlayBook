@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { requireSuperAdmin } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -129,8 +130,10 @@ export default async function OrgDetailPage({
 
     // Invite via Supabase Auth using service role client
     const serviceClient = createServiceClient();
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+    const headerStore = await headers();
+    const host = headerStore.get("host") || "localhost:3000";
+    const proto = headerStore.get("x-forwarded-proto") || "http";
+    const siteUrl = `${proto}://${host}`;
     const { data: authData, error: authError } =
       await serviceClient.auth.admin.inviteUserByEmail(email, {
         redirectTo: `${siteUrl}/auth/callback?next=/auth/admin-setup`,
