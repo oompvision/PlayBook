@@ -356,13 +356,13 @@ export function DailySchedule({
             }}
           >
             {/* Column headers */}
-            <div className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50/80 p-2 text-xs font-medium text-gray-500 backdrop-blur dark:border-white/[0.05] dark:bg-gray-900/80 dark:text-gray-400">
+            <div className="sticky top-0 z-40 border-b border-gray-100 bg-gray-50/80 p-2 text-xs font-medium text-gray-500 backdrop-blur dark:border-white/[0.05] dark:bg-gray-900/80 dark:text-gray-400">
               <Clock className="mx-auto h-4 w-4" />
             </div>
             {bays.map((bay) => (
               <div
                 key={bay.id}
-                className="sticky top-0 z-10 border-b border-l border-gray-100 bg-gray-50/80 p-2 text-center text-sm font-semibold text-gray-800 backdrop-blur dark:border-white/[0.05] dark:bg-gray-900/80 dark:text-white/90"
+                className="sticky top-0 z-40 border-b border-l border-gray-100 bg-gray-50/80 p-2 text-center text-sm font-semibold text-gray-800 backdrop-blur dark:border-white/[0.05] dark:bg-gray-900/80 dark:text-white/90"
               >
                 {bay.name}
               </div>
@@ -747,11 +747,9 @@ export function DailySchedule({
                   {/* Current time line */}
                   {nowInRange && (
                     <div
-                      className="absolute left-0 right-0 z-30 border-t-2 border-red-500"
+                      className="pointer-events-none absolute left-0 right-0 z-[5] border-t border-red-300 dark:border-red-400/50"
                       style={{ top: `${nowOffset}%` }}
-                    >
-                      <div className="absolute -top-1.5 -left-1 h-3 w-3 rounded-full bg-red-500" />
-                    </div>
+                    />
                   )}
                 </div>
               );
