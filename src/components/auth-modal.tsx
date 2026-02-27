@@ -70,6 +70,7 @@ export function AuthModal({ trigger }: AuthModalProps) {
       email: signUpEmail,
       password: signUpPassword,
       options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
         data: {
           full_name: signUpName,
           phone: signUpPhone || undefined,
