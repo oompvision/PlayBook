@@ -11,6 +11,7 @@ import { AuthModal } from "@/components/auth-modal";
 import { AvailabilityWidget } from "@/components/availability-widget";
 import { AdminLoginForm } from "@/components/admin-login-form";
 import { UserCircle } from "lucide-react";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 
 export default async function FacilityHomePage() {
   const slug = await getFacilitySlug();
@@ -120,6 +121,7 @@ export default async function FacilityHomePage() {
                   <span className="text-sm text-muted-foreground">
                     {auth.profile.email}
                   </span>
+                  <NotificationBell userId={auth.user.id} viewAllHref="/notifications" />
                   <Link
                     href="/account"
                     className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20"

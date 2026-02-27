@@ -2,6 +2,7 @@ import { GoogleGenAI, Type, type FunctionDeclaration, type Content, type Part } 
 import { createClient } from "@/lib/supabase/server";
 import { toTimestamp, getTodayInTimezone, formatTimeInZone } from "@/lib/utils";
 import { getAuthUser } from "@/lib/auth";
+import { createNotification, notifyOrgAdmins } from "@/lib/notifications";
 
 function getGenAI() {
   return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
@@ -513,6 +514,28 @@ async function executeCreateBooking(
     }
   }
 
+  // Fire booking notifications (non-blocking, server-side)
+  for (const b of results) {
+    const code = b.confirmation_code as string;
+    createNotification({
+      orgId: org.id,
+      recipientId: customerId,
+      recipientType: "customer",
+      type: "booking_confirmed",
+      title: "Booking Confirmed",
+      message: `${b.start_time} – ${b.end_time}, ${code}. Total: ${b.total_price}`,
+      link: "/my-bookings",
+      orgName: org.name,
+    }).catch(() => {});
+
+    notifyOrgAdmins(org.id, org.name, {
+      type: "booking_confirmed",
+      title: `New Booking: ${code}`,
+      message: `Chat booking: ${b.start_time} – ${b.end_time} (${b.total_price})`,
+      link: `/admin/bookings?q=${code}`,
+    }).catch(() => {});
+  }
+
   return {
     success: true,
     bookings: results,
@@ -558,6 +581,25 @@ async function executeCancelBooking(
   if (error) {
     return { error: `Cancellation failed: ${error.message}` };
   }
+
+  // Fire cancellation notifications (non-blocking)
+  createNotification({
+    orgId: org.id,
+    recipientId: customerId,
+    recipientType: "customer",
+    type: "booking_canceled",
+    title: "Booking Cancelled",
+    message: `Your booking ${args.confirmation_code} has been cancelled.`,
+    link: "/my-bookings",
+    orgName: org.name,
+  }).catch(() => {});
+
+  notifyOrgAdmins(org.id, org.name, {
+    type: "booking_canceled",
+    title: `Booking Cancelled: ${args.confirmation_code}`,
+    message: `Chat cancellation: ${args.confirmation_code}`,
+    link: `/admin/bookings?q=${args.confirmation_code}`,
+  }).catch(() => {});
 
   return {
     success: true,

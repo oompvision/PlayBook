@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { getFacilitySlug } from "@/lib/facility";
 import { ensureCustomerOrg } from "@/lib/auth";
+import { createNotification, notifyOrgAdmins } from "@/lib/notifications";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
@@ -9,6 +11,7 @@ import { getTodayInTimezone, formatTimeInZone } from "@/lib/utils";
 import { SignOutButton } from "@/components/sign-out-button";
 import { OrgHeader } from "@/components/org-header";
 import { MyBookingsList } from "@/components/my-bookings-list";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -131,6 +134,14 @@ export default async function MyBookingsPage({
     const supabase = await createClient();
     const bookingId = formData.get("booking_id") as string;
 
+    // Get booking details before cancelling (for notification)
+    const service = createServiceClient();
+    const { data: bookingInfo } = await service
+      .from("bookings")
+      .select("id, org_id, customer_id, bay_id, date, start_time, end_time, confirmation_code")
+      .eq("id", bookingId)
+      .single();
+
     const { error } = await supabase.rpc("cancel_booking", {
       p_booking_id: bookingId,
     });
@@ -140,6 +151,41 @@ export default async function MyBookingsPage({
         `/my-bookings?error=${encodeURIComponent(error.message)}`
       );
     }
+
+    // Send cancellation notifications (fire-and-forget)
+    if (bookingInfo) {
+      const { data: bookingOrg } = await service.from("organizations").select("name, timezone").eq("id", bookingInfo.org_id).single();
+      const { data: bookingBay } = await service.from("bays").select("name").eq("id", bookingInfo.bay_id).single();
+      const { data: customerProfile } = await service.from("profiles").select("email, full_name").eq("id", bookingInfo.customer_id).single();
+
+      const tz = bookingOrg?.timezone ?? "America/New_York";
+      const bayName = bookingBay?.name ?? "Facility";
+      const orgName = bookingOrg?.name ?? "EZBooker";
+      const timeStr = `${formatTimeInZone(bookingInfo.start_time, tz)} – ${formatTimeInZone(bookingInfo.end_time, tz)}`;
+      const dateStr = new Date(bookingInfo.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      const code = bookingInfo.confirmation_code;
+
+      createNotification({
+        orgId: bookingInfo.org_id,
+        recipientId: bookingInfo.customer_id,
+        recipientType: "customer",
+        type: "booking_canceled",
+        title: "Booking Cancelled",
+        message: `Your booking ${code} (${bayName}, ${dateStr}, ${timeStr}) has been cancelled.`,
+        link: "/my-bookings",
+        recipientEmail: customerProfile?.email,
+        recipientName: customerProfile?.full_name ?? undefined,
+        orgName,
+      }).catch(() => {});
+
+      notifyOrgAdmins(bookingInfo.org_id, orgName, {
+        type: "booking_canceled",
+        title: `Booking Cancelled: ${code}`,
+        message: `${customerProfile?.full_name || customerProfile?.email || "Customer"} cancelled ${bayName} — ${dateStr}, ${timeStr}`,
+        link: `/admin/bookings?q=${code}`,
+      }).catch(() => {});
+    }
+
     revalidatePath("/my-bookings");
     redirect("/my-bookings?cancelled=true");
   }
@@ -153,6 +199,7 @@ export default async function MyBookingsPage({
             <Link href="/">
               <Button>Book a Session</Button>
             </Link>
+            <NotificationBell userId={auth.profile.id} viewAllHref="/notifications" />
             <SignOutButton variant="outline" size="sm" className="" />
           </div>
         </div>

@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSidebar } from "@/context/sidebar-context";
 import { createClient } from "@/lib/supabase/client";
-import { Menu, X, Search, Bell, User, HelpCircle, BellRing, LogOut } from "lucide-react";
+import { Menu, X, Search, User, HelpCircle, BellRing, LogOut } from "lucide-react";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,7 +32,7 @@ export type AdminHeaderUser = {
   fullName: string | null;
 };
 
-export function AdminHeader({ user }: { user?: AdminHeaderUser }) {
+export function AdminHeader({ user, userId }: { user?: AdminHeaderUser; userId?: string }) {
   const { isMobileOpen, toggleMobileSidebar } = useSidebar();
   const searchRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -95,10 +96,9 @@ export function AdminHeader({ user }: { user?: AdminHeaderUser }) {
       {/* Right actions */}
       <div className="flex items-center gap-2">
         {/* Notifications */}
-        <button className="relative flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100">
-          <Bell className="h-5 w-5" />
-          <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-red-500" />
-        </button>
+        {userId && (
+          <NotificationBell userId={userId} viewAllHref="/admin/notifications" />
+        )}
 
         {/* User dropdown */}
         <DropdownMenu>
