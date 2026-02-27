@@ -51,6 +51,16 @@ export default async function BookingsListPage({
   }>;
 }) {
   const params = await searchParams;
+
+  // Backwards-compat: old notification links used ?q=PB-XXXXXX.
+  // Detect confirmation code pattern and treat as ?booking= instead.
+  const bookingCode =
+    params.booking ||
+    (params.q && /^PB-[A-Z0-9]{6}$/i.test(params.q.trim()) ? params.q.trim() : null);
+  // Only use q for customer search if it's not a confirmation code
+  const customerSearch =
+    params.q && bookingCode !== params.q?.trim() ? params.q : undefined;
+
   const org = await getOrg();
   if (!org) redirect("/");
 
@@ -157,7 +167,7 @@ export default async function BookingsListPage({
   }
 
   // Filter by customer search (name or email) — client-side since we join manually
-  const search = params.q?.trim().toLowerCase();
+  const search = customerSearch?.trim().toLowerCase();
   let filtered = enrichedBookings;
   if (search) {
     filtered = filtered.filter((b) => {
@@ -263,7 +273,7 @@ export default async function BookingsListPage({
   const today = getTodayInTimezone(org.timezone);
 
   // Check if any filters are active
-  const hasActiveFilters = params.from || params.to || (params.status && params.status !== "all") || params.bay || params.q;
+  const hasActiveFilters = params.from || params.to || (params.status && params.status !== "all") || params.bay || customerSearch;
 
   return (
     <div>
@@ -463,7 +473,7 @@ export default async function BookingsListPage({
             customerMap={customerMap}
             timezone={org.timezone}
             orgId={org.id}
-            initialBookingCode={params.booking}
+            initialBookingCode={bookingCode}
             cancelAction={cancelBooking}
           />
         </>
@@ -479,7 +489,7 @@ export default async function BookingsListPage({
               initialDate={today}
               cancelAction={cancelBooking}
               orgId={org.id}
-              initialBookingCode={params.booking}
+              initialBookingCode={bookingCode}
             />
           </div>
         </div>
