@@ -40,6 +40,7 @@ export default async function BookingsListPage({
     status?: string;
     bay?: string;
     q?: string;
+    booking?: string;
     cancelled?: string;
     guest_booked?: string;
     codes?: string;
@@ -50,6 +51,16 @@ export default async function BookingsListPage({
   }>;
 }) {
   const params = await searchParams;
+
+  // Backwards-compat: old notification links used ?q=PB-XXXXXX.
+  // Detect confirmation code pattern and treat as ?booking= instead.
+  const bookingCode =
+    params.booking ||
+    (params.q && /^PB-[A-Z0-9]{6}$/i.test(params.q.trim()) ? params.q.trim() : null);
+  // Only use q for customer search if it's not a confirmation code
+  const customerSearch =
+    params.q && bookingCode !== params.q?.trim() ? params.q : undefined;
+
   const org = await getOrg();
   if (!org) redirect("/");
 
@@ -156,7 +167,7 @@ export default async function BookingsListPage({
   }
 
   // Filter by customer search (name or email) — client-side since we join manually
-  const search = params.q?.trim().toLowerCase();
+  const search = customerSearch?.trim().toLowerCase();
   let filtered = enrichedBookings;
   if (search) {
     filtered = filtered.filter((b) => {
@@ -240,7 +251,7 @@ export default async function BookingsListPage({
           type: "booking_canceled",
           title: "Booking Cancelled",
           message: `Your booking ${code} (${bayName}, ${dateStr}, ${timeStr}) has been cancelled.`,
-          link: "/my-bookings",
+          link: `/my-bookings?booking=${code}`,
           recipientEmail: customerProfile?.email,
           recipientName: customerProfile?.full_name ?? undefined,
           orgName,
@@ -251,7 +262,7 @@ export default async function BookingsListPage({
         type: "booking_canceled",
         title: `Booking Cancelled: ${code}`,
         message: `${bookingInfo.is_guest ? bookingInfo.guest_name || "Guest" : "Customer"} booking ${bayName} — ${dateStr}, ${timeStr} was cancelled by admin`,
-        link: `/admin/bookings?q=${code}`,
+        link: `/admin/bookings?booking=${code}`,
       }).catch(() => {});
     }
 
@@ -262,19 +273,50 @@ export default async function BookingsListPage({
   const today = getTodayInTimezone(org.timezone);
 
   // Check if any filters are active
-  const hasActiveFilters = params.from || params.to || (params.status && params.status !== "all") || params.bay || params.q;
+  const hasActiveFilters = params.from || params.to || (params.status && params.status !== "all") || params.bay || customerSearch;
 
   return (
     <div>
       {/* Page Header */}
       <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
-            Bookings
-          </h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            View, filter, and manage all bookings.
-          </p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
+              Bookings
+            </h1>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              View, filter, and manage all bookings.
+            </p>
+          </div>
+          <div className="inline-flex self-start rounded-lg bg-gray-100 p-0.5 dark:bg-gray-900">
+            <a
+              href="/admin/bookings?view=list"
+              className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                activeView === "list"
+                  ? "bg-white text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white"
+                  : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              <List className="h-4 w-4" />
+              List View
+            </a>
+            <a
+              href="/admin/bookings?view=daily"
+              className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                activeView === "daily"
+                  ? "bg-white text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white"
+                  : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              <CalendarDays className="h-4 w-4" />
+              Daily View
+            </a>
+          </div>
+          {activeView === "list" && (
+            <span className="inline-flex self-start items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+              {filtered.length} result{filtered.length !== 1 ? "s" : ""}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <a
@@ -327,40 +369,6 @@ export default async function BookingsListPage({
           )}
         </div>
       )}
-
-      {/* View Tabs - TailAdmin segmented style */}
-      <div className="mb-6 flex items-center justify-between">
-        <div className="inline-flex rounded-lg bg-gray-100 p-0.5 dark:bg-gray-900">
-          <a
-            href="/admin/bookings?view=list"
-            className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              activeView === "list"
-                ? "bg-white text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white"
-                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            }`}
-          >
-            <List className="h-4 w-4" />
-            List View
-          </a>
-          <a
-            href="/admin/bookings?view=daily"
-            className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              activeView === "daily"
-                ? "bg-white text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white"
-                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            }`}
-          >
-            <CalendarDays className="h-4 w-4" />
-            Daily View
-          </a>
-        </div>
-
-        {activeView === "list" && (
-          <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-            {filtered.length} result{filtered.length !== 1 ? "s" : ""}
-          </span>
-        )}
-      </div>
 
       {activeView === "list" ? (
         <>
@@ -461,6 +469,8 @@ export default async function BookingsListPage({
             bayMap={bayMap}
             customerMap={customerMap}
             timezone={org.timezone}
+            orgId={org.id}
+            initialBookingCode={bookingCode}
             cancelAction={cancelBooking}
           />
         </>
@@ -475,6 +485,8 @@ export default async function BookingsListPage({
               timezone={org.timezone}
               initialDate={today}
               cancelAction={cancelBooking}
+              orgId={org.id}
+              initialBookingCode={bookingCode}
             />
           </div>
         </div>

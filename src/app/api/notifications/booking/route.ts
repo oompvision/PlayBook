@@ -113,7 +113,7 @@ export async function POST(request: Request) {
           type: "booking_confirmed",
           title: "Booking Confirmed",
           message: bookingDetails,
-          link: "/my-bookings",
+          link: `/my-bookings?booking=${code}`,
           recipientEmail: customerEmail,
           recipientName: customerName,
           orgName,
@@ -138,7 +138,7 @@ export async function POST(request: Request) {
           type: "guest_booking_created",
           title: `Guest Booking: ${code}`,
           message: `Guest invitation sent to ${booking.guest_email} for ${bayName} — ${dateStr}, ${timeStr}`,
-          link: `/admin/bookings?q=${code}`,
+          link: `/admin/bookings?booking=${code}`,
           metadata: { confirmation_code: code, guest_email: booking.guest_email },
         });
       }
@@ -148,7 +148,7 @@ export async function POST(request: Request) {
         type: "booking_confirmed",
         title: `New Booking: ${code}`,
         message: `${customerName} booked ${bayName} — ${dateStr}, ${timeStr} (${priceStr})`,
-        link: `/admin/bookings?q=${code}`,
+        link: `/admin/bookings?booking=${code}`,
         metadata: { confirmation_code: code, customer: customerName },
       });
     } else if (action === "canceled") {
@@ -161,7 +161,7 @@ export async function POST(request: Request) {
           type: "booking_canceled",
           title: "Booking Cancelled",
           message: `Your booking ${code} (${bayName}, ${dateStr}, ${timeStr}) has been cancelled.`,
-          link: "/my-bookings",
+          link: `/my-bookings?booking=${code}`,
           recipientEmail: customerEmail,
           recipientName: customerName,
           orgName,
@@ -174,7 +174,7 @@ export async function POST(request: Request) {
         type: "booking_canceled",
         title: `Booking Cancelled: ${code}`,
         message: `${customerName} cancelled ${bayName} — ${dateStr}, ${timeStr}`,
-        link: `/admin/bookings?q=${code}`,
+        link: `/admin/bookings?booking=${code}`,
         metadata: { confirmation_code: code, customer: customerName },
       });
     } else if (action === "modified") {
@@ -217,7 +217,7 @@ export async function POST(request: Request) {
           type: "booking_modified",
           title: "Booking Modified",
           message: `${oldDetails}${newDetails}`,
-          link: "/my-bookings",
+          link: `/my-bookings?booking=${code}`,
           recipientEmail: customerEmail,
           recipientName: customerName,
           orgName,
@@ -233,7 +233,7 @@ export async function POST(request: Request) {
         type: "booking_modified",
         title: `Booking Modified: ${code}`,
         message: `${customerName}: ${oldDetails}${newDetails}`,
-        link: `/admin/bookings?q=${code}`,
+        link: `/admin/bookings?booking=${code}`,
         metadata: {
           confirmation_code: code,
           old_confirmation_code: oldConfirmationCode,

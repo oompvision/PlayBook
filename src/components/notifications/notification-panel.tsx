@@ -70,9 +70,9 @@ export function NotificationPanel({
   const hasUnread = notifications.some((n) => !n.is_read);
 
   return (
-    <div className="flex flex-col">
+    <div className="flex max-h-[min(24rem,var(--radix-popover-content-available-height,24rem))] flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between border-b px-4 py-3">
         <h3 className="text-sm font-semibold text-gray-800">Notifications</h3>
         {hasUnread && (
           <button
@@ -85,7 +85,7 @@ export function NotificationPanel({
       </div>
 
       {/* List */}
-      <ScrollArea className="max-h-80">
+      <ScrollArea className="min-h-0 flex-1">
         {notifications.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <Bell className="mb-2 h-8 w-8 text-gray-300" />
@@ -135,7 +135,7 @@ export function NotificationPanel({
       </ScrollArea>
 
       {/* Footer */}
-      <div className="border-t px-4 py-2">
+      <div className="shrink-0 border-t px-4 py-2">
         <Link
           href={viewAllHref}
           onClick={onClose}

@@ -28,7 +28,7 @@ async function getOrg() {
 export default async function MyBookingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cancelled?: string; error?: string; success?: string; codes?: string; modified?: string; old?: string; new?: string }>;
+  searchParams: Promise<{ cancelled?: string; error?: string; success?: string; codes?: string; modified?: string; old?: string; new?: string; booking?: string }>;
 }) {
   const params = await searchParams;
   const slug = await getFacilitySlug();
@@ -172,7 +172,7 @@ export default async function MyBookingsPage({
         type: "booking_canceled",
         title: "Booking Cancelled",
         message: `Your booking ${code} (${bayName}, ${dateStr}, ${timeStr}) has been cancelled.`,
-        link: "/my-bookings",
+        link: `/my-bookings?booking=${code}`,
         recipientEmail: customerProfile?.email,
         recipientName: customerProfile?.full_name ?? undefined,
         orgName,
@@ -182,7 +182,7 @@ export default async function MyBookingsPage({
         type: "booking_canceled",
         title: `Booking Cancelled: ${code}`,
         message: `${customerProfile?.full_name || customerProfile?.email || "Customer"} cancelled ${bayName} — ${dateStr}, ${timeStr}`,
-        link: `/admin/bookings?q=${code}`,
+        link: `/admin/bookings?booking=${code}`,
       }).catch(() => {});
     }
 
@@ -250,6 +250,8 @@ export default async function MyBookingsPage({
           past={past}
           bayMap={bayMap}
           timezone={org.timezone}
+          orgId={org.id}
+          initialBookingCode={params.booking}
           cancelAction={cancelBooking}
         />
       </div>

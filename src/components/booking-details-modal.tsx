@@ -65,6 +65,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   cancelAction?: (formData: FormData) => Promise<void>;
+  notice?: string | null;
 };
 
 function formatTime(timestamp: string, timezone: string): string {
@@ -82,6 +83,7 @@ export function BookingDetailsModal({
   open,
   onOpenChange,
   cancelAction,
+  notice,
 }: Props) {
   const [slots, setSlots] = useState<SlotDetail[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -162,6 +164,11 @@ export function BookingDetailsModal({
         </DialogHeader>
 
         <div className="-mx-6 flex-1 space-y-4 overflow-y-auto px-6">
+          {notice && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+              {notice}
+            </div>
+          )}
           {/* Customer Info (admin only) */}
           {variant === "admin" && booking.customerName && (
             <div className="space-y-2 rounded-lg bg-muted/50 p-3">

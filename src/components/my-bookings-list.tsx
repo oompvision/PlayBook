@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 import {
   BookingDetailsModal,
   type BookingDetailData,
@@ -37,19 +38,151 @@ type Props = {
   past: Booking[];
   bayMap: Record<string, string>;
   timezone: string;
+  orgId: string;
+  initialBookingCode?: string | null;
   cancelAction: (formData: FormData) => Promise<void>;
 };
+
+function updateBookingUrl(code: string | null) {
+  const url = new URL(window.location.href);
+  if (code) {
+    url.searchParams.set("booking", code);
+  } else {
+    url.searchParams.delete("booking");
+  }
+  window.history.replaceState(null, "", url.toString());
+}
 
 export function MyBookingsList({
   upcoming,
   past,
   bayMap,
   timezone,
+  orgId,
+  initialBookingCode,
   cancelAction,
 }: Props) {
   const [selectedBooking, setSelectedBooking] =
     useState<BookingDetailData | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [filterNotice, setFilterNotice] = useState<string | null>(null);
+  const [autoOpenedCode, setAutoOpenedCode] = useState<string | null>(null);
+
+  const allBookings = [...upcoming, ...past];
+
+  // Fetch a booking independently by confirmation code
+  async function fetchBookingByCode(code: string): Promise<BookingDetailData | null> {
+    const supabase = createClient();
+    const { data: booking } = await supabase
+      .from("bookings")
+      .select(
+        "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, bay_id, created_at, modified_from"
+      )
+      .eq("org_id", orgId)
+      .eq("confirmation_code", code)
+      .single();
+
+    if (!booking) return null;
+
+    // Get bay name
+    let bayName = bayMap[booking.bay_id] ?? null;
+    if (!bayName) {
+      const { data: bay } = await supabase
+        .from("bays")
+        .select("name")
+        .eq("id", booking.bay_id)
+        .single();
+      bayName = bay?.name ?? "Facility";
+    }
+
+    // Get modified_from info
+    let modifiedFrom: ModifiedFromInfo | null = null;
+    if (booking.modified_from) {
+      const { data: original } = await supabase
+        .from("bookings")
+        .select("start_time, end_time, date, bay_id")
+        .eq("id", booking.modified_from)
+        .single();
+      if (original) {
+        let origBayName = bayMap[original.bay_id] ?? null;
+        if (!origBayName) {
+          const { data: origBay } = await supabase
+            .from("bays")
+            .select("name")
+            .eq("id", original.bay_id)
+            .single();
+          origBayName = origBay?.name ?? "Facility";
+        }
+        modifiedFrom = {
+          startTime: original.start_time,
+          endTime: original.end_time,
+          date: original.date,
+          bayName: origBayName,
+        };
+      }
+    }
+
+    const isUpcoming = booking.status === "confirmed" && booking.date >= new Date().toISOString().slice(0, 10);
+
+    return {
+      id: booking.id,
+      date: booking.date,
+      start_time: booking.start_time,
+      end_time: booking.end_time,
+      total_price_cents: booking.total_price_cents,
+      status: booking.status,
+      confirmation_code: booking.confirmation_code,
+      notes: booking.notes,
+      created_at: booking.created_at,
+      bayName,
+      canCancel: isUpcoming,
+      canModify: isUpcoming,
+      modifiedFrom,
+    };
+  }
+
+  // Auto-open booking from URL param (on mount or when prop changes via soft nav)
+  useEffect(() => {
+    if (!initialBookingCode) return;
+    if (autoOpenedCode === initialBookingCode) return;
+    setAutoOpenedCode(initialBookingCode);
+
+    const found = allBookings.find(
+      (b) => b.confirmation_code === initialBookingCode
+    );
+    if (found) {
+      const isUpcoming = upcoming.some((b) => b.id === found.id);
+      setSelectedBooking({
+        id: found.id,
+        date: found.date,
+        start_time: found.start_time,
+        end_time: found.end_time,
+        total_price_cents: found.total_price_cents,
+        status: found.status,
+        confirmation_code: found.confirmation_code,
+        notes: found.notes,
+        created_at: found.created_at,
+        bayName: bayMap[found.bay_id] || "Facility",
+        canCancel: isUpcoming,
+        canModify: isUpcoming,
+        modifiedFrom: found.modified_from_info || null,
+      });
+      setModalOpen(true);
+      return;
+    }
+
+    // Not found in current list — fetch independently
+    fetchBookingByCode(initialBookingCode).then((data) => {
+      if (data) {
+        setFilterNotice(
+          "Heads up — this booking was not found in your current bookings list."
+        );
+        setSelectedBooking(data);
+        setModalOpen(true);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialBookingCode, autoOpenedCode]);
 
   function openBooking(booking: Booking, canCancel: boolean) {
     setSelectedBooking({
@@ -67,7 +200,17 @@ export function MyBookingsList({
       canModify: canCancel, // Same conditions as cancel: upcoming + confirmed
       modifiedFrom: booking.modified_from_info || null,
     });
+    setFilterNotice(null);
     setModalOpen(true);
+    updateBookingUrl(booking.confirmation_code);
+  }
+
+  function handleOpenChange(open: boolean) {
+    setModalOpen(open);
+    if (!open) {
+      setFilterNotice(null);
+      updateBookingUrl(null);
+    }
   }
 
   return (
@@ -195,8 +338,9 @@ export function MyBookingsList({
         variant="customer"
         timezone={timezone}
         open={modalOpen}
-        onOpenChange={setModalOpen}
+        onOpenChange={handleOpenChange}
         cancelAction={cancelAction}
+        notice={filterNotice}
       />
     </>
   );

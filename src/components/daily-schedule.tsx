@@ -1,7 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { ChevronLeft, ChevronRight, Clock, Eye, EyeOff, X } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import {
+  BookingDetailsModal,
+  type BookingDetailData,
+} from "@/components/booking-details-modal";
 
 export interface DailyBooking {
   id: string;
@@ -27,6 +32,8 @@ export interface DailyScheduleProps {
   timezone: string;
   initialDate: string;
   cancelAction: (formData: FormData) => Promise<void>;
+  orgId: string;
+  initialBookingCode?: string | null;
 }
 
 function formatTime(timestamp: string, timezone: string): string {
@@ -104,12 +111,123 @@ export function DailySchedule({
   timezone,
   initialDate,
   cancelAction,
+  orgId,
+  initialBookingCode,
 }: DailyScheduleProps) {
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [showCancelled, setShowCancelled] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCancelledForId, setShowCancelledForId] = useState<string | null>(null);
   const [now, setNow] = useState(() => getNowInTimezone(timezone));
+
+  // URL-synced booking modal state (for navigating from notifications)
+  const [urlBooking, setUrlBooking] = useState<BookingDetailData | null>(null);
+  const [urlModalOpen, setUrlModalOpen] = useState(false);
+  const [autoOpenedCode, setAutoOpenedCode] = useState<string | null>(null);
+
+  // Build bay map for lookups
+  const bayMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const b of bays) map[b.id] = b.name;
+    return map;
+  }, [bays]);
+
+  // Fetch a booking independently by confirmation code
+  async function fetchBookingByCode(code: string): Promise<BookingDetailData | null> {
+    const supabase = createClient();
+    const { data: booking } = await supabase
+      .from("bookings")
+      .select(
+        "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, created_at, customer_id, bay_id, is_guest, guest_name, guest_email, guest_phone, modified_from"
+      )
+      .eq("org_id", orgId)
+      .eq("confirmation_code", code)
+      .single();
+
+    if (!booking) return null;
+
+    let bName = bayMap[booking.bay_id] ?? null;
+    if (!bName) {
+      const { data: bay } = await supabase.from("bays").select("name").eq("id", booking.bay_id).single();
+      bName = bay?.name ?? "Unknown";
+    }
+
+    let customerName = "Unknown";
+    let customerEmail: string | null = null;
+    if (booking.is_guest) {
+      customerName = booking.guest_name || "Guest";
+      customerEmail = booking.guest_email;
+    } else if (booking.customer_id) {
+      const cached = customerMap[booking.customer_id];
+      if (cached) {
+        customerName = cached.full_name || cached.email;
+        customerEmail = cached.full_name ? cached.email : null;
+      } else {
+        const { data: profile } = await supabase.from("profiles").select("full_name, email").eq("id", booking.customer_id).single();
+        if (profile) {
+          customerName = profile.full_name || profile.email;
+          customerEmail = profile.full_name ? profile.email : null;
+        }
+      }
+    }
+
+    let modifiedFrom: { startTime: string; endTime: string; date: string; bayName: string } | null = null;
+    if (booking.modified_from) {
+      const { data: original } = await supabase.from("bookings").select("start_time, end_time, date, bay_id").eq("id", booking.modified_from).single();
+      if (original) {
+        let origBayName = bayMap[original.bay_id] ?? "Facility";
+        if (!bayMap[original.bay_id]) {
+          const { data: origBay } = await supabase.from("bays").select("name").eq("id", original.bay_id).single();
+          if (origBay) origBayName = origBay.name;
+        }
+        modifiedFrom = { startTime: original.start_time, endTime: original.end_time, date: original.date, bayName: origBayName };
+      }
+    }
+
+    return {
+      id: booking.id,
+      date: booking.date,
+      start_time: booking.start_time,
+      end_time: booking.end_time,
+      total_price_cents: booking.total_price_cents,
+      status: booking.status,
+      confirmation_code: booking.confirmation_code,
+      notes: booking.notes,
+      created_at: booking.created_at,
+      bayName: bName,
+      canCancel: booking.status === "confirmed",
+      canModify: booking.status === "confirmed",
+      modifiedFrom,
+      customerName,
+      customerEmail,
+      isGuest: booking.is_guest,
+      guestPhone: booking.is_guest ? booking.guest_phone : null,
+    };
+  }
+
+  // Auto-open booking from URL param (on mount or when prop changes via soft nav)
+  useEffect(() => {
+    if (!initialBookingCode) return;
+    if (autoOpenedCode === initialBookingCode) return;
+    setAutoOpenedCode(initialBookingCode);
+
+    fetchBookingByCode(initialBookingCode).then((data) => {
+      if (data) {
+        setUrlBooking(data);
+        setUrlModalOpen(true);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialBookingCode, autoOpenedCode]);
+
+  function handleUrlModalClose(open: boolean) {
+    setUrlModalOpen(open);
+    if (!open) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("booking");
+      window.history.replaceState(null, "", url.toString());
+    }
+  }
 
   // Update current time every 2 minutes
   useEffect(() => {
@@ -128,28 +246,46 @@ export function DailySchedule({
     });
   }, [allBookings, selectedDate, showCancelled]);
 
-  // Compute dynamic time range from scheduled slots
-  const { startHour, endHour } = useMemo(() => {
-    if (dayBookings.length === 0) return { startHour: 8, endHour: 18 };
-    let min = 24;
-    let max = 0;
-    for (const b of dayBookings) {
-      const s = getHourInTimezone(b.start_time, timezone);
-      const e = getHourInTimezone(b.end_time, timezone);
-      if (s < min) min = s;
-      if (e > max) max = e;
-    }
-    return { startHour: Math.floor(min), endHour: Math.ceil(max) };
-  }, [dayBookings, timezone]);
-
-  const totalHours = endHour - startHour;
+  // Full 24-hour timeline
+  const startHour = 0;
+  const endHour = 24;
+  const totalHours = 24;
   const gridHeight = totalHours * HOUR_HEIGHT;
-  const hourLabels = Array.from({ length: totalHours + 1 }, (_, i) => startHour + i);
+  const hourLabels = Array.from({ length: totalHours + 1 }, (_, i) => i);
+
+  // Compute scroll target: 1 hour before earliest confirmed booking, or 9 AM
+  const scrollToHour = useMemo(() => {
+    const confirmed = allBookings.filter(
+      (b) => b.date === selectedDate && b.status !== "cancelled"
+    );
+    if (confirmed.length === 0) return 9;
+    let min = 24;
+    for (const b of confirmed) {
+      const s = getHourInTimezone(b.start_time, timezone);
+      if (s < min) min = s;
+    }
+    return Math.max(0, Math.floor(min) - 1);
+  }, [allBookings, selectedDate, timezone]);
+
+  // Scrollable container ref
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll on date change
+  const scrollToPosition = useCallback(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollToHour * HOUR_HEIGHT;
+    }
+  }, [scrollToHour]);
+
+  useEffect(() => {
+    // Small delay to ensure DOM is rendered
+    requestAnimationFrame(scrollToPosition);
+  }, [selectedDate, scrollToPosition]);
 
   // Current time line position
   const isToday = now.dateStr === selectedDate;
-  const nowInRange = isToday && now.hour >= startHour && now.hour <= endHour;
-  const nowOffset = nowInRange ? ((now.hour - startHour) / totalHours) * 100 : -1;
+  const nowInRange = isToday;
+  const nowOffset = nowInRange ? (now.hour / totalHours) * 100 : -1;
 
   return (
     <div>
@@ -208,13 +344,11 @@ export function DailySchedule({
         </div>
       </div>
 
-      {dayBookings.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-gray-200 bg-white px-5 py-16 text-center text-sm text-gray-500 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-400">
-          No bookings for this day.
-        </div>
-      ) : (
-        /* Timeline grid */
-        <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+      {/* Timeline grid — scrollable container */}
+      <div
+        ref={scrollRef}
+        className="mt-4 h-[calc(100vh-16rem)] overflow-y-auto overflow-x-auto rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]"
+      >
           <div
             className="grid"
             style={{
@@ -222,13 +356,13 @@ export function DailySchedule({
             }}
           >
             {/* Column headers */}
-            <div className="sticky top-0 z-10 border-b border-gray-100 bg-gray-50/80 p-2 text-xs font-medium text-gray-500 backdrop-blur dark:border-white/[0.05] dark:bg-gray-900/80 dark:text-gray-400">
+            <div className="sticky top-0 z-40 border-b border-gray-100 bg-gray-50/80 p-2 text-xs font-medium text-gray-500 backdrop-blur dark:border-white/[0.05] dark:bg-gray-900/80 dark:text-gray-400">
               <Clock className="mx-auto h-4 w-4" />
             </div>
             {bays.map((bay) => (
               <div
                 key={bay.id}
-                className="sticky top-0 z-10 border-b border-l border-gray-100 bg-gray-50/80 p-2 text-center text-sm font-semibold text-gray-800 backdrop-blur dark:border-white/[0.05] dark:bg-gray-900/80 dark:text-white/90"
+                className="sticky top-0 z-40 border-b border-l border-gray-100 bg-gray-50/80 p-2 text-center text-sm font-semibold text-gray-800 backdrop-blur dark:border-white/[0.05] dark:bg-gray-900/80 dark:text-white/90"
               >
                 {bay.name}
               </div>
@@ -613,18 +747,25 @@ export function DailySchedule({
                   {/* Current time line */}
                   {nowInRange && (
                     <div
-                      className="absolute left-0 right-0 z-30 border-t-2 border-red-500"
+                      className="pointer-events-none absolute left-0 right-0 z-[5] border-t border-red-300 dark:border-red-400/50"
                       style={{ top: `${nowOffset}%` }}
-                    >
-                      <div className="absolute -top-1.5 -left-1 h-3 w-3 rounded-full bg-red-500" />
-                    </div>
+                    />
                   )}
                 </div>
               );
             })}
           </div>
         </div>
-      )}
+
+      {/* URL-synced booking modal (for notification navigation) */}
+      <BookingDetailsModal
+        booking={urlBooking}
+        variant="admin"
+        timezone={timezone}
+        open={urlModalOpen}
+        onOpenChange={handleUrlModalClose}
+        cancelAction={cancelAction}
+      />
     </div>
   );
 }
