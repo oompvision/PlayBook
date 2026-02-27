@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { ChevronLeft, ChevronRight, Clock, Eye, EyeOff, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -246,28 +246,46 @@ export function DailySchedule({
     });
   }, [allBookings, selectedDate, showCancelled]);
 
-  // Compute dynamic time range from scheduled slots
-  const { startHour, endHour } = useMemo(() => {
-    if (dayBookings.length === 0) return { startHour: 8, endHour: 18 };
-    let min = 24;
-    let max = 0;
-    for (const b of dayBookings) {
-      const s = getHourInTimezone(b.start_time, timezone);
-      const e = getHourInTimezone(b.end_time, timezone);
-      if (s < min) min = s;
-      if (e > max) max = e;
-    }
-    return { startHour: Math.floor(min), endHour: Math.ceil(max) };
-  }, [dayBookings, timezone]);
-
-  const totalHours = endHour - startHour;
+  // Full 24-hour timeline
+  const startHour = 0;
+  const endHour = 24;
+  const totalHours = 24;
   const gridHeight = totalHours * HOUR_HEIGHT;
-  const hourLabels = Array.from({ length: totalHours + 1 }, (_, i) => startHour + i);
+  const hourLabels = Array.from({ length: totalHours + 1 }, (_, i) => i);
+
+  // Compute scroll target: 1 hour before earliest confirmed booking, or 9 AM
+  const scrollToHour = useMemo(() => {
+    const confirmed = allBookings.filter(
+      (b) => b.date === selectedDate && b.status !== "cancelled"
+    );
+    if (confirmed.length === 0) return 9;
+    let min = 24;
+    for (const b of confirmed) {
+      const s = getHourInTimezone(b.start_time, timezone);
+      if (s < min) min = s;
+    }
+    return Math.max(0, Math.floor(min) - 1);
+  }, [allBookings, selectedDate, timezone]);
+
+  // Scrollable container ref
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll on date change
+  const scrollToPosition = useCallback(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollToHour * HOUR_HEIGHT;
+    }
+  }, [scrollToHour]);
+
+  useEffect(() => {
+    // Small delay to ensure DOM is rendered
+    requestAnimationFrame(scrollToPosition);
+  }, [selectedDate, scrollToPosition]);
 
   // Current time line position
   const isToday = now.dateStr === selectedDate;
-  const nowInRange = isToday && now.hour >= startHour && now.hour <= endHour;
-  const nowOffset = nowInRange ? ((now.hour - startHour) / totalHours) * 100 : -1;
+  const nowInRange = isToday;
+  const nowOffset = nowInRange ? (now.hour / totalHours) * 100 : -1;
 
   return (
     <div>
@@ -326,13 +344,11 @@ export function DailySchedule({
         </div>
       </div>
 
-      {dayBookings.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-gray-200 bg-white px-5 py-16 text-center text-sm text-gray-500 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-400">
-          No bookings for this day.
-        </div>
-      ) : (
-        /* Timeline grid */
-        <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+      {/* Timeline grid — scrollable container */}
+      <div
+        ref={scrollRef}
+        className="mt-4 h-[calc(100vh-16rem)] overflow-y-auto overflow-x-auto rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]"
+      >
           <div
             className="grid"
             style={{
@@ -742,7 +758,6 @@ export function DailySchedule({
             })}
           </div>
         </div>
-      )}
 
       {/* URL-synced booking modal (for notification navigation) */}
       <BookingDetailsModal

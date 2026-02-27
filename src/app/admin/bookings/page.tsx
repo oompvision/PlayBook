@@ -279,13 +279,44 @@ export default async function BookingsListPage({
     <div>
       {/* Page Header */}
       <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
-            Bookings
-          </h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            View, filter, and manage all bookings.
-          </p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
+              Bookings
+            </h1>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              View, filter, and manage all bookings.
+            </p>
+          </div>
+          <div className="inline-flex self-start rounded-lg bg-gray-100 p-0.5 dark:bg-gray-900">
+            <a
+              href="/admin/bookings?view=list"
+              className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                activeView === "list"
+                  ? "bg-white text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white"
+                  : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              <List className="h-4 w-4" />
+              List View
+            </a>
+            <a
+              href="/admin/bookings?view=daily"
+              className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                activeView === "daily"
+                  ? "bg-white text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white"
+                  : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              }`}
+            >
+              <CalendarDays className="h-4 w-4" />
+              Daily View
+            </a>
+          </div>
+          {activeView === "list" && (
+            <span className="inline-flex self-start items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+              {filtered.length} result{filtered.length !== 1 ? "s" : ""}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <a
@@ -338,40 +369,6 @@ export default async function BookingsListPage({
           )}
         </div>
       )}
-
-      {/* View Tabs - TailAdmin segmented style */}
-      <div className="mb-6 flex items-center justify-between">
-        <div className="inline-flex rounded-lg bg-gray-100 p-0.5 dark:bg-gray-900">
-          <a
-            href="/admin/bookings?view=list"
-            className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              activeView === "list"
-                ? "bg-white text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white"
-                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            }`}
-          >
-            <List className="h-4 w-4" />
-            List View
-          </a>
-          <a
-            href="/admin/bookings?view=daily"
-            className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              activeView === "daily"
-                ? "bg-white text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white"
-                : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-            }`}
-          >
-            <CalendarDays className="h-4 w-4" />
-            Daily View
-          </a>
-        </div>
-
-        {activeView === "list" && (
-          <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
-            {filtered.length} result{filtered.length !== 1 ? "s" : ""}
-          </span>
-        )}
-      </div>
 
       {activeView === "list" ? (
         <>
