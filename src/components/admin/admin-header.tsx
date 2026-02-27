@@ -1,12 +1,40 @@
 "use client";
 
 import React, { useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useSidebar } from "@/context/sidebar-context";
-import { Menu, X, Search, Bell } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { Menu, X, Search, Bell, User, HelpCircle, BellRing, LogOut } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-export function AdminHeader() {
+function getInitials(name: string | null, email: string): string {
+  if (name) {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return parts[0][0].toUpperCase();
+  }
+  return email[0].toUpperCase();
+}
+
+export type AdminHeaderUser = {
+  email: string;
+  fullName: string | null;
+};
+
+export function AdminHeader({ user }: { user?: AdminHeaderUser }) {
   const { isMobileOpen, toggleMobileSidebar } = useSidebar();
   const searchRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -18,6 +46,17 @@ export function AdminHeader() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  async function handleSignOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/");
+    router.refresh();
+  }
+
+  const initials = user ? getInitials(user.fullName, user.email) : "?";
+  const displayName = user?.fullName || "Admin";
+  const displayEmail = user?.email || "";
 
   return (
     <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-gray-200 bg-white px-4 lg:px-6">
@@ -61,10 +100,49 @@ export function AdminHeader() {
           <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-red-500" />
         </button>
 
-        {/* User avatar */}
-        <button className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-900 text-sm font-medium text-white">
-          A
-        </button>
+        {/* User dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-900 text-sm font-medium text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-2"
+              aria-label="Open user menu"
+            >
+              {initials}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel className="font-normal">
+              <div className="flex flex-col space-y-1">
+                <p className="text-sm font-medium leading-none">{displayName}</p>
+                <p className="text-xs leading-none text-muted-foreground">{displayEmail}</p>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link href="/admin/profile" className="cursor-pointer">
+                <User className="mr-2 h-4 w-4" />
+                Profile
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/admin/notifications" className="cursor-pointer">
+                <BellRing className="mr-2 h-4 w-4" />
+                Notifications
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/admin/help" className="cursor-pointer">
+                <HelpCircle className="mr-2 h-4 w-4" />
+                Help
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleSignOut} className="cursor-pointer text-red-600 focus:text-red-600">
+              <LogOut className="mr-2 h-4 w-4" />
+              Sign out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   );

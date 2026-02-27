@@ -35,7 +35,13 @@ export default async function AdminLayout({
         <AdminSidebar slug={slug} />
         <AdminBackdrop />
         <div className="lg:ml-[280px]">
-          <AdminHeader />
+          <AdminHeader
+            user={
+              auth
+                ? { email: auth.user.email, fullName: auth.profile.full_name }
+                : undefined
+            }
+          />
           <main className="p-4 md:p-6">{children}</main>
         </div>
       </div>
