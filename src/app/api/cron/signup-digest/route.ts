@@ -3,7 +3,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { notifyOrgAdmins } from "@/lib/notifications";
 
 /**
- * Batched signup digest — runs via Vercel Cron at 7:00 AM/PM UTC.
+ * Batched signup digest — runs daily via Vercel Cron at 7:00 AM UTC.
  * Groups pending signups by org and sends a single summary notification
  * to each org's admin(s).
  */

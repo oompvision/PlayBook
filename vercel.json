@@ -2,11 +2,11 @@
   "crons": [
     {
       "path": "/api/cron/signup-digest",
-      "schedule": "0 7,19 * * *"
+      "schedule": "0 7 * * *"
     },
     {
       "path": "/api/cron/booking-reminders",
-      "schedule": "0 * * * *"
+      "schedule": "0 8 * * *"
     }
   ]
 }

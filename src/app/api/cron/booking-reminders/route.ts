@@ -4,9 +4,10 @@ import { createNotification } from "@/lib/notifications";
 import { formatTimeInZone } from "@/lib/utils";
 
 /**
- * Hourly cron job for booking reminders:
- * 1. 48-hour booking reminder to customers
- * 2. 24-hour cancellation window closed notice
+ * Daily cron job for booking reminders (runs once at 8 AM UTC):
+ * 1. 48-hour booking reminder to customers (checks 24–72h window)
+ * 2. 24-hour cancellation window closed notice (checks 0–48h window)
+ * Wide windows ensure nothing is missed with daily execution.
  */
 export async function GET(request: Request) {
   const authHeader = request.headers.get("authorization");
@@ -20,9 +21,9 @@ export async function GET(request: Request) {
   let cancelWindowSent = 0;
 
   // ── 48-hour reminder ──────────────────────────────────────
-  // Query bookings starting in 47-49 hours from now
-  const hour47 = new Date(now.getTime() + 47 * 60 * 60 * 1000).toISOString();
-  const hour49 = new Date(now.getTime() + 49 * 60 * 60 * 1000).toISOString();
+  // Query bookings starting in 24-72 hours (wide window for daily cron)
+  const hour24 = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+  const hour72 = new Date(now.getTime() + 72 * 60 * 60 * 1000).toISOString();
 
   const { data: upcoming48 } = await supabase
     .from("bookings")
@@ -32,8 +33,8 @@ export async function GET(request: Request) {
     .eq("status", "confirmed")
     .eq("is_guest", false)
     .is("reminder_48hr_sent_at", null)
-    .gte("start_time", hour47)
-    .lte("start_time", hour49);
+    .gte("start_time", hour24)
+    .lte("start_time", hour72);
 
   if (upcoming48 && upcoming48.length > 0) {
     for (const b of upcoming48) {
@@ -88,9 +89,9 @@ export async function GET(request: Request) {
   }
 
   // ── 24-hour cancellation window closed ─────────────────────
-  // Query bookings starting in 23-25 hours from now
-  const hour23 = new Date(now.getTime() + 23 * 60 * 60 * 1000).toISOString();
-  const hour25 = new Date(now.getTime() + 25 * 60 * 60 * 1000).toISOString();
+  // Query bookings starting in 0-48 hours (wide window for daily cron)
+  const hour0 = now.toISOString();
+  const hour48 = new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString();
 
   const { data: upcoming24 } = await supabase
     .from("bookings")
@@ -100,8 +101,8 @@ export async function GET(request: Request) {
     .eq("status", "confirmed")
     .eq("is_guest", false)
     .is("cancel_window_notified_at", null)
-    .gte("start_time", hour23)
-    .lte("start_time", hour25);
+    .gte("start_time", hour0)
+    .lte("start_time", hour48);
 
   if (upcoming24 && upcoming24.length > 0) {
     for (const b of upcoming24) {
