@@ -65,13 +65,27 @@ export async function GET(request: Request) {
         { weekday: "short", month: "short", day: "numeric" }
       );
 
+      // Compute cancellation deadline (24h before booking start)
+      const cancelDeadline = new Date(new Date(b.start_time).getTime() - 24 * 60 * 60 * 1000);
+      const cancelDateStr = cancelDeadline.toLocaleDateString("en-US", {
+        timeZone: tz,
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+      const cancelTimeStr = cancelDeadline.toLocaleTimeString("en-US", {
+        timeZone: tz,
+        hour: "numeric",
+        minute: "2-digit",
+      });
+
       await createNotification({
         orgId: b.org_id,
         recipientId: b.customer_id,
         recipientType: "customer",
         type: "booking_reminder_48hr",
         title: "Upcoming Booking Reminder",
-        message: `Your booking at ${bayName} is in 2 days: ${dateStr}, ${timeStr}. Confirmation: ${b.confirmation_code}`,
+        message: `Your booking at ${bayName} is on ${dateStr}, ${timeStr}. Confirmation: ${b.confirmation_code}. Free cancellation until ${cancelDateStr} at ${cancelTimeStr}.`,
         link: "/my-bookings",
         recipientEmail: profile?.email,
         recipientName: profile?.full_name ?? undefined,
@@ -139,7 +153,7 @@ export async function GET(request: Request) {
         recipientType: "customer",
         type: "cancellation_window_closed",
         title: "Cancellation Window Closed",
-        message: `The free cancellation period for your booking has ended. ${bayName} — ${dateStr}, ${timeStr} (${b.confirmation_code})`,
+        message: `The free cancellation window for your booking at ${bayName} on ${dateStr}, ${timeStr} has closed. Confirmation: ${b.confirmation_code}.`,
         link: "/my-bookings",
         recipientEmail: profile?.email,
         recipientName: profile?.full_name ?? undefined,
