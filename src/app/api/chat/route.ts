@@ -524,7 +524,7 @@ async function executeCreateBooking(
       type: "booking_confirmed",
       title: "Booking Confirmed",
       message: `${b.start_time} – ${b.end_time}, ${code}. Total: ${b.total_price}`,
-      link: "/my-bookings",
+      link: `/my-bookings?booking=${code}`,
       orgName: org.name,
     }).catch(() => {});
 
@@ -532,7 +532,7 @@ async function executeCreateBooking(
       type: "booking_confirmed",
       title: `New Booking: ${code}`,
       message: `Chat booking: ${b.start_time} – ${b.end_time} (${b.total_price})`,
-      link: `/admin/bookings?q=${code}`,
+      link: `/admin/bookings?booking=${code}`,
     }).catch(() => {});
   }
 
@@ -590,7 +590,7 @@ async function executeCancelBooking(
     type: "booking_canceled",
     title: "Booking Cancelled",
     message: `Your booking ${args.confirmation_code} has been cancelled.`,
-    link: "/my-bookings",
+    link: `/my-bookings?booking=${args.confirmation_code}`,
     orgName: org.name,
   }).catch(() => {});
 
@@ -598,7 +598,7 @@ async function executeCancelBooking(
     type: "booking_canceled",
     title: `Booking Cancelled: ${args.confirmation_code}`,
     message: `Chat cancellation: ${args.confirmation_code}`,
-    link: `/admin/bookings?q=${args.confirmation_code}`,
+    link: `/admin/bookings?booking=${args.confirmation_code}`,
   }).catch(() => {});
 
   return {

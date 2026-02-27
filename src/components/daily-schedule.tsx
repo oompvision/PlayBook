@@ -1,7 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { ChevronLeft, ChevronRight, Clock, Eye, EyeOff, X } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import {
+  BookingDetailsModal,
+  type BookingDetailData,
+} from "@/components/booking-details-modal";
 
 export interface DailyBooking {
   id: string;
@@ -27,6 +32,8 @@ export interface DailyScheduleProps {
   timezone: string;
   initialDate: string;
   cancelAction: (formData: FormData) => Promise<void>;
+  orgId: string;
+  initialBookingCode?: string | null;
 }
 
 function formatTime(timestamp: string, timezone: string): string {
@@ -104,12 +111,122 @@ export function DailySchedule({
   timezone,
   initialDate,
   cancelAction,
+  orgId,
+  initialBookingCode,
 }: DailyScheduleProps) {
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [showCancelled, setShowCancelled] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCancelledForId, setShowCancelledForId] = useState<string | null>(null);
   const [now, setNow] = useState(() => getNowInTimezone(timezone));
+
+  // URL-synced booking modal state (for navigating from notifications)
+  const [urlBooking, setUrlBooking] = useState<BookingDetailData | null>(null);
+  const [urlModalOpen, setUrlModalOpen] = useState(false);
+  const hasInitialized = useRef(false);
+
+  // Build bay map for lookups
+  const bayMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const b of bays) map[b.id] = b.name;
+    return map;
+  }, [bays]);
+
+  // Fetch a booking independently by confirmation code
+  async function fetchBookingByCode(code: string): Promise<BookingDetailData | null> {
+    const supabase = createClient();
+    const { data: booking } = await supabase
+      .from("bookings")
+      .select(
+        "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, created_at, customer_id, bay_id, is_guest, guest_name, guest_email, guest_phone, modified_from"
+      )
+      .eq("org_id", orgId)
+      .eq("confirmation_code", code)
+      .single();
+
+    if (!booking) return null;
+
+    let bName = bayMap[booking.bay_id] ?? null;
+    if (!bName) {
+      const { data: bay } = await supabase.from("bays").select("name").eq("id", booking.bay_id).single();
+      bName = bay?.name ?? "Unknown";
+    }
+
+    let customerName = "Unknown";
+    let customerEmail: string | null = null;
+    if (booking.is_guest) {
+      customerName = booking.guest_name || "Guest";
+      customerEmail = booking.guest_email;
+    } else if (booking.customer_id) {
+      const cached = customerMap[booking.customer_id];
+      if (cached) {
+        customerName = cached.full_name || cached.email;
+        customerEmail = cached.full_name ? cached.email : null;
+      } else {
+        const { data: profile } = await supabase.from("profiles").select("full_name, email").eq("id", booking.customer_id).single();
+        if (profile) {
+          customerName = profile.full_name || profile.email;
+          customerEmail = profile.full_name ? profile.email : null;
+        }
+      }
+    }
+
+    let modifiedFrom: { startTime: string; endTime: string; date: string; bayName: string } | null = null;
+    if (booking.modified_from) {
+      const { data: original } = await supabase.from("bookings").select("start_time, end_time, date, bay_id").eq("id", booking.modified_from).single();
+      if (original) {
+        let origBayName = bayMap[original.bay_id] ?? "Facility";
+        if (!bayMap[original.bay_id]) {
+          const { data: origBay } = await supabase.from("bays").select("name").eq("id", original.bay_id).single();
+          if (origBay) origBayName = origBay.name;
+        }
+        modifiedFrom = { startTime: original.start_time, endTime: original.end_time, date: original.date, bayName: origBayName };
+      }
+    }
+
+    return {
+      id: booking.id,
+      date: booking.date,
+      start_time: booking.start_time,
+      end_time: booking.end_time,
+      total_price_cents: booking.total_price_cents,
+      status: booking.status,
+      confirmation_code: booking.confirmation_code,
+      notes: booking.notes,
+      created_at: booking.created_at,
+      bayName: bName,
+      canCancel: booking.status === "confirmed",
+      canModify: booking.status === "confirmed",
+      modifiedFrom,
+      customerName,
+      customerEmail,
+      isGuest: booking.is_guest,
+      guestPhone: booking.is_guest ? booking.guest_phone : null,
+    };
+  }
+
+  // Auto-open booking from URL param on mount
+  useEffect(() => {
+    if (hasInitialized.current || !initialBookingCode) return;
+    hasInitialized.current = true;
+
+    fetchBookingByCode(initialBookingCode).then((data) => {
+      if (data) {
+        setUrlBooking(data);
+        setUrlModalOpen(true);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialBookingCode]);
+
+  function handleUrlModalClose(open: boolean) {
+    setUrlModalOpen(open);
+    if (!open) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("booking");
+      window.history.replaceState(null, "", url.toString());
+    }
+  }
 
   // Update current time every 2 minutes
   useEffect(() => {
@@ -625,6 +742,16 @@ export function DailySchedule({
           </div>
         </div>
       )}
+
+      {/* URL-synced booking modal (for notification navigation) */}
+      <BookingDetailsModal
+        booking={urlBooking}
+        variant="admin"
+        timezone={timezone}
+        open={urlModalOpen}
+        onOpenChange={handleUrlModalClose}
+        cancelAction={cancelAction}
+      />
     </div>
   );
 }

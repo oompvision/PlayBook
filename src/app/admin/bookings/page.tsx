@@ -40,6 +40,7 @@ export default async function BookingsListPage({
     status?: string;
     bay?: string;
     q?: string;
+    booking?: string;
     cancelled?: string;
     guest_booked?: string;
     codes?: string;
@@ -240,7 +241,7 @@ export default async function BookingsListPage({
           type: "booking_canceled",
           title: "Booking Cancelled",
           message: `Your booking ${code} (${bayName}, ${dateStr}, ${timeStr}) has been cancelled.`,
-          link: "/my-bookings",
+          link: `/my-bookings?booking=${code}`,
           recipientEmail: customerProfile?.email,
           recipientName: customerProfile?.full_name ?? undefined,
           orgName,
@@ -251,7 +252,7 @@ export default async function BookingsListPage({
         type: "booking_canceled",
         title: `Booking Cancelled: ${code}`,
         message: `${bookingInfo.is_guest ? bookingInfo.guest_name || "Guest" : "Customer"} booking ${bayName} — ${dateStr}, ${timeStr} was cancelled by admin`,
-        link: `/admin/bookings?q=${code}`,
+        link: `/admin/bookings?booking=${code}`,
       }).catch(() => {});
     }
 
@@ -461,6 +462,8 @@ export default async function BookingsListPage({
             bayMap={bayMap}
             customerMap={customerMap}
             timezone={org.timezone}
+            orgId={org.id}
+            initialBookingCode={params.booking}
             cancelAction={cancelBooking}
           />
         </>
@@ -475,6 +478,8 @@ export default async function BookingsListPage({
               timezone={org.timezone}
               initialDate={today}
               cancelAction={cancelBooking}
+              orgId={org.id}
+              initialBookingCode={params.booking}
             />
           </div>
         </div>

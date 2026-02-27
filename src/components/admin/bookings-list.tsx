@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { createClient } from "@/lib/supabase/client";
 import {
   BookingDetailsModal,
   type BookingDetailData,
@@ -40,6 +41,8 @@ type Props = {
   bayMap: Record<string, string>;
   customerMap: Record<string, { full_name: string | null; email: string }>;
   timezone: string;
+  orgId: string;
+  initialBookingCode?: string | null;
   cancelAction: (formData: FormData) => Promise<void>;
 };
 
@@ -62,16 +65,174 @@ function getCustomerDisplay(
   };
 }
 
+function updateBookingUrl(code: string | null) {
+  const url = new URL(window.location.href);
+  if (code) {
+    url.searchParams.set("booking", code);
+  } else {
+    url.searchParams.delete("booking");
+  }
+  window.history.replaceState(null, "", url.toString());
+}
+
 export function AdminBookingsList({
   bookings,
   bayMap,
   customerMap,
   timezone,
+  orgId,
+  initialBookingCode,
   cancelAction,
 }: Props) {
   const [selectedBooking, setSelectedBooking] =
     useState<BookingDetailData | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [filterNotice, setFilterNotice] = useState<string | null>(null);
+  const hasInitialized = useRef(false);
+
+  // Fetch a booking independently by confirmation code (when not in filtered list)
+  async function fetchBookingByCode(code: string): Promise<BookingDetailData | null> {
+    const supabase = createClient();
+    const { data: booking } = await supabase
+      .from("bookings")
+      .select(
+        "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, created_at, customer_id, bay_id, is_guest, guest_name, guest_email, guest_phone, modified_from"
+      )
+      .eq("org_id", orgId)
+      .eq("confirmation_code", code)
+      .single();
+
+    if (!booking) return null;
+
+    // Get bay name
+    let bayName = bayMap[booking.bay_id] ?? null;
+    if (!bayName) {
+      const { data: bay } = await supabase
+        .from("bays")
+        .select("name")
+        .eq("id", booking.bay_id)
+        .single();
+      bayName = bay?.name ?? "Unknown";
+    }
+
+    // Get customer info
+    let customerName = "Unknown";
+    let customerEmail: string | null = null;
+    if (booking.is_guest) {
+      customerName = booking.guest_name || "Guest";
+      customerEmail = booking.guest_email;
+    } else if (booking.customer_id) {
+      const cached = customerMap[booking.customer_id];
+      if (cached) {
+        customerName = cached.full_name || cached.email;
+        customerEmail = cached.full_name ? cached.email : null;
+      } else {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("full_name, email")
+          .eq("id", booking.customer_id)
+          .single();
+        if (profile) {
+          customerName = profile.full_name || profile.email;
+          customerEmail = profile.full_name ? profile.email : null;
+        }
+      }
+    }
+
+    // Get modified_from info
+    let modifiedFrom: ModifiedFromInfo | null = null;
+    if (booking.modified_from) {
+      const { data: original } = await supabase
+        .from("bookings")
+        .select("start_time, end_time, date, bay_id")
+        .eq("id", booking.modified_from)
+        .single();
+      if (original) {
+        let origBayName = bayMap[original.bay_id] ?? null;
+        if (!origBayName) {
+          const { data: origBay } = await supabase
+            .from("bays")
+            .select("name")
+            .eq("id", original.bay_id)
+            .single();
+          origBayName = origBay?.name ?? "Facility";
+        }
+        modifiedFrom = {
+          startTime: original.start_time,
+          endTime: original.end_time,
+          date: original.date,
+          bayName: origBayName,
+        };
+      }
+    }
+
+    return {
+      id: booking.id,
+      date: booking.date,
+      start_time: booking.start_time,
+      end_time: booking.end_time,
+      total_price_cents: booking.total_price_cents,
+      status: booking.status,
+      confirmation_code: booking.confirmation_code,
+      notes: booking.notes,
+      created_at: booking.created_at,
+      bayName,
+      canCancel: booking.status === "confirmed",
+      canModify: booking.status === "confirmed",
+      modifiedFrom,
+      customerName,
+      customerEmail,
+      isGuest: booking.is_guest,
+      guestPhone: booking.is_guest ? booking.guest_phone : null,
+    };
+  }
+
+  // Auto-open booking from URL param on mount
+  useEffect(() => {
+    if (hasInitialized.current || !initialBookingCode) return;
+    hasInitialized.current = true;
+
+    // Check if the booking is in the current filtered list
+    const found = bookings.find(
+      (b) => b.confirmation_code === initialBookingCode
+    );
+    if (found) {
+      const display = getCustomerDisplay(found, customerMap);
+      setSelectedBooking({
+        id: found.id,
+        date: found.date,
+        start_time: found.start_time,
+        end_time: found.end_time,
+        total_price_cents: found.total_price_cents,
+        status: found.status,
+        confirmation_code: found.confirmation_code,
+        notes: found.notes,
+        created_at: found.created_at,
+        bayName: bayMap[found.bay_id] ?? "Unknown",
+        canCancel: found.status === "confirmed",
+        canModify: found.status === "confirmed",
+        modifiedFrom: found.modified_from_info || null,
+        customerName: display.name,
+        customerEmail: display.email,
+        isGuest: display.isGuest,
+        guestPhone: found.is_guest ? found.guest_phone : null,
+      });
+      setModalOpen(true);
+      return;
+    }
+
+    // Not in current filtered results — fetch independently
+    fetchBookingByCode(initialBookingCode).then((data) => {
+      if (data) {
+        setFilterNotice(
+          "Heads up — this booking is not included in your current filtered results."
+        );
+        setSelectedBooking(data);
+        setModalOpen(true);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialBookingCode]);
 
   function openBooking(booking: Booking) {
     const display = getCustomerDisplay(booking, customerMap);
@@ -94,7 +255,17 @@ export function AdminBookingsList({
       isGuest: display.isGuest,
       guestPhone: booking.is_guest ? booking.guest_phone : null,
     });
+    setFilterNotice(null);
     setModalOpen(true);
+    updateBookingUrl(booking.confirmation_code);
+  }
+
+  function handleOpenChange(open: boolean) {
+    setModalOpen(open);
+    if (!open) {
+      setFilterNotice(null);
+      updateBookingUrl(null);
+    }
   }
 
   return (
@@ -286,8 +457,9 @@ export function AdminBookingsList({
         variant="admin"
         timezone={timezone}
         open={modalOpen}
-        onOpenChange={setModalOpen}
+        onOpenChange={handleOpenChange}
         cancelAction={cancelAction}
+        notice={filterNotice}
       />
     </>
   );
