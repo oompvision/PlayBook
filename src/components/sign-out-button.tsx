@@ -1,7 +1,3 @@
-"use client";
-
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 
 export function SignOutButton({
@@ -13,23 +9,16 @@ export function SignOutButton({
   size?: "sm" | "default" | "lg" | "icon";
   className?: string;
 } = {}) {
-  const router = useRouter();
-
-  async function handleSignOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/");
-    router.refresh();
-  }
-
   return (
-    <Button
-      variant={variant}
-      size={size}
-      className={className}
-      onClick={handleSignOut}
-    >
-      Sign Out
-    </Button>
+    <form action="/auth/signout" method="POST">
+      <Button
+        type="submit"
+        variant={variant}
+        size={size}
+        className={className}
+      >
+        Sign Out
+      </Button>
+    </form>
   );
 }
