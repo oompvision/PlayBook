@@ -210,6 +210,18 @@ export function AvailabilityWidget({
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const isModify = mode === "modify";
+
+  // Fire-and-forget notification to server (non-blocking)
+  function fireNotification(
+    action: "confirmed" | "canceled" | "modified",
+    opts: { bookingId?: string; confirmationCode?: string; oldConfirmationCode?: string }
+  ) {
+    fetch("/api/notifications/booking", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, orgId, ...opts }),
+    }).catch(() => {});
+  }
   const [selectedDate, setSelectedDate] = useState(
     isModify && originalBooking ? originalBooking.date : todayStr
   );
@@ -688,6 +700,14 @@ export function AvailabilityWidget({
       (r: { booking_id: string }) => r.booking_id
     );
 
+    // Trigger booking notifications (fire-and-forget)
+    for (const br of bookingResults) {
+      fireNotification("confirmed", {
+        bookingId: br.booking_id,
+        confirmationCode: br.confirmation_code,
+      });
+    }
+
     // Detect if mobile (matches the lg: breakpoint used in layout)
     const isMobile = window.innerWidth < 1024;
 
@@ -765,6 +785,14 @@ export function AvailabilityWidget({
       (r: { confirmation_code: string }) => r.confirmation_code
     );
 
+    // Trigger guest booking notifications (fire-and-forget)
+    for (const br of bookingResults) {
+      fireNotification("confirmed", {
+        bookingId: br.booking_id,
+        confirmationCode: br.confirmation_code,
+      });
+    }
+
     // Redirect back to admin bookings with success message
     router.push(`/admin/bookings?guest_booked=true&codes=${codes.join(",")}`);
   }
@@ -812,6 +840,12 @@ export function AvailabilityWidget({
       old_confirmation_code: string;
     };
 
+    // Trigger modification notification (fire-and-forget)
+    fireNotification("modified", {
+      confirmationCode: result.confirmation_code,
+      oldConfirmationCode: result.old_confirmation_code,
+    });
+
     const redirectBase = modifyRedirectBase || "/my-bookings";
     const facilityParam = facilitySlug ? `&facility=${facilitySlug}` : "";
     router.push(
@@ -824,6 +858,9 @@ export function AvailabilityWidget({
     const supabase = createClient();
     const { error } = await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
     if (!error) {
+      // Trigger cancellation notification (fire-and-forget)
+      fireNotification("canceled", { bookingId });
+
       setBookings((prev) => prev.filter((b) => b.id !== bookingId));
       setExpandedBookingId(null);
       // Refresh time groups in case cancellation freed up availability

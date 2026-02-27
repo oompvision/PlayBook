@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { getFacilitySlug } from "@/lib/facility";
 import { requireAdmin } from "@/lib/auth";
+import { createNotification, notifyOrgAdmins } from "@/lib/notifications";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getTodayInTimezone, formatTimeInZone } from "@/lib/utils";
@@ -201,6 +203,14 @@ export default async function BookingsListPage({
     const supabase = await createClient();
     const bookingId = formData.get("booking_id") as string;
 
+    // Get booking details before cancelling (for notification)
+    const service = createServiceClient();
+    const { data: bookingInfo } = await service
+      .from("bookings")
+      .select("id, org_id, customer_id, bay_id, date, start_time, end_time, confirmation_code, is_guest, guest_name, guest_email")
+      .eq("id", bookingId)
+      .single();
+
     const { error } = await supabase.rpc("cancel_booking", {
       p_booking_id: bookingId,
     });
@@ -210,6 +220,41 @@ export default async function BookingsListPage({
         `/admin/bookings?error=${encodeURIComponent(error.message)}`
       );
     }
+
+    // Send cancellation notifications (fire-and-forget)
+    if (bookingInfo) {
+      const { data: bookingBay } = await service.from("bays").select("name").eq("id", bookingInfo.bay_id).single();
+      const bayName = bookingBay?.name ?? "Facility";
+      const orgName = org.name;
+      const tz = org.timezone;
+      const timeStr = `${formatTimeInZone(bookingInfo.start_time, tz)} – ${formatTimeInZone(bookingInfo.end_time, tz)}`;
+      const dateStr = new Date(bookingInfo.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      const code = bookingInfo.confirmation_code;
+
+      if (bookingInfo.customer_id) {
+        const { data: customerProfile } = await service.from("profiles").select("email, full_name").eq("id", bookingInfo.customer_id).single();
+        createNotification({
+          orgId: bookingInfo.org_id,
+          recipientId: bookingInfo.customer_id,
+          recipientType: "customer",
+          type: "booking_canceled",
+          title: "Booking Cancelled",
+          message: `Your booking ${code} (${bayName}, ${dateStr}, ${timeStr}) has been cancelled.`,
+          link: "/my-bookings",
+          recipientEmail: customerProfile?.email,
+          recipientName: customerProfile?.full_name ?? undefined,
+          orgName,
+        }).catch(() => {});
+      }
+
+      notifyOrgAdmins(bookingInfo.org_id, orgName, {
+        type: "booking_canceled",
+        title: `Booking Cancelled: ${code}`,
+        message: `${bookingInfo.is_guest ? bookingInfo.guest_name || "Guest" : "Customer"} booking ${bayName} — ${dateStr}, ${timeStr} was cancelled by admin`,
+        link: `/admin/bookings?q=${code}`,
+      }).catch(() => {});
+    }
+
     revalidatePath("/admin/bookings");
     redirect("/admin/bookings?cancelled=true");
   }

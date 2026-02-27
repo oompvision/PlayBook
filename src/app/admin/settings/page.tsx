@@ -3,12 +3,14 @@ import { getFacilitySlug } from "@/lib/facility";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { BrandingSettings } from "./branding-settings";
+import { EmailSettingsToggles } from "@/components/admin/email-settings-toggles";
 import {
   Settings,
   Building2,
   Clock,
   Globe,
   CheckCircle2,
+  Mail,
 } from "lucide-react";
 
 const TIMEZONES = [
@@ -272,6 +274,43 @@ export default async function FacilitySettingsPage({
             </div>
           </form>
         </div>
+      </div>
+
+      {/* Email Notifications */}
+      <EmailNotificationsSection orgId={org.id} />
+    </div>
+  );
+}
+
+async function EmailNotificationsSection({ orgId }: { orgId: string }) {
+  const supabase = await createClient();
+  const { data: emailSettings } = await supabase
+    .from("org_email_settings")
+    .select("id, notification_type, email_to_customer, email_to_admin")
+    .eq("org_id", orgId)
+    .order("notification_type");
+
+  if (!emailSettings || emailSettings.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+      <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
+        <div className="flex items-center gap-2">
+          <Mail className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+          <h2 className="font-semibold text-gray-800 dark:text-white/90">
+            Email Notifications
+          </h2>
+        </div>
+        <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+          Control which email notifications are sent to customers and admins.
+          Sign-up confirmation emails are always sent by the auth system and
+          cannot be disabled here.
+        </p>
+      </div>
+      <div className="p-6">
+        <EmailSettingsToggles settings={emailSettings} />
       </div>
     </div>
   );

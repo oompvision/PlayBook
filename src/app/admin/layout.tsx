@@ -41,6 +41,7 @@ export default async function AdminLayout({
                 ? { email: auth.user.email, fullName: auth.profile.full_name }
                 : undefined
             }
+            userId={auth?.user.id}
           />
           <main className="p-4 md:p-6">{children}</main>
         </div>
