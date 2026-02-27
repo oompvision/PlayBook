@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight } from "lucide-react";
@@ -66,7 +66,7 @@ export function MyBookingsList({
     useState<BookingDetailData | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [filterNotice, setFilterNotice] = useState<string | null>(null);
-  const hasInitialized = useRef(false);
+  const [autoOpenedCode, setAutoOpenedCode] = useState<string | null>(null);
 
   const allBookings = [...upcoming, ...past];
 
@@ -141,10 +141,11 @@ export function MyBookingsList({
     };
   }
 
-  // Auto-open booking from URL param on mount
+  // Auto-open booking from URL param (on mount or when prop changes via soft nav)
   useEffect(() => {
-    if (hasInitialized.current || !initialBookingCode) return;
-    hasInitialized.current = true;
+    if (!initialBookingCode) return;
+    if (autoOpenedCode === initialBookingCode) return;
+    setAutoOpenedCode(initialBookingCode);
 
     const found = allBookings.find(
       (b) => b.confirmation_code === initialBookingCode
@@ -181,7 +182,7 @@ export function MyBookingsList({
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialBookingCode]);
+  }, [initialBookingCode, autoOpenedCode]);
 
   function openBooking(booking: Booking, canCancel: boolean) {
     setSelectedBooking({

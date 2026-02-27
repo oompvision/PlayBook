@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Clock, Eye, EyeOff, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -123,7 +123,7 @@ export function DailySchedule({
   // URL-synced booking modal state (for navigating from notifications)
   const [urlBooking, setUrlBooking] = useState<BookingDetailData | null>(null);
   const [urlModalOpen, setUrlModalOpen] = useState(false);
-  const hasInitialized = useRef(false);
+  const [autoOpenedCode, setAutoOpenedCode] = useState<string | null>(null);
 
   // Build bay map for lookups
   const bayMap = useMemo(() => {
@@ -205,10 +205,11 @@ export function DailySchedule({
     };
   }
 
-  // Auto-open booking from URL param on mount
+  // Auto-open booking from URL param (on mount or when prop changes via soft nav)
   useEffect(() => {
-    if (hasInitialized.current || !initialBookingCode) return;
-    hasInitialized.current = true;
+    if (!initialBookingCode) return;
+    if (autoOpenedCode === initialBookingCode) return;
+    setAutoOpenedCode(initialBookingCode);
 
     fetchBookingByCode(initialBookingCode).then((data) => {
       if (data) {
@@ -217,7 +218,7 @@ export function DailySchedule({
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialBookingCode]);
+  }, [initialBookingCode, autoOpenedCode]);
 
   function handleUrlModalClose(open: boolean) {
     setUrlModalOpen(open);

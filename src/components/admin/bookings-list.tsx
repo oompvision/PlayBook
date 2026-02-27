@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   BookingDetailsModal,
@@ -88,7 +88,9 @@ export function AdminBookingsList({
     useState<BookingDetailData | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [filterNotice, setFilterNotice] = useState<string | null>(null);
-  const hasInitialized = useRef(false);
+  // Track which booking code we've auto-opened (state resets properly on remount,
+  // and re-triggers correctly when initialBookingCode changes via soft navigation)
+  const [autoOpenedCode, setAutoOpenedCode] = useState<string | null>(null);
 
   // Fetch a booking independently by confirmation code (when not in filtered list)
   async function fetchBookingByCode(code: string): Promise<BookingDetailData | null> {
@@ -187,10 +189,11 @@ export function AdminBookingsList({
     };
   }
 
-  // Auto-open booking from URL param on mount
+  // Auto-open booking from URL param (on mount or when prop changes via soft nav)
   useEffect(() => {
-    if (hasInitialized.current || !initialBookingCode) return;
-    hasInitialized.current = true;
+    if (!initialBookingCode) return;
+    if (autoOpenedCode === initialBookingCode) return;
+    setAutoOpenedCode(initialBookingCode);
 
     // Check if the booking is in the current filtered list
     const found = bookings.find(
@@ -232,7 +235,7 @@ export function AdminBookingsList({
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialBookingCode]);
+  }, [initialBookingCode, autoOpenedCode]);
 
   function openBooking(booking: Booking) {
     const display = getCustomerDisplay(booking, customerMap);
