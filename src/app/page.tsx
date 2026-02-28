@@ -24,7 +24,14 @@ export default async function FacilityHomePage() {
 
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-8">
-        <h1 className="mb-2 text-4xl font-bold tracking-tight">EZ Booker</h1>
+        <Image
+          src="/logos/ezbooker-logo-light.svg"
+          alt="EZ Booker"
+          width={240}
+          height={54}
+          priority
+          className="mb-2"
+        />
         <p className="mb-8 text-lg text-muted-foreground">
           Sports Facility Booking Platform
         </p>

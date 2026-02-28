@@ -60,17 +60,24 @@ export async function middleware(request: NextRequest) {
   }
 
   // Fallback: check cookies — but only in appropriate contexts.
-  // playbook-facility cookie: always safe to read because it's only set when
-  // the user explicitly passes ?facility= (intentional action, 8h TTL).
-  // playbook-admin-org cookie: restricted to localhost or /admin routes only
-  // (Enter as Admin flow) to prevent stale cookies overriding the bare domain.
+  // For /admin routes: prefer playbook-admin-org (set by Enter as Admin flow)
+  // over playbook-facility (set by customer browsing) to prevent a stale
+  // customer cookie from sending an admin to the wrong org's dashboard.
+  // For all other routes: playbook-facility is preferred (intentional ?facility= action).
   if (!facilitySlug) {
-    facilitySlug = request.cookies.get("playbook-facility")?.value || null;
-  }
-  if (!facilitySlug) {
-    if (isLocalhost) {
+    const isAdminRoute = pathname.startsWith("/admin");
+
+    if (isAdminRoute || isLocalhost) {
+      // On admin routes (or localhost), check admin org cookie first
       facilitySlug = request.cookies.get("playbook-admin-org")?.value || null;
-    } else if (pathname.startsWith("/admin")) {
+    }
+
+    if (!facilitySlug) {
+      facilitySlug = request.cookies.get("playbook-facility")?.value || null;
+    }
+
+    // Final fallback: admin org cookie for localhost (non-admin routes)
+    if (!facilitySlug && isLocalhost) {
       facilitySlug = request.cookies.get("playbook-admin-org")?.value || null;
     }
   }

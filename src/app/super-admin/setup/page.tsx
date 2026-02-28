@@ -65,7 +65,15 @@ export default function SuperAdminSetupPage() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">EZ Booker Setup</CardTitle>
+          <div className="mb-2 flex justify-center">
+            <img
+              src="/logos/ezbooker-logo-light.svg"
+              alt="EZ Booker"
+              width={200}
+              height={45}
+            />
+          </div>
+          <CardTitle className="text-2xl">Setup</CardTitle>
           <CardDescription>
             First-time platform setup — claim the Super Admin role
           </CardDescription>

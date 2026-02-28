@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
@@ -6,6 +7,21 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  // Require authentication
+  const auth = await getAuthUser();
+  if (!auth) {
+    return NextResponse.redirect(new URL("/auth/login", request.url));
+  }
+
+  // Authorization: super_admin can enter any org; admin only their own
+  if (
+    auth.profile.role !== "super_admin" &&
+    !(auth.profile.role === "admin" && auth.profile.org_id === id)
+  ) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
   const supabase = await createClient();
 
   // Look up the org to get its slug
