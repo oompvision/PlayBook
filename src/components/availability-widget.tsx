@@ -687,8 +687,22 @@ export function AvailabilityWidget({
     });
 
     if (error) {
-      setBookingError(error.message);
+      // Show friendly message for slot-conflict errors instead of raw DB errors
+      const msg = error.message;
+      if (
+        msg.includes("booking_slots_slot_unique") ||
+        msg.includes("no longer available") ||
+        msg.includes("not available")
+      ) {
+        setBookingError(
+          "One or more selected slots are no longer available. Please close and select different time slots."
+        );
+      } else {
+        setBookingError(msg);
+      }
       setBookingInProgress(false);
+      // Refresh availability so stale slots disappear
+      fetchTimeGroups(selectedDate);
       return;
     }
 
@@ -776,8 +790,20 @@ export function AvailabilityWidget({
     });
 
     if (error) {
-      setBookingError(error.message);
+      const msg = error.message;
+      if (
+        msg.includes("booking_slots_slot_unique") ||
+        msg.includes("no longer available") ||
+        msg.includes("not available")
+      ) {
+        setBookingError(
+          "One or more selected slots are no longer available. Please close and select different time slots."
+        );
+      } else {
+        setBookingError(msg);
+      }
       setBookingInProgress(false);
+      fetchTimeGroups(selectedDate);
       return;
     }
 

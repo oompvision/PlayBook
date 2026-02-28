@@ -65,7 +65,7 @@ export default function SuperAdminSetupPage() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">PlayBook Setup</CardTitle>
+          <CardTitle className="text-2xl">EZ Booker Setup</CardTitle>
           <CardDescription>
             First-time platform setup — claim the Super Admin role
           </CardDescription>

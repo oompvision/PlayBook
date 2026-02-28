@@ -184,7 +184,7 @@ export default async function OrgDetailPage({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">{org.name}</h1>
-          <p className="mt-1 text-muted-foreground">{org.slug}.playbook.com</p>
+          <p className="mt-1 text-muted-foreground">{org.slug}.ezbooker.app</p>
         </div>
         <div className="flex gap-2">
           <a href={`/api/admin/enter/${id}`}>

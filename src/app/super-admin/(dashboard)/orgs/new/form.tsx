@@ -95,7 +95,7 @@ function CreateOrgFormInner({
               />
               <p className="text-xs text-muted-foreground">
                 This will be used in the facility URL: {slug || "your-slug"}
-                .playbook.com
+                .ezbooker.app
               </p>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
