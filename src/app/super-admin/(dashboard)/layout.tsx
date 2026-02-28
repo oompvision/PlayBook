@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Profile } from "@/lib/auth";
@@ -41,8 +42,14 @@ export default async function SuperAdminDashboardLayout({
       {/* Sidebar */}
       <aside className="flex w-64 flex-col border-r bg-muted/40 p-6">
         <div className="mb-8">
-          <h2 className="text-lg font-semibold">EZ Booker</h2>
-          <p className="text-xs text-muted-foreground">Super Admin</p>
+          <Image
+            src="/logos/ezbooker-logo-light.svg"
+            alt="EZ Booker"
+            width={160}
+            height={36}
+            priority
+          />
+          <p className="mt-1 text-xs text-muted-foreground">Super Admin</p>
         </div>
         <nav className="flex-1 space-y-1">
           {superAdminNav.map((item) => (

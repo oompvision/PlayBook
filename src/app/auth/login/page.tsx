@@ -61,6 +61,16 @@ function LoginForm() {
     <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
+          {isSuperAdmin && (
+            <div className="mb-2 flex justify-center">
+              <img
+                src="/logos/ezbooker-logo-light.svg"
+                alt="EZ Booker"
+                width={180}
+                height={40}
+              />
+            </div>
+          )}
           <CardTitle className="text-2xl">
             {isSuperAdmin ? "Super Admin Login" : "Sign In"}
           </CardTitle>

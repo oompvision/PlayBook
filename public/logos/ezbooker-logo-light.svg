@@ -1,0 +1,15 @@
+<svg width="360" height="80" viewBox="0 0 360 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="4" y="8" width="64" height="64" rx="14" stroke="#16a34a" stroke-width="2.5" fill="none"/>
+  <line x1="4" y1="26" x2="68" y2="26" stroke="#16a34a" stroke-width="2.5"/>
+  <circle cx="24" cy="16" r="2.2" fill="#16a34a"/>
+  <circle cx="48" cy="16" r="2.2" fill="#16a34a"/>
+  <circle cx="22" cy="38" r="2.5" fill="#16a34a"/>
+  <circle cx="36" cy="38" r="2.5" fill="#16a34a" opacity="0.35"/>
+  <circle cx="50" cy="38" r="2.5" fill="#16a34a"/>
+  <circle cx="22" cy="52" r="2.5" fill="#16a34a"/>
+  <circle cx="36" cy="52" r="2.5" fill="#16a34a"/>
+  <circle cx="50" cy="52" r="2.5" fill="#16a34a"/>
+  <text x="86" y="52" font-family="Sora, sans-serif" font-size="38" font-weight="700" fill="#111111" letter-spacing="-1">
+    <tspan fill="#16a34a">EZ</tspan>Booker
+  </text>
+</svg>
