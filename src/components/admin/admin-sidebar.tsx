@@ -83,7 +83,7 @@ export function AdminSidebar({ slug }: { slug: string }) {
 
       {/* Footer */}
       <div className="border-t border-gray-800 px-6 py-4">
-        <p className="text-xs text-gray-600">PlayBook &copy; 2026</p>
+        <p className="text-xs text-gray-600">EZ Booker &copy; 2026</p>
       </div>
     </aside>
   );

@@ -41,7 +41,7 @@ export default async function SuperAdminDashboardLayout({
       {/* Sidebar */}
       <aside className="flex w-64 flex-col border-r bg-muted/40 p-6">
         <div className="mb-8">
-          <h2 className="text-lg font-semibold">PlayBook</h2>
+          <h2 className="text-lg font-semibold">EZ Booker</h2>
           <p className="text-xs text-muted-foreground">Super Admin</p>
         </div>
         <nav className="flex-1 space-y-1">

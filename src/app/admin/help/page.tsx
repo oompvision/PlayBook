@@ -13,7 +13,7 @@ export default function HelpPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Help</h1>
         <p className="text-sm text-muted-foreground">
-          Get help with managing your facility on PlayBook.
+          Get help with managing your facility on EZ Booker.
         </p>
       </div>
 

@@ -6,7 +6,7 @@ import { ChatBubbleLoader } from "@/components/chat/chat-bubble-loader";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PlayBook — Sports Facility Booking",
+  title: "EZ Booker — Sports Facility Booking",
   description:
     "Book simulator facilities, tennis courts, and more at your favorite sports facility.",
 };
