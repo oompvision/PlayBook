@@ -3,6 +3,7 @@ import { getFacilitySlug } from "@/lib/facility";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { BrandingSettings } from "./branding-settings";
+import { PaymentSettings } from "./payment-settings";
 import { EmailSettingsToggles } from "@/components/admin/email-settings-toggles";
 import {
   Settings,
@@ -276,10 +277,36 @@ export default async function FacilitySettingsPage({
         </div>
       </div>
 
+      {/* Payment Processing */}
+      <PaymentSettingsSection orgId={org.id} />
+
       {/* Email Notifications */}
       <EmailNotificationsSection orgId={org.id} />
     </div>
   );
+}
+
+async function PaymentSettingsSection({ orgId }: { orgId: string }) {
+  const supabase = await createClient();
+  const { data: paymentSettings } = await supabase
+    .from("org_payment_settings")
+    .select(
+      "stripe_account_id, stripe_onboarding_complete, payment_mode, cancellation_window_hours, no_show_fee_cents, no_show_fee_type, processing_fee_absorbed_by"
+    )
+    .eq("org_id", orgId)
+    .single();
+
+  const initialSettings = paymentSettings || {
+    stripe_account_id: null,
+    stripe_onboarding_complete: false,
+    payment_mode: "none",
+    cancellation_window_hours: 24,
+    no_show_fee_cents: null,
+    no_show_fee_type: "fixed",
+    processing_fee_absorbed_by: "customer",
+  };
+
+  return <PaymentSettings initialSettings={initialSettings} />;
 }
 
 async function EmailNotificationsSection({ orgId }: { orgId: string }) {
