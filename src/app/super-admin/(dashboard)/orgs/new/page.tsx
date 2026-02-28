@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { redirect } from "next/navigation";
 import { CreateOrgForm } from "./form";
 
@@ -48,18 +49,26 @@ export default function CreateOrgPage() {
     const adminName = formData.get("admin_name") as string;
 
     if (adminEmail && adminPassword && org) {
-      // Create admin user via Supabase Auth (using service role would be better, but this works for now)
+      const serviceClient = createServiceClient();
       const { data: authData, error: authError } =
-        await supabase.auth.admin.createUser({
+        await serviceClient.auth.admin.createUser({
           email: adminEmail,
           password: adminPassword,
           email_confirm: true,
           user_metadata: { full_name: adminName || "" },
         });
 
-      if (!authError && authData.user) {
+      if (authError) {
+        redirect(
+          `/super-admin/orgs/${org.id}?error=${encodeURIComponent(
+            "Organization created but admin account failed: " + authError.message
+          )}`
+        );
+      }
+
+      if (authData.user) {
         // Update the profile to be an admin for this org
-        await supabase
+        await serviceClient
           .from("profiles")
           .update({
             role: "admin",

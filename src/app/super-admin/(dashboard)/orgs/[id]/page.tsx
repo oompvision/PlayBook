@@ -154,7 +154,29 @@ export default async function OrgDetailPage({
     }
 
     // Update the new user's profile to admin role for this org
+    // Safety check: don't overwrite if they already belong to a different org
     if (authData?.user) {
+      const { data: newProfile } = await serviceClient
+        .from("profiles")
+        .select("id, org_id, role")
+        .eq("id", authData.user.id)
+        .single();
+
+      if (newProfile?.org_id && newProfile.org_id !== id) {
+        // User already belongs to a different org — abort
+        await supabase
+          .from("admin_invitations")
+          .delete()
+          .eq("org_id", id)
+          .eq("email", email);
+
+        redirect(
+          `/super-admin/orgs/${id}?error=${encodeURIComponent(
+            "This user already belongs to another organization and cannot be reassigned."
+          )}`
+        );
+      }
+
       await serviceClient
         .from("profiles")
         .update({ role: "admin", org_id: id })

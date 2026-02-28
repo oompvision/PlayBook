@@ -1,5 +1,5 @@
 import { getFacilitySlug } from "@/lib/facility";
-import { getAuthUser } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { SidebarProvider } from "@/context/sidebar-context";
@@ -15,10 +15,23 @@ export default async function AdminLayout({
   const slug = await getFacilitySlug();
   if (!slug) redirect("/");
 
+  // Resolve slug to org — required to validate admin belongs to this org
+  const supabase = await createClient();
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("id")
+    .eq("slug", slug)
+    .single();
+
+  if (!org) redirect("/");
+
+  // Enforce authorization: admin must belong to this org, super_admin can enter any
+  // requireAdmin redirects to /auth/login if not authenticated,
+  // redirects to / if role is not admin/super_admin or org_id doesn't match
+  const auth = await requireAdmin(org.id);
+
   // Check if admin needs to complete profile setup
-  const auth = await getAuthUser();
-  if (auth?.profile.role === "admin") {
-    const supabase = await createClient();
+  if (auth.profile.role === "admin") {
     const { count } = await supabase
       .from("admin_profiles")
       .select("id", { count: "exact", head: true })
@@ -36,12 +49,8 @@ export default async function AdminLayout({
         <AdminBackdrop />
         <div className="lg:ml-[280px]">
           <AdminHeader
-            user={
-              auth
-                ? { email: auth.user.email, fullName: auth.profile.full_name }
-                : undefined
-            }
-            userId={auth?.user.id}
+            user={{ email: auth.user.email, fullName: auth.profile.full_name }}
+            userId={auth.user.id}
           />
           <main className="p-4 md:p-6">{children}</main>
         </div>
