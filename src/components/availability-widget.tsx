@@ -33,6 +33,7 @@ import {
   Loader2,
   ArrowRight,
   ArrowLeft,
+  ArrowUpRight,
   MessageSquare,
   LogIn,
   X,
@@ -316,8 +317,6 @@ export function AvailabilityWidget({
   // Bookings state
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
-  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [highlightedBookingIds, setHighlightedBookingIds] = useState<Set<string>>(new Set());
 
   // Track whether we restored from localStorage (to auto-open panel)
@@ -1100,22 +1099,6 @@ export function AvailabilityWidget({
     );
   }
 
-  async function handleCancelBooking(bookingId: string) {
-    setCancellingId(bookingId);
-    const supabase = createClient();
-    const { error } = await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
-    if (!error) {
-      // Trigger cancellation notification (fire-and-forget)
-      fireNotification("canceled", { bookingId });
-
-      setBookings((prev) => prev.filter((b) => b.id !== bookingId));
-      setExpandedBookingId(null);
-      // Refresh time groups in case cancellation freed up availability
-      fetchTimeGroups(selectedDate);
-    }
-    setCancellingId(null);
-  }
-
   // Auto-select the first eligible bay when selection changes
   const effectiveBayId = eligibleBays.some((b) => b.bay_id === selectedBayIdForBooking)
     ? selectedBayIdForBooking
@@ -1213,83 +1196,41 @@ export function AvailabilityWidget({
               ) : (
                 <div className="space-y-2">
                   {bookings.map((booking) => {
-                    const isExpanded = expandedBookingId === booking.id;
                     const bayName =
                       bays.find((b) => b.id === booking.bay_id)?.name ??
                       "Unknown Bay";
                     const price = `$${(booking.total_price_cents / 100).toFixed(2)}`;
-                    const isCancelling = cancellingId === booking.id;
                     const isHighlighted = highlightedBookingIds.has(booking.id);
 
                     return (
-                      <div
+                      <a
                         key={booking.id}
-                        className={`rounded-lg border bg-background transition-all duration-700 ${
+                        href={`/my-bookings?booking=${booking.confirmation_code}`}
+                        className={`block rounded-lg border bg-background p-3 transition-all duration-700 hover:bg-muted/50 ${
                           isHighlighted
                             ? "border-green-400 shadow-[0_0_8px_rgba(74,222,128,0.3)]"
                             : ""
                         }`}
                       >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedBookingId(
-                              isExpanded ? null : booking.id
-                            )
-                          }
-                          className="flex w-full flex-col gap-1 p-3 text-left"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono text-[11px] text-muted-foreground">
-                              {booking.confirmation_code}
-                            </span>
-                            {isExpanded ? (
-                              <ChevronUp className="h-3 w-3 text-muted-foreground" />
-                            ) : (
-                              <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                            )}
-                          </div>
-                          <p className="text-sm font-medium">{bayName}</p>
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs text-muted-foreground">
-                              {formatBookingDate(booking.date)} &middot;{" "}
-                              {formatTime(booking.start_time, timezone)}{" "}
-                              &ndash;{" "}
-                              {formatTime(booking.end_time, timezone)}
-                            </p>
-                            <span className="text-xs font-semibold">
-                              {price}
-                            </span>
-                          </div>
-                        </button>
-                        {isExpanded && (
-                          <div className="border-t px-3 py-2.5">
-                            {booking.notes && (
-                              <p className="mb-2 text-xs text-muted-foreground">
-                                {booking.notes}
-                              </p>
-                            )}
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 w-full text-xs text-destructive hover:bg-destructive/10"
-                              disabled={isCancelling}
-                              onClick={() =>
-                                handleCancelBooking(booking.id)
-                              }
-                            >
-                              {isCancelling ? (
-                                <>
-                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                  Cancelling...
-                                </>
-                              ) : (
-                                "Cancel Booking"
-                              )}
-                            </Button>
-                          </div>
-                        )}
-                      </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-[11px] text-muted-foreground">
+                            {booking.confirmation_code}
+                          </span>
+                          <ArrowUpRight className="h-3 w-3 text-muted-foreground" />
+                        </div>
+                        <p className="mt-1 text-sm font-medium">{bayName}</p>
+                        <div className="mt-1 flex items-center justify-between">
+                          <p className="text-xs text-muted-foreground">
+                            {formatBookingDate(booking.date)} &middot;{" "}
+                            {formatTime(booking.start_time, timezone)}{" "}
+                            &ndash;{" "}
+                            {formatTime(booking.end_time, timezone)}
+                          </p>
+                          <span className="text-xs font-semibold">
+                            {price}
+                          </span>
+                        </div>
+                      </a>
                     );
                   })}
                 </div>
