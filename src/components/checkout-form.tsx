@@ -30,8 +30,13 @@ export type CheckoutFormHandle = {
     paymentMethodId?: string;
     error?: string;
   }>;
-  /** Validates the form without confirming payment. Returns true if valid. */
-  validate: () => Promise<{ valid: boolean; error?: string }>;
+  /** Validates the form without confirming payment. Returns card details if available. */
+  validate: () => Promise<{
+    valid: boolean;
+    error?: string;
+    cardBrand?: string;
+    cardLast4?: string;
+  }>;
 };
 
 type CheckoutFormProps = {
@@ -115,6 +120,19 @@ export const CheckoutForm = forwardRef<CheckoutFormHandle, CheckoutFormProps>(
         const { error } = await elements.submit();
         if (error) {
           return { valid: false, error: error.message || "Please check your payment details" };
+        }
+        // Try to extract card brand + last4 via createPaymentMethod
+        try {
+          const { paymentMethod } = await stripe.createPaymentMethod({ elements });
+          if (paymentMethod?.card) {
+            return {
+              valid: true,
+              cardBrand: paymentMethod.card.brand,
+              cardLast4: paymentMethod.card.last4,
+            };
+          }
+        } catch {
+          // Non-critical — card info is nice-to-have
         }
         return { valid: true };
       },
@@ -257,7 +275,7 @@ export function PaymentSection({
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/50">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
           <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-300">
-            This booking is less than {cancellationWindowHours} hours away and cannot be refunded or modified.
+            Booking is less than {cancellationWindowHours}h away and cannot be refunded or modified.
           </p>
         </div>
       )}

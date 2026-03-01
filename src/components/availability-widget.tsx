@@ -301,6 +301,8 @@ export function AvailabilityWidget({
   const [paymentValidated, setPaymentValidated] = useState(false);
   const [paymentValidationError, setPaymentValidationError] = useState("");
   const [confirmPolicyModalOpen, setConfirmPolicyModalOpen] = useState(false);
+  const [cardBrand, setCardBrand] = useState<string | null>(null);
+  const [cardLast4, setCardLast4] = useState<string | null>(null);
 
   // Guest booking state (admin-guest mode)
   const [guestName, setGuestName] = useState("");
@@ -646,6 +648,8 @@ export function AvailabilityWidget({
     setPaymentValidated(false);
     setPaymentValidationError("");
     setConfirmPolicyModalOpen(false);
+    setCardBrand(null);
+    setCardLast4(null);
   }
 
   // Save selection to localStorage before auth reload
@@ -1554,8 +1558,8 @@ export function AvailabilityWidget({
                     const isAuthStepFlow = isAuthenticated && !isModify && mode !== "admin-guest";
                     const totalSteps = requiresPayment ? 3 : 2;
                     const stepLabels = requiresPayment
-                      ? ["Facility", "Payment", "Confirm"]
-                      : ["Facility", "Confirm"];
+                      ? ["Select Facility", "Payment Method", "Confirm Booking"]
+                      : ["Select Facility", "Confirm Booking"];
                     const timeRangeStr = selectedSlotInfo.length > 0
                       ? `${formatTime(selectedSlotInfo[0].start_time, timezone)} – ${formatTime(selectedSlotInfo[selectedSlotInfo.length - 1].end_time, timezone)}`
                       : "";
@@ -2108,6 +2112,8 @@ export function AvailabilityWidget({
                                         if (checkoutIntent) {
                                           setCheckoutIntent(null);
                                           setPaymentValidated(false);
+                                          setCardBrand(null);
+                                          setCardLast4(null);
                                         }
                                       }}
                                       className="sr-only"
@@ -2295,6 +2301,8 @@ export function AvailabilityWidget({
                                   return;
                                 }
                                 setPaymentValidated(true);
+                                if (result.cardBrand) setCardBrand(result.cardBrand);
+                                if (result.cardLast4) setCardLast4(result.cardLast4);
                                 setBookingStep(3);
                               }}
                             >
@@ -2333,7 +2341,11 @@ export function AvailabilityWidget({
                             {requiresPayment && paymentValidated && (
                               <div className="flex items-center gap-2 text-sm">
                                 <CreditCard className="h-4 w-4 text-muted-foreground" />
-                                <span>Payment method ready</span>
+                                <span>
+                                  {cardBrand && cardLast4
+                                    ? `${cardBrand.charAt(0).toUpperCase() + cardBrand.slice(1)} •••• ${cardLast4}`
+                                    : "Payment method ready"}
+                                </span>
                                 <button
                                   type="button"
                                   onClick={() => setBookingStep(2)}
@@ -2398,7 +2410,7 @@ export function AvailabilityWidget({
                             <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/50">
                               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
                               <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-300">
-                                This booking is less than {cancellationWindowHours} hours away and cannot be refunded or modified.
+                                Booking is less than {cancellationWindowHours}h away and cannot be refunded or modified.
                               </p>
                             </div>
                           )}
