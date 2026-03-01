@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { BrandingSettings } from "./branding-settings";
 import { PaymentSettings } from "./payment-settings";
+import { CancellationPolicySettings } from "./cancellation-policy-settings";
 import { EmailSettingsToggles } from "@/components/admin/email-settings-toggles";
 import {
   Settings,
@@ -280,6 +281,9 @@ export default async function FacilitySettingsPage({
       {/* Payment Processing */}
       <PaymentSettingsSection orgId={org.id} />
 
+      {/* Cancellation Policy */}
+      <CancellationPolicySection orgId={org.id} />
+
       {/* Email Notifications */}
       <EmailNotificationsSection orgId={org.id} />
     </div>
@@ -307,6 +311,25 @@ async function PaymentSettingsSection({ orgId }: { orgId: string }) {
   };
 
   return <PaymentSettings initialSettings={initialSettings} />;
+}
+
+async function CancellationPolicySection({ orgId }: { orgId: string }) {
+  const supabase = await createClient();
+  const { data: paymentSettings } = await supabase
+    .from("org_payment_settings")
+    .select(
+      "payment_mode, cancellation_window_hours, cancellation_policy_text"
+    )
+    .eq("org_id", orgId)
+    .single();
+
+  const initialSettings = {
+    payment_mode: paymentSettings?.payment_mode || "none",
+    cancellation_window_hours: paymentSettings?.cancellation_window_hours ?? 24,
+    cancellation_policy_text: paymentSettings?.cancellation_policy_text || null,
+  };
+
+  return <CancellationPolicySettings initialSettings={initialSettings} />;
 }
 
 async function EmailNotificationsSection({ orgId }: { orgId: string }) {

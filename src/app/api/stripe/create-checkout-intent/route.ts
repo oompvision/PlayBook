@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     const { data: settings } = await supabase
       .from("org_payment_settings")
       .select(
-        "payment_mode, stripe_account_id, stripe_onboarding_complete, platform_fee_percent, cancellation_window_hours, no_show_fee_cents, no_show_fee_type"
+        "payment_mode, stripe_account_id, stripe_onboarding_complete, platform_fee_percent, cancellation_window_hours, no_show_fee_cents, no_show_fee_type, cancellation_policy_text"
       )
       .eq("org_id", org.id)
       .single();
@@ -130,8 +130,9 @@ export async function POST(request: NextRequest) {
       stripeCustomerId = customer.id;
     }
 
-    // 6. Build cancellation policy text
-    const cancellationPolicyText = buildCancellationPolicyText(settings);
+    // 6. Build cancellation policy text (use custom text if admin has set one)
+    const cancellationPolicyText =
+      settings.cancellation_policy_text || buildCancellationPolicyText(settings);
 
     // 7. Create intent based on payment mode
     const stripeAccountId = settings.stripe_account_id;
