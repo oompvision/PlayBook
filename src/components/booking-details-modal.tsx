@@ -65,6 +65,7 @@ type PaymentInfo = {
   refunded_amount_cents: number | null;
   charge_type: string | null;
   stripe_payment_intent_id: string | null;
+  cancellation_policy_text: string | null;
 } | null;
 
 type SlotDetail = {
@@ -118,6 +119,9 @@ export function BookingDetailsModal({
   const [paymentInfo, setPaymentInfo] = useState<PaymentInfo>(null);
   const [loadingPayment, setLoadingPayment] = useState(false);
 
+  // Policy modal state
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+
   // Cancel flow state
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [adminRefundType, setAdminRefundType] = useState<
@@ -150,6 +154,7 @@ export function BookingDetailsModal({
     if (!open || !booking) {
       setSlots([]);
       setPaymentInfo(null);
+      setShowPolicyModal(false);
       setShowCancelConfirm(false);
       setShowRefundForm(false);
       setRefundResult(null);
@@ -190,7 +195,7 @@ export function BookingDetailsModal({
       const { data } = await supabase
         .from("booking_payments")
         .select(
-          "id, status, amount_cents, refunded_amount_cents, charge_type, stripe_payment_intent_id"
+          "id, status, amount_cents, refunded_amount_cents, charge_type, stripe_payment_intent_id, cancellation_policy_text"
         )
         .eq("booking_id", booking!.id)
         .maybeSingle();
@@ -390,7 +395,7 @@ export function BookingDetailsModal({
         const { data: updated } = await supabase
           .from("booking_payments")
           .select(
-            "id, status, amount_cents, refunded_amount_cents, charge_type, stripe_payment_intent_id"
+            "id, status, amount_cents, refunded_amount_cents, charge_type, stripe_payment_intent_id, cancellation_policy_text"
           )
           .eq("booking_id", booking.id)
           .maybeSingle();
@@ -687,6 +692,8 @@ export function BookingDetailsModal({
       (paymentInfo.status === "charged" ||
         paymentInfo.status === "card_saved");
 
+    const policyText = paymentInfo?.cancellation_policy_text;
+
     return (
       <div className="space-y-3">
         {hasPaidBooking && insideWindow && (
@@ -699,6 +706,16 @@ export function BookingDetailsModal({
                 cancellation window. If you believe you should receive a refund,
                 please contact the facility after cancelling.
               </p>
+              {policyText && (
+                <button
+                  type="button"
+                  onClick={() => setShowPolicyModal(true)}
+                  className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-amber-800 underline underline-offset-2 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-200"
+                >
+                  <ShieldCheck className="h-3 w-3" />
+                  View Cancellation Policy
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -714,6 +731,16 @@ export function BookingDetailsModal({
                 {((paymentInfo?.amount_cents || 0) / 100).toFixed(2)} will be
                 processed automatically.
               </p>
+              {policyText && (
+                <button
+                  type="button"
+                  onClick={() => setShowPolicyModal(true)}
+                  className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-green-800 underline underline-offset-2 hover:text-green-900 dark:text-green-300 dark:hover:text-green-200"
+                >
+                  <ShieldCheck className="h-3 w-3" />
+                  View Cancellation Policy
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1205,6 +1232,25 @@ export function BookingDetailsModal({
           )}
         </div>
       </DialogContent>
+
+      {/* Cancellation Policy Modal (nested dialog) */}
+      {paymentInfo?.cancellation_policy_text && (
+        <Dialog open={showPolicyModal} onOpenChange={setShowPolicyModal}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                Cancellation Policy
+              </DialogTitle>
+            </DialogHeader>
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/50">
+              <p className="text-sm leading-relaxed text-blue-700 dark:text-blue-300">
+                {paymentInfo.cancellation_policy_text}
+              </p>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </Dialog>
   );
 }

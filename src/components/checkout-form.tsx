@@ -16,6 +16,12 @@ import {
 import type { Appearance } from "@stripe/stripe-js";
 import { getStripePromise } from "@/lib/stripe-client";
 import { CreditCard, Loader2, ShieldCheck } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -186,6 +192,8 @@ export function PaymentSection({
   policyAgreed,
   checkoutFormRef,
 }: PaymentSectionProps) {
+  const [policyModalOpen, setPolicyModalOpen] = useState(false);
+
   const handlePolicyChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.checked) {
@@ -207,18 +215,6 @@ export function PaymentSection({
         </p>
       </div>
 
-      {/* Cancellation policy */}
-      {cancellationPolicyText && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 dark:border-blue-900 dark:bg-blue-950">
-          <div className="flex items-start gap-2">
-            <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-600 dark:text-blue-400" />
-            <p className="text-xs text-blue-700 dark:text-blue-300">
-              {cancellationPolicyText}
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Policy agreement checkbox */}
       <label className="flex items-start gap-2 cursor-pointer">
         <input
@@ -230,8 +226,22 @@ export function PaymentSection({
         <span className="text-xs text-muted-foreground">
           I agree to the{" "}
           {paymentMode === "charge_upfront"
-            ? "payment terms and cancellation policy"
-            : "card authorization and cancellation policy"}
+            ? "payment terms and "
+            : "card authorization and "}
+          {cancellationPolicyText ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                setPolicyModalOpen(true);
+              }}
+              className="text-blue-600 underline underline-offset-2 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              cancellation policy
+            </button>
+          ) : (
+            "cancellation policy"
+          )}
         </span>
       </label>
 
@@ -255,6 +265,25 @@ export function PaymentSection({
           </span>{" "}
           now
         </p>
+      )}
+
+      {/* Cancellation Policy Modal */}
+      {cancellationPolicyText && (
+        <Dialog open={policyModalOpen} onOpenChange={setPolicyModalOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                Cancellation Policy
+              </DialogTitle>
+            </DialogHeader>
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/50">
+              <p className="text-sm leading-relaxed text-blue-700 dark:text-blue-300">
+                {cancellationPolicyText}
+              </p>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
