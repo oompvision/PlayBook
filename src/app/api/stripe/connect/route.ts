@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { getAdminAuth } from "@/lib/auth";
+import Stripe from "stripe";
 import { stripe } from "@/lib/stripe";
 
 /**
@@ -74,6 +75,14 @@ export async function GET(_request: NextRequest) {
     });
   } catch (err) {
     console.error("[stripe/connect] GET error:", err);
+
+    if (err instanceof Stripe.errors.StripeError) {
+      return NextResponse.json(
+        { error: err.message || "Stripe configuration error" },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }
@@ -143,6 +152,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ url: accountLink.url });
   } catch (err) {
     console.error("[stripe/connect] POST error:", err);
+
+    // Surface Stripe API errors to the admin
+    if (err instanceof Stripe.errors.StripeError) {
+      return NextResponse.json(
+        { error: err.message || "Stripe configuration error" },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }
