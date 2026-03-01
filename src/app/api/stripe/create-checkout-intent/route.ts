@@ -218,25 +218,12 @@ function buildCancellationPolicyText(settings: {
   no_show_fee_type: string;
   payment_mode: string;
 }): string {
+  const windowHours = settings.cancellation_window_hours;
+
   if (settings.payment_mode === "charge_upfront") {
-    if (settings.no_show_fee_cents && settings.no_show_fee_cents > 0) {
-      const feeText =
-        settings.no_show_fee_type === "full_booking"
-          ? "the full booking amount"
-          : `$${(settings.no_show_fee_cents / 100).toFixed(2)}`;
-      return `Cancellations made less than ${settings.cancellation_window_hours} hours before the booking may be charged a fee of ${feeText}. Full payment is collected at the time of booking.`;
-    }
-    return "Full payment is collected at the time of booking.";
+    return `Cancellations made more than ${windowHours} hours before the scheduled booking time will receive a full refund. No refunds will be issued for cancellations made within ${windowHours} hours of the booking start time. Full payment is collected at the time of booking.`;
   }
 
-  // hold modes
-  if (settings.no_show_fee_cents && settings.no_show_fee_cents > 0) {
-    const feeText =
-      settings.no_show_fee_type === "full_booking"
-        ? "the full booking amount"
-        : `$${(settings.no_show_fee_cents / 100).toFixed(2)}`;
-    return `Your card will be saved on file. Cancellations made less than ${settings.cancellation_window_hours} hours before the booking may result in a charge of ${feeText}.`;
-  }
-
-  return "Your card will be saved on file to secure your booking.";
+  // hold / hold_charge_manual
+  return `Your card is saved on file to secure your booking. Cancellations made more than ${windowHours} hours before the scheduled booking time will not be charged. Cancellations made within ${windowHours} hours of the booking start time may result in a charge of the full booking amount.`;
 }

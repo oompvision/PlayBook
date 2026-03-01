@@ -763,10 +763,11 @@ export function AvailabilityWidget({
     // If payment is required, confirm with Stripe first
     let paymentMethodId: string | undefined;
     if (requiresPayment && checkoutIntent) {
-      if (!policyAgreed) {
-        setBookingError("Please agree to the cancellation policy before proceeding.");
-        setBookingInProgress(false);
-        return;
+      // Implicit agreement: by clicking "Confirm Booking" the customer
+      // agrees to the terms and cancellation policy (shown as passive text).
+      if (!policyAgreedAt) {
+        setPolicyAgreed(true);
+        setPolicyAgreedAt(new Date().toISOString());
       }
 
       if (!checkoutFormRef.current) {

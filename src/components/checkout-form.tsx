@@ -5,7 +5,6 @@ import {
   useImperativeHandle,
   useState,
   useMemo,
-  useCallback,
 } from "react";
 import {
   Elements,
@@ -51,8 +50,10 @@ type PaymentSectionProps = {
   paymentMode: string;
   amountCents: number;
   cancellationPolicyText: string;
-  onPolicyAgree: (agreedAt: string) => void;
-  policyAgreed: boolean;
+  /** @deprecated No longer used — agreement is implicit. Kept for API compat. */
+  onPolicyAgree?: (agreedAt: string) => void;
+  /** @deprecated No longer used — agreement is implicit. Kept for API compat. */
+  policyAgreed?: boolean;
   checkoutFormRef: React.RefObject<CheckoutFormHandle | null>;
 };
 
@@ -194,15 +195,6 @@ export function PaymentSection({
 }: PaymentSectionProps) {
   const [policyModalOpen, setPolicyModalOpen] = useState(false);
 
-  const handlePolicyChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.checked) {
-        onPolicyAgree(new Date().toISOString());
-      }
-    },
-    [onPolicyAgree]
-  );
-
   return (
     <div className="space-y-4">
       {/* Section header */}
@@ -214,36 +206,6 @@ export function PaymentSection({
             : "Card on File"}
         </p>
       </div>
-
-      {/* Policy agreement checkbox */}
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          className="mt-1 h-4 w-4 rounded border-gray-300"
-          checked={policyAgreed}
-          onChange={handlePolicyChange}
-        />
-        <span className="text-xs text-muted-foreground">
-          I agree to the{" "}
-          {paymentMode === "charge_upfront"
-            ? "payment terms and "
-            : "card authorization and "}
-          {cancellationPolicyText ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                setPolicyModalOpen(true);
-              }}
-              className="text-blue-600 underline underline-offset-2 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
-            >
-              cancellation policy
-            </button>
-          ) : (
-            "cancellation policy"
-          )}
-        </span>
-      </label>
 
       {/* Stripe Elements form */}
       <StripeCheckoutWrapper
@@ -266,6 +228,22 @@ export function PaymentSection({
           now
         </p>
       )}
+
+      {/* Passive agreement text */}
+      <p className="text-xs text-muted-foreground text-center">
+        By booking you agree to the terms and{" "}
+        {cancellationPolicyText ? (
+          <button
+            type="button"
+            onClick={() => setPolicyModalOpen(true)}
+            className="underline underline-offset-2 hover:text-foreground transition-colors"
+          >
+            cancellation policy
+          </button>
+        ) : (
+          "cancellation policy"
+        )}
+      </p>
 
       {/* Cancellation Policy Modal */}
       {cancellationPolicyText && (
