@@ -303,6 +303,7 @@ export function AvailabilityWidget({
   const [confirmPolicyModalOpen, setConfirmPolicyModalOpen] = useState(false);
   const [cardBrand, setCardBrand] = useState<string | null>(null);
   const [cardLast4, setCardLast4] = useState<string | null>(null);
+  const [confirmedPaymentMethodId, setConfirmedPaymentMethodId] = useState<string | null>(null);
 
   // Guest booking state (admin-guest mode)
   const [guestName, setGuestName] = useState("");
@@ -650,6 +651,7 @@ export function AvailabilityWidget({
     setConfirmPolicyModalOpen(false);
     setCardBrand(null);
     setCardLast4(null);
+    setConfirmedPaymentMethodId(null);
   }
 
   // Save selection to localStorage before auth reload
@@ -794,29 +796,32 @@ export function AvailabilityWidget({
     setBookingInProgress(true);
     setBookingError("");
 
-    // If payment is required, confirm with Stripe first
+    // If payment is required, use the already-confirmed payment method from step 2
     let paymentMethodId: string | undefined;
     if (requiresPayment && checkoutIntent) {
-      // Implicit agreement: by clicking "Confirm Booking" the customer
-      // agrees to the terms and cancellation policy (shown as passive text).
       if (!policyAgreedAt) {
         setPolicyAgreed(true);
         setPolicyAgreedAt(new Date().toISOString());
       }
 
-      if (!checkoutFormRef.current) {
-        setBookingError("Payment form not ready. Please try again.");
-        setBookingInProgress(false);
-        return;
+      if (confirmedPaymentMethodId) {
+        // Payment was already confirmed in step 2 via confirmAndGetCardInfo()
+        paymentMethodId = confirmedPaymentMethodId;
+      } else {
+        // Fallback: confirm payment now (e.g., non-step flow)
+        if (!checkoutFormRef.current) {
+          setBookingError("Payment form not ready. Please try again.");
+          setBookingInProgress(false);
+          return;
+        }
+        const result = await checkoutFormRef.current.submit();
+        if (!result.success) {
+          setBookingError(result.error || "Payment failed. Please try again.");
+          setBookingInProgress(false);
+          return;
+        }
+        paymentMethodId = result.paymentMethodId;
       }
-
-      const result = await checkoutFormRef.current.submit();
-      if (!result.success) {
-        setBookingError(result.error || "Payment failed. Please try again.");
-        setBookingInProgress(false);
-        return;
-      }
-      paymentMethodId = result.paymentMethodId;
     }
 
     const supabase = createClient();
@@ -1596,6 +1601,8 @@ export function AvailabilityWidget({
                               const stepNum = i + 1;
                               const isCurrent = bookingStep === stepNum;
                               const isCompleted = bookingStep > stepNum;
+                              // Don't allow going back to payment step once confirmed
+                              const canNavigate = isCompleted && !(confirmedPaymentMethodId && stepNum === 2);
                               return (
                                 <div key={label} className="flex items-center gap-1">
                                   {i > 0 && (
@@ -1603,16 +1610,18 @@ export function AvailabilityWidget({
                                   )}
                                   <button
                                     type="button"
-                                    disabled={!isCompleted}
+                                    disabled={!canNavigate}
                                     onClick={() => {
-                                      if (isCompleted) setBookingStep(stepNum as 1 | 2 | 3);
+                                      if (canNavigate) setBookingStep(stepNum as 1 | 2 | 3);
                                     }}
                                     className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                                       isCurrent
                                         ? "bg-primary text-primary-foreground"
-                                        : isCompleted
+                                        : isCompleted && canNavigate
                                           ? "bg-primary/10 text-primary cursor-pointer hover:bg-primary/20"
-                                          : "bg-muted text-muted-foreground"
+                                          : isCompleted
+                                            ? "bg-primary/10 text-primary"
+                                            : "bg-muted text-muted-foreground"
                                     }`}
                                   >
                                     {isCompleted ? (
@@ -2114,6 +2123,7 @@ export function AvailabilityWidget({
                                           setPaymentValidated(false);
                                           setCardBrand(null);
                                           setCardLast4(null);
+                                          setConfirmedPaymentMethodId(null);
                                         }
                                       }}
                                       className="sr-only"
@@ -2295,14 +2305,42 @@ export function AvailabilityWidget({
                                   setPaymentValidationError("Payment form not ready. Please try again.");
                                   return;
                                 }
-                                const result = await checkoutFormRef.current.validate();
-                                if (!result.valid) {
+                                // Confirm payment and extract card info in one step
+                                const result = await checkoutFormRef.current.confirmAndGetCardInfo();
+                                if (!result.success) {
                                   setPaymentValidationError(result.error || "Please check your payment details.");
                                   return;
                                 }
                                 setPaymentValidated(true);
-                                if (result.cardBrand) setCardBrand(result.cardBrand);
-                                if (result.cardLast4) setCardLast4(result.cardLast4);
+                                if (result.paymentMethodId) setConfirmedPaymentMethodId(result.paymentMethodId);
+
+                                // Get card brand + last4
+                                let brand = result.cardBrand;
+                                let last4 = result.cardLast4;
+
+                                // If card details not returned (payment_method was a string ID),
+                                // fetch from server
+                                if (result.paymentMethodId && (!brand || !last4)) {
+                                  try {
+                                    const res = await fetch(`/api/stripe/card-details?pm=${result.paymentMethodId}`);
+                                    if (res.ok) {
+                                      const data = await res.json();
+                                      brand = data.brand || brand;
+                                      last4 = data.last4 || last4;
+                                    }
+                                  } catch {
+                                    // Non-critical — fallback text will show
+                                  }
+                                }
+
+                                if (brand) setCardBrand(brand);
+                                if (last4) setCardLast4(last4);
+
+                                // Implicit policy agreement
+                                if (!policyAgreedAt) {
+                                  setPolicyAgreed(true);
+                                  setPolicyAgreedAt(new Date().toISOString());
+                                }
                                 setBookingStep(3);
                               }}
                             >
@@ -2344,15 +2382,8 @@ export function AvailabilityWidget({
                                 <span>
                                   {cardBrand && cardLast4
                                     ? `${cardBrand.charAt(0).toUpperCase() + cardBrand.slice(1)} •••• ${cardLast4}`
-                                    : "Payment method ready"}
+                                    : "Payment method confirmed"}
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setBookingStep(2)}
-                                  className="ml-auto text-xs text-primary underline underline-offset-2 hover:text-primary/80"
-                                >
-                                  Edit
-                                </button>
                               </div>
                             )}
 

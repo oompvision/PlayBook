@@ -30,10 +30,11 @@ export type CheckoutFormHandle = {
     paymentMethodId?: string;
     error?: string;
   }>;
-  /** Validates the form without confirming payment. Returns card details if available. */
-  validate: () => Promise<{
-    valid: boolean;
+  /** Confirms the payment/setup and returns card details + payment method ID. */
+  confirmAndGetCardInfo: () => Promise<{
+    success: boolean;
     error?: string;
+    paymentMethodId?: string;
     cardBrand?: string;
     cardLast4?: string;
   }>;
@@ -113,30 +114,62 @@ export const CheckoutForm = forwardRef<CheckoutFormHandle, CheckoutFormProps>(
     const [ready, setReady] = useState(false);
 
     useImperativeHandle(ref, () => ({
-      validate: async () => {
+      confirmAndGetCardInfo: async () => {
         if (!stripe || !elements) {
-          return { valid: false, error: "Payment system not ready" };
+          return { success: false, error: "Payment system not ready" };
         }
-        const { error } = await elements.submit();
-        if (error) {
-          return { valid: false, error: error.message || "Please check your payment details" };
-        }
-        // Try to extract card brand + last4 via createPaymentMethod
-        try {
-          const { paymentMethod } = await stripe.createPaymentMethod({ elements });
-          if (paymentMethod?.card) {
-            return {
-              valid: true,
-              cardBrand: paymentMethod.card.brand,
-              cardLast4: paymentMethod.card.last4,
-            };
+
+        if (intentType === "payment") {
+          const { error, paymentIntent } = await stripe.confirmPayment({
+            elements,
+            confirmParams: {
+              return_url: window.location.href,
+            },
+            redirect: "if_required",
+          });
+
+          if (error) {
+            return { success: false, error: error.message || "Payment failed" };
           }
-        } catch {
-          // Non-critical — card info is nice-to-have
+
+          const pm = paymentIntent?.payment_method;
+          const pmId = typeof pm === "string" ? pm : pm?.id || undefined;
+          const card = typeof pm === "object" ? pm?.card : undefined;
+
+          return {
+            success: true,
+            paymentMethodId: pmId,
+            cardBrand: card?.brand,
+            cardLast4: card?.last4,
+          };
+        } else {
+          const { error, setupIntent } = await stripe.confirmSetup({
+            elements,
+            confirmParams: {
+              return_url: window.location.href,
+            },
+            redirect: "if_required",
+          });
+
+          if (error) {
+            return { success: false, error: error.message || "Card setup failed" };
+          }
+
+          const pm = setupIntent?.payment_method;
+          const pmId = typeof pm === "string" ? pm : pm?.id || undefined;
+          const card = typeof pm === "object" ? pm?.card : undefined;
+
+          return {
+            success: true,
+            paymentMethodId: pmId,
+            cardBrand: card?.brand,
+            cardLast4: card?.last4,
+          };
         }
-        return { valid: true };
       },
       submit: async () => {
+        // submit() is now a no-op if payment was already confirmed via confirmAndGetCardInfo.
+        // It returns a pre-confirmed result. Kept for backward compat with non-step flows.
         if (!stripe || !elements) {
           return { success: false, error: "Payment system not ready" };
         }
