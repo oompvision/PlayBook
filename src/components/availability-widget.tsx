@@ -96,6 +96,8 @@ type AvailabilityWidgetProps = {
   modifyRedirectBase?: string;
   /** Org's payment mode — "none" | "charge_upfront" | "hold" | "hold_charge_manual" */
   paymentMode?: string;
+  /** Cancellation window in hours (default 24) */
+  cancellationWindowHours?: number;
 };
 
 type ToastData = {
@@ -211,6 +213,7 @@ export function AvailabilityWidget({
   originalBooking,
   modifyRedirectBase,
   paymentMode = "none",
+  cancellationWindowHours = 24,
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const isModify = mode === "modify";
@@ -1109,6 +1112,15 @@ export function AvailabilityWidget({
   const totalCents = selectedSlotInfo.reduce((sum, s) => sum + s.price_cents, 0);
 
   const selectedBayObj = bays.find((b) => b.id === effectiveBayId);
+
+  // Check if earliest selected slot is within the cancellation window
+  const isWithinCancellationWindow = (() => {
+    if (paymentMode === "none" || selectedSlotInfo.length === 0) return false;
+    const earliest = selectedSlotInfo[0]; // already sorted by start_time
+    const startMs = new Date(earliest.start_time).getTime();
+    const cutoff = startMs - cancellationWindowHours * 60 * 60 * 1000;
+    return Date.now() >= cutoff;
+  })();
 
   // Group consecutive selected slots for display in the confirm panel
   const selectedGroups: Array<{ start_time: string; end_time: string; price_cents: number; slot_count: number }> = [];
@@ -2111,6 +2123,8 @@ export function AvailabilityWidget({
                               }}
                               policyAgreed={policyAgreed}
                               checkoutFormRef={checkoutFormRef}
+                              isWithinCancellationWindow={isWithinCancellationWindow}
+                              cancellationWindowHours={cancellationWindowHours}
                             />
                           ) : (
                             <Button

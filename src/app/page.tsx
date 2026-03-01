@@ -108,13 +108,14 @@ export default async function FacilityHomePage() {
     await ensureCustomerOrg(org.id);
   }
 
-  // Fetch payment mode (uses service client to bypass RLS for customers)
+  // Fetch payment mode + cancellation window (uses service client to bypass RLS for customers)
   let paymentMode = "none";
+  let cancellationWindowHours = 24;
   if (org) {
     const serviceClient = createServiceClient();
     const { data: paymentSettings } = await serviceClient
       .from("org_payment_settings")
-      .select("payment_mode, stripe_onboarding_complete")
+      .select("payment_mode, stripe_onboarding_complete, cancellation_window_hours")
       .eq("org_id", org.id)
       .single();
 
@@ -124,6 +125,9 @@ export default async function FacilityHomePage() {
       paymentSettings.stripe_onboarding_complete
     ) {
       paymentMode = paymentSettings.payment_mode;
+    }
+    if (paymentSettings?.cancellation_window_hours != null) {
+      cancellationWindowHours = paymentSettings.cancellation_window_hours;
     }
   }
 
@@ -218,6 +222,7 @@ export default async function FacilityHomePage() {
                 userFullName={auth?.profile.full_name}
                 userProfileId={auth?.profile.id}
                 paymentMode={paymentMode}
+                cancellationWindowHours={cancellationWindowHours}
               />
             ) : (
               <div className="rounded-xl border bg-card p-12 text-center">
@@ -333,6 +338,7 @@ export default async function FacilityHomePage() {
               facilitySlug={slug}
               isAuthenticated={!!auth}
               paymentMode={paymentMode}
+              cancellationWindowHours={cancellationWindowHours}
             />
           ) : (
             <div className="rounded-xl border bg-card p-8 text-center">

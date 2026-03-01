@@ -14,7 +14,7 @@ import {
 } from "@stripe/react-stripe-js";
 import type { Appearance } from "@stripe/stripe-js";
 import { getStripePromise } from "@/lib/stripe-client";
-import { CreditCard, Loader2, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CreditCard, Loader2, ShieldCheck } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -55,6 +55,10 @@ type PaymentSectionProps = {
   /** @deprecated No longer used — agreement is implicit. Kept for API compat. */
   policyAgreed?: boolean;
   checkoutFormRef: React.RefObject<CheckoutFormHandle | null>;
+  /** Whether the booking falls within the no-cancellation window */
+  isWithinCancellationWindow?: boolean;
+  /** Cancellation window in hours (default 24) */
+  cancellationWindowHours?: number;
 };
 
 // ─── Stripe Elements Wrapper ──────────────────────────────────────────────────
@@ -192,6 +196,8 @@ export function PaymentSection({
   onPolicyAgree,
   policyAgreed,
   checkoutFormRef,
+  isWithinCancellationWindow = false,
+  cancellationWindowHours = 24,
 }: PaymentSectionProps) {
   const [policyModalOpen, setPolicyModalOpen] = useState(false);
 
@@ -244,6 +250,16 @@ export function PaymentSection({
           "cancellation policy"
         )}
       </p>
+
+      {/* No-cancellation window warning */}
+      {isWithinCancellationWindow && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/50">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+            This booking is less than {cancellationWindowHours} hours away and cannot be refunded or modified.
+          </p>
+        </div>
+      )}
 
       {/* Cancellation Policy Modal */}
       {cancellationPolicyText && (

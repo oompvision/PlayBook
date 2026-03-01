@@ -1191,6 +1191,47 @@ export function BookingDetailsModal({
 
         {/* Footer: Actions */}
         <div className="mt-2 space-y-2 border-t pt-4">
+          {/* Cancellation/modification deadline notice for confirmed bookings */}
+          {booking.status === "confirmed" &&
+            paymentMode !== "none" &&
+            !showCancelConfirm &&
+            !showRefundForm &&
+            (() => {
+              if (!insideWindow && (booking.canCancel || booking.canModify)) {
+                const deadlineMs =
+                  new Date(booking.start_time).getTime() -
+                  cancellationWindowHours * 60 * 60 * 1000;
+                const deadline = new Date(deadlineMs);
+                const dateStr = deadline.toLocaleDateString("en-US", {
+                  timeZone: timezone,
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                });
+                const timeStr = deadline.toLocaleTimeString("en-US", {
+                  timeZone: timezone,
+                  hour: "numeric",
+                  minute: "2-digit",
+                });
+                return (
+                  <p className="text-xs text-muted-foreground text-center pb-1">
+                    This booking can be canceled or modified until {dateStr} at {timeStr}
+                  </p>
+                );
+              }
+              if (insideWindow && variant === "customer") {
+                return (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/50">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                    <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+                      This booking is less than {cancellationWindowHours} hours away and cannot be refunded or modified.
+                    </p>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
           {showCancelConfirm ? (
             renderCancelConfirmation()
           ) : showRefundForm ? (
