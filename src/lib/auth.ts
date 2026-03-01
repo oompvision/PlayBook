@@ -83,6 +83,18 @@ export async function requireAdmin(orgId?: string) {
 }
 
 /**
+ * Check admin access without redirecting. Returns auth or null.
+ * Use this in API routes where redirect() is not appropriate.
+ */
+export async function getAdminAuth(orgId?: string) {
+  const auth = await getAuthUser();
+  if (!auth) return null;
+  if (auth.profile.role !== "admin" && auth.profile.role !== "super_admin") return null;
+  if (orgId && auth.profile.role === "admin" && auth.profile.org_id !== orgId) return null;
+  return auth;
+}
+
+/**
  * Ensure a customer profile is associated with the given org.
  * Called on facility-scoped pages so customers get linked on first visit.
  */
