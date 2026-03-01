@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { getAuthUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getTodayInTimezone, formatTimeInZone } from "@/lib/utils";
@@ -99,6 +100,25 @@ export default async function ModifyBookingPage({
     }
   }
 
+  // Fetch payment mode (uses service client to bypass RLS for customers)
+  let paymentMode = "none";
+  {
+    const serviceClient = createServiceClient();
+    const { data: paymentSettings } = await serviceClient
+      .from("org_payment_settings")
+      .select("payment_mode, stripe_onboarding_complete")
+      .eq("org_id", org.id)
+      .single();
+
+    if (
+      paymentSettings?.payment_mode &&
+      paymentSettings.payment_mode !== "none" &&
+      paymentSettings.stripe_onboarding_complete
+    ) {
+      paymentMode = paymentSettings.payment_mode;
+    }
+  }
+
   const todayStr = getTodayInTimezone(timezone);
 
   // Determine redirect base: admin always goes to /admin/bookings, customer goes to /my-bookings
@@ -166,6 +186,7 @@ export default async function ModifyBookingPage({
             userFullName={auth.profile.full_name}
             userProfileId={auth.profile.id}
             mode="modify"
+            paymentMode={paymentMode}
             originalBooking={{
               id: booking.id,
               confirmationCode: booking.confirmation_code,

@@ -1,6 +1,7 @@
 import { getFacilitySlug } from "@/lib/facility";
 import { getAuthUser, ensureCustomerOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { getTodayInTimezone } from "@/lib/utils";
 import Link from "next/link";
 import Image from "next/image";
@@ -107,6 +108,25 @@ export default async function FacilityHomePage() {
     await ensureCustomerOrg(org.id);
   }
 
+  // Fetch payment mode (uses service client to bypass RLS for customers)
+  let paymentMode = "none";
+  if (org) {
+    const serviceClient = createServiceClient();
+    const { data: paymentSettings } = await serviceClient
+      .from("org_payment_settings")
+      .select("payment_mode, stripe_onboarding_complete")
+      .eq("org_id", org.id)
+      .single();
+
+    if (
+      paymentSettings?.payment_mode &&
+      paymentSettings.payment_mode !== "none" &&
+      paymentSettings.stripe_onboarding_complete
+    ) {
+      paymentMode = paymentSettings.payment_mode;
+    }
+  }
+
   const todayStr = getTodayInTimezone(timezone);
 
   return (
@@ -197,6 +217,7 @@ export default async function FacilityHomePage() {
                 userEmail={auth?.profile.email}
                 userFullName={auth?.profile.full_name}
                 userProfileId={auth?.profile.id}
+                paymentMode={paymentMode}
               />
             ) : (
               <div className="rounded-xl border bg-card p-12 text-center">
@@ -311,6 +332,7 @@ export default async function FacilityHomePage() {
               minBookingLeadMinutes={minBookingLeadMinutes}
               facilitySlug={slug}
               isAuthenticated={!!auth}
+              paymentMode={paymentMode}
             />
           ) : (
             <div className="rounded-xl border bg-card p-8 text-center">

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { PaymentSection, type CheckoutFormHandle } from "@/components/checkout-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -93,6 +94,8 @@ type AvailabilityWidgetProps = {
   originalBooking?: OriginalBookingInfo;
   /** Where to redirect after modification — e.g. "/my-bookings" or "/admin/bookings" */
   modifyRedirectBase?: string;
+  /** Org's payment mode — "none" | "charge_upfront" | "hold" | "hold_charge_manual" */
+  paymentMode?: string;
 };
 
 type ToastData = {
@@ -207,6 +210,7 @@ export function AvailabilityWidget({
   mode = "customer",
   originalBooking,
   modifyRedirectBase,
+  paymentMode = "none",
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const isModify = mode === "modify";
@@ -255,6 +259,23 @@ export function AvailabilityWidget({
   const [signUpError, setSignUpError] = useState("");
   const [signUpLoading, setSignUpLoading] = useState(false);
   const [signUpSuccess, setSignUpSuccess] = useState(false);
+
+  // Checkout / payment state
+  const requiresPayment = paymentMode !== "none" && mode === "customer";
+  const checkoutFormRef = useRef<CheckoutFormHandle | null>(null);
+  const [checkoutIntent, setCheckoutIntent] = useState<{
+    client_secret: string;
+    intent_type: "payment" | "setup";
+    intent_id: string;
+    stripe_customer_id: string;
+    stripe_account_id: string;
+    amount_cents: number;
+    cancellation_policy_text: string;
+  } | null>(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [policyAgreed, setPolicyAgreed] = useState(false);
+  const [policyAgreedAt, setPolicyAgreedAt] = useState<string | null>(null);
 
   // Guest booking state (admin-guest mode)
   const [guestName, setGuestName] = useState("");
@@ -589,6 +610,12 @@ export function AvailabilityWidget({
     setGuestName("");
     setGuestEmail("");
     setGuestPhone("");
+    // Reset checkout state
+    setCheckoutIntent(null);
+    setCheckoutLoading(false);
+    setCheckoutError("");
+    setPolicyAgreed(false);
+    setPolicyAgreedAt(null);
   }
 
   // Save selection to localStorage before auth reload
@@ -653,12 +680,109 @@ export function AvailabilityWidget({
     setSignUpLoading(false);
   }
 
+  // Create checkout intent (PaymentIntent or SetupIntent) on the org's connected account
+  async function createCheckoutIntent() {
+    const slotIdsArray = selectedSlotInfo.map((s) => s.slot_id);
+    setCheckoutLoading(true);
+    setCheckoutError("");
+
+    try {
+      const res = await fetch("/api/stripe/create-checkout-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slot_ids: slotIdsArray }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setCheckoutError(err.error || "Failed to prepare payment");
+        setCheckoutLoading(false);
+        return;
+      }
+
+      const data = await res.json();
+      setCheckoutIntent(data);
+    } catch {
+      setCheckoutError("Network error. Please try again.");
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }
+
+  // Record booking payment after successful booking + payment
+  async function recordBookingPayment(
+    bookingId: string,
+    paymentMethodId?: string
+  ) {
+    if (!checkoutIntent) return;
+    try {
+      await fetch("/api/stripe/record-booking-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          booking_id: bookingId,
+          intent_id: checkoutIntent.intent_id,
+          intent_type: checkoutIntent.intent_type,
+          stripe_customer_id: checkoutIntent.stripe_customer_id,
+          stripe_payment_method_id: paymentMethodId,
+          amount_cents: checkoutIntent.amount_cents,
+          cancellation_policy_text: checkoutIntent.cancellation_policy_text,
+          policy_agreed_at: policyAgreedAt,
+        }),
+      });
+    } catch {
+      // Non-critical: booking exists, payment confirmed in Stripe
+      console.error("Failed to record booking payment");
+    }
+  }
+
+  // Cancel/refund intent when booking fails after payment
+  async function cancelIntent() {
+    if (!checkoutIntent) return;
+    try {
+      await fetch("/api/stripe/cancel-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          intent_id: checkoutIntent.intent_id,
+          intent_type: checkoutIntent.intent_type,
+        }),
+      });
+    } catch {
+      console.error("Failed to cancel intent");
+    }
+  }
+
   // Confirm booking — client-side via Supabase RPC
   async function handleConfirmBooking() {
     if (!userProfileId || !effectiveBayId) return;
 
     setBookingInProgress(true);
     setBookingError("");
+
+    // If payment is required, confirm with Stripe first
+    let paymentMethodId: string | undefined;
+    if (requiresPayment && checkoutIntent) {
+      if (!policyAgreed) {
+        setBookingError("Please agree to the cancellation policy before proceeding.");
+        setBookingInProgress(false);
+        return;
+      }
+
+      if (!checkoutFormRef.current) {
+        setBookingError("Payment form not ready. Please try again.");
+        setBookingInProgress(false);
+        return;
+      }
+
+      const result = await checkoutFormRef.current.submit();
+      if (!result.success) {
+        setBookingError(result.error || "Payment failed. Please try again.");
+        setBookingInProgress(false);
+        return;
+      }
+      paymentMethodId = result.paymentMethodId;
+    }
 
     const supabase = createClient();
     const slotIdsArray = selectedSlotInfo.map((s) => s.slot_id);
@@ -671,7 +795,15 @@ export function AvailabilityWidget({
 
     const unavailable = freshSlots?.filter((s) => s.status !== "available") || [];
     if (unavailable.length > 0) {
-      setBookingError("One or more selected slots are no longer available. Please close and select different time slots.");
+      // Slots taken after payment — cancel/refund the intent
+      if (requiresPayment && checkoutIntent) {
+        await cancelIntent();
+        setCheckoutIntent(null);
+        setPolicyAgreed(false);
+        setPolicyAgreedAt(null);
+      }
+      setBookingError("One or more selected slots are no longer available. Please close and select different time slots." +
+        (requiresPayment ? " Your payment has been cancelled." : ""));
       setBookingInProgress(false);
       return;
     }
@@ -687,6 +819,14 @@ export function AvailabilityWidget({
     });
 
     if (error) {
+      // Booking failed after payment — cancel/refund
+      if (requiresPayment && checkoutIntent) {
+        await cancelIntent();
+        setCheckoutIntent(null);
+        setPolicyAgreed(false);
+        setPolicyAgreedAt(null);
+      }
+
       // Show friendly message for slot-conflict errors instead of raw DB errors
       const msg = error.message;
       if (
@@ -695,10 +835,11 @@ export function AvailabilityWidget({
         msg.includes("not available")
       ) {
         setBookingError(
-          "One or more selected slots are no longer available. Please close and select different time slots."
+          "One or more selected slots are no longer available. Please close and select different time slots." +
+          (requiresPayment ? " Your payment has been refunded." : "")
         );
       } else {
-        setBookingError(msg);
+        setBookingError(msg + (requiresPayment ? " Your payment has been refunded." : ""));
       }
       setBookingInProgress(false);
       // Refresh availability so stale slots disappear
@@ -714,6 +855,13 @@ export function AvailabilityWidget({
     const newBookingIds = bookingResults.map(
       (r: { booking_id: string }) => r.booking_id
     );
+
+    // Record booking payment (fire-and-forget for each booking)
+    if (requiresPayment && checkoutIntent) {
+      for (const br of bookingResults) {
+        recordBookingPayment(br.booking_id, paymentMethodId);
+      }
+    }
 
     // Trigger booking notifications (fire-and-forget)
     for (const br of bookingResults) {
@@ -739,6 +887,9 @@ export function AvailabilityWidget({
     setSelectedBayIdForBooking("");
     setNotes("");
     setBookingInProgress(false);
+    setCheckoutIntent(null);
+    setPolicyAgreed(false);
+    setPolicyAgreedAt(null);
 
     // Show toast
     setToastData({
@@ -863,9 +1014,38 @@ export function AvailabilityWidget({
     }
 
     const result = data as {
+      booking_id: string;
       confirmation_code: string;
       old_confirmation_code: string;
+      total_price_cents: number;
     };
+
+    // Handle payment adjustments for modified bookings
+    if (paymentMode !== "none" && result.booking_id) {
+      try {
+        const payRes = await fetch("/api/stripe/modify-booking-payment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            old_booking_id: originalBooking.id,
+            new_booking_id: result.booking_id,
+            new_amount_cents: totalCents,
+          }),
+        });
+
+        if (payRes.ok) {
+          const payData = await payRes.json();
+          if (payData.status === "requires_action" && payData.client_secret) {
+            // Off-session charge requires 3DS — for now we proceed with a warning
+            // The admin can handle the remaining charge manually
+            console.warn("Modification payment requires additional authentication");
+          }
+        }
+      } catch {
+        // Non-critical: booking is modified, payment adjustment can be handled by admin
+        console.error("Failed to adjust payment for modification");
+      }
+    }
 
     // Trigger modification notification (fire-and-forget)
     fireNotification("modified", {
@@ -1883,18 +2063,77 @@ export function AvailabilityWidget({
                         Booking as {userFullName || userEmail}
                       </p>
 
+                      {/* Payment section — shown when org requires payment */}
+                      {requiresPayment && (
+                        <div className="mb-4">
+                          {checkoutLoading ? (
+                            <div className="flex items-center justify-center rounded-lg border border-dashed py-8">
+                              <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground">
+                                Preparing payment...
+                              </span>
+                            </div>
+                          ) : checkoutError ? (
+                            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                              {checkoutError}
+                              <button
+                                className="ml-2 underline"
+                                onClick={createCheckoutIntent}
+                              >
+                                Retry
+                              </button>
+                            </div>
+                          ) : checkoutIntent ? (
+                            <PaymentSection
+                              stripeAccountId={checkoutIntent.stripe_account_id}
+                              clientSecret={checkoutIntent.client_secret}
+                              intentType={checkoutIntent.intent_type}
+                              paymentMode={paymentMode}
+                              amountCents={checkoutIntent.amount_cents}
+                              cancellationPolicyText={checkoutIntent.cancellation_policy_text}
+                              onPolicyAgree={(agreedAt) => {
+                                setPolicyAgreed(true);
+                                setPolicyAgreedAt(agreedAt);
+                              }}
+                              policyAgreed={policyAgreed}
+                              checkoutFormRef={checkoutFormRef}
+                            />
+                          ) : (
+                            <Button
+                              variant="outline"
+                              className="w-full"
+                              onClick={createCheckoutIntent}
+                            >
+                              Enter Payment Details
+                            </Button>
+                          )}
+                        </div>
+                      )}
+
                       {/* Confirm button */}
                       <Button
                         className="w-full"
                         size="lg"
-                        disabled={bookingInProgress}
+                        disabled={
+                          bookingInProgress ||
+                          (requiresPayment && !checkoutIntent) ||
+                          (requiresPayment && checkoutLoading)
+                        }
                         onClick={handleConfirmBooking}
                       >
                         {bookingInProgress ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Booking...
+                            {requiresPayment && paymentMode === "charge_upfront"
+                              ? "Processing payment..."
+                              : requiresPayment
+                                ? "Saving card..."
+                                : "Booking..."}
                           </>
+                        ) : requiresPayment && paymentMode === "charge_upfront" ? (
+                          `Confirm & Pay $${(totalCents / 100).toFixed(2)}`
+                        ) : requiresPayment ? (
+                          "Confirm & Save Card"
                         ) : (
                           "Confirm Booking"
                         )}
