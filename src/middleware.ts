@@ -65,7 +65,7 @@ export async function middleware(request: NextRequest) {
   // customer cookie from sending an admin to the wrong org's dashboard.
   // For all other routes: playbook-facility is preferred (intentional ?facility= action).
   if (!facilitySlug) {
-    const isAdminRoute = pathname.startsWith("/admin");
+    const isAdminRoute = pathname.startsWith("/admin") || pathname.startsWith("/api/");
 
     if (isAdminRoute || isLocalhost) {
       // On admin routes (or localhost), check admin org cookie first
