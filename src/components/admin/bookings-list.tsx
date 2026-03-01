@@ -6,8 +6,37 @@ import {
   BookingDetailsModal,
   type BookingDetailData,
 } from "@/components/booking-details-modal";
-import { formatTimeInZone } from "@/lib/utils";
+import { formatTimeInZone, getVisualBookingStatus, type VisualBookingStatus } from "@/lib/utils";
 import { ArrowRight } from "lucide-react";
+
+function getStatusBadge(visualStatus: VisualBookingStatus) {
+  switch (visualStatus) {
+    case "active":
+      return {
+        className: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+        label: "active",
+        pulse: true,
+      };
+    case "confirmed":
+      return {
+        className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+        label: "confirmed",
+        pulse: false,
+      };
+    case "completed":
+      return {
+        className: "bg-gray-100 text-gray-600 dark:bg-gray-800/50 dark:text-gray-400",
+        label: "completed",
+        pulse: false,
+      };
+    case "cancelled":
+      return {
+        className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+        label: "cancelled",
+        pulse: false,
+      };
+  }
+}
 
 type ModifiedFromInfo = {
   startTime: string;
@@ -381,15 +410,21 @@ export function AdminBookingsList({
                           </span>
                         </td>
                         <td className="px-5 py-4">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                              booking.status === "confirmed"
-                                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                            }`}
-                          >
-                            {booking.status}
-                          </span>
+                          {(() => {
+                            const vs = getVisualBookingStatus(booking.status, booking.start_time, booking.end_time);
+                            const badge = getStatusBadge(vs);
+                            return (
+                              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${badge.className}`}>
+                                {badge.pulse && (
+                                  <span className="relative flex h-2 w-2">
+                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
+                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-green-600" />
+                                  </span>
+                                )}
+                                {badge.label}
+                              </span>
+                            );
+                          })()}
                         </td>
                       </tr>
                     );
@@ -436,15 +471,21 @@ export function AdminBookingsList({
                         Guest
                       </span>
                     )}
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                        booking.status === "confirmed"
-                          ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                          : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                      }`}
-                    >
-                      {booking.status}
-                    </span>
+                    {(() => {
+                      const vs = getVisualBookingStatus(booking.status, booking.start_time, booking.end_time);
+                      const badge = getStatusBadge(vs);
+                      return (
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}>
+                          {badge.pulse && (
+                            <span className="relative flex h-1.5 w-1.5">
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
+                              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-600" />
+                            </span>
+                          )}
+                          {badge.label}
+                        </span>
+                      );
+                    })()}
                   </div>
                   <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     {dateStr} · {timeStr} · {bayMap[booking.bay_id] ?? "Unknown"}

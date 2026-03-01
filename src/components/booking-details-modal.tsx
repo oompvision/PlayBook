@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getVisualBookingStatus } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -971,13 +972,27 @@ export function BookingDetailsModal({
               {booking.confirmation_code}
             </DialogTitle>
             <div className="flex items-center gap-2">
-              <Badge
-                variant={
-                  booking.status === "confirmed" ? "default" : "secondary"
+              {(() => {
+                const vs = getVisualBookingStatus(booking.status, booking.start_time, booking.end_time);
+                switch (vs) {
+                  case "active":
+                    return (
+                      <Badge className="bg-green-600 text-white hover:bg-green-600">
+                        <span className="relative mr-1.5 flex h-2 w-2">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+                        </span>
+                        Active
+                      </Badge>
+                    );
+                  case "confirmed":
+                    return <Badge variant="default">Confirmed</Badge>;
+                  case "completed":
+                    return <Badge variant="outline">Completed</Badge>;
+                  case "cancelled":
+                    return <Badge variant="secondary">Cancelled</Badge>;
                 }
-              >
-                {booking.status === "confirmed" ? "Confirmed" : "Cancelled"}
-              </Badge>
+              })()}
               {paymentInfo && !loadingPayment && (
                 <Badge
                   variant="outline"

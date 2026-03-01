@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button"
-import { getTodayInTimezone, formatTimeInZone } from "@/lib/utils";
+import { formatTimeInZone, getVisualBookingStatus } from "@/lib/utils";
 import { SignOutButton } from "@/components/sign-out-button";
 import { OrgHeader } from "@/components/org-header";
 import { MyBookingsList } from "@/components/my-bookings-list";
@@ -135,14 +135,15 @@ export default async function MyBookingsPage({
     }
   }
 
-  // Split into upcoming and past (using facility timezone)
-  const today = getTodayInTimezone(org.timezone);
-  const upcoming = enrichedBookings.filter(
-    (b) => b.date >= today && b.status === "confirmed"
-  );
-  const past = enrichedBookings.filter(
-    (b) => b.date < today || b.status === "cancelled"
-  );
+  // Split into upcoming+active vs past+cancelled (using visual status)
+  const upcoming = enrichedBookings.filter((b) => {
+    const vs = getVisualBookingStatus(b.status, b.start_time, b.end_time);
+    return vs === "confirmed" || vs === "active";
+  });
+  const past = enrichedBookings.filter((b) => {
+    const vs = getVisualBookingStatus(b.status, b.start_time, b.end_time);
+    return vs === "completed" || vs === "cancelled";
+  });
 
   async function cancelBooking(formData: FormData) {
     "use server";

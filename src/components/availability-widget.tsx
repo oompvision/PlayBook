@@ -1635,7 +1635,7 @@ export function AvailabilityWidget({
                                     }`}
                                   >
                                     {isCompleted ? (
-                                      <Check className="h-3 w-3 text-green-600" />
+                                      <Check className="h-3 w-3 text-green-600" strokeWidth={3} />
                                     ) : (
                                       <span>{stepNum}</span>
                                     )}
