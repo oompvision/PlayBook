@@ -211,21 +211,14 @@ STRIPE_CONNECT_WEBHOOK_SECRET=whsec_...      # For Connect account webhooks
 STRIPE_PLATFORM_PRODUCT_ID=prod_...          # For org subscription billing
 ```
 
-### Stripe CLI (Local Webhook Testing)
-The Stripe CLI forwards webhook events to your local dev server. Install it from https://stripe.com/docs/stripe-cli.
+### Stripe MCP Connector
+The **Stripe MCP connector** is enabled in Claude's settings (Connectors). This gives Claude sessions direct access to the Stripe account — use it to:
+- List/inspect accounts, customers, payment intents, products, prices, subscriptions
+- Verify Connect account status and onboarding state
+- Check webhook endpoints and event logs
+- Search Stripe documentation
 
-```bash
-# Log in (one-time)
-stripe login
-
-# Forward Connect webhooks to local endpoint
-stripe listen --forward-connect-to localhost:3000/api/stripe/webhooks/connect
-
-# The CLI prints a webhook signing secret (whsec_...) — use it as STRIPE_CONNECT_WEBHOOK_SECRET
-
-# Trigger a test event
-stripe trigger account.updated
-```
+When building or debugging Stripe integrations, **prefer using the MCP tools** over guessing at API responses. Query Stripe directly to verify state.
 
 ### Test Card Numbers
 | Card | Scenario |
