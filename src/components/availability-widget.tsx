@@ -1101,6 +1101,10 @@ export function AvailabilityWidget({
     return result.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
   }
 
+  function getBayTotalCents(bayId: string): number {
+    return getSelectedSlotInfo(bayId).reduce((sum, s) => sum + s.price_cents, 0);
+  }
+
   const selectedSlotInfo = getSelectedSlotInfo(effectiveBayId);
   const totalCents = selectedSlotInfo.reduce((sum, s) => sum + s.price_cents, 0);
 
@@ -1571,6 +1575,9 @@ export function AvailabilityWidget({
                                   )}
                                 </div>
                                 <span className="text-sm font-medium">{bay.bay_name}</span>
+                                <span className="ml-auto text-sm text-muted-foreground">
+                                  ${(getBayTotalCents(bay.bay_id) / 100).toFixed(2)}
+                                </span>
                               </label>
                             ))}
                           </div>
@@ -1713,6 +1720,9 @@ export function AvailabilityWidget({
                                   )}
                                 </div>
                                 <span className="text-sm font-medium">{bay.bay_name}</span>
+                                <span className="ml-auto text-sm text-muted-foreground">
+                                  ${(getBayTotalCents(bay.bay_id) / 100).toFixed(2)}
+                                </span>
                               </label>
                             ))}
                           </div>
@@ -2008,6 +2018,9 @@ export function AvailabilityWidget({
                                   )}
                                 </div>
                                 <span className="text-sm font-medium">{bay.bay_name}</span>
+                                <span className="ml-auto text-sm text-muted-foreground">
+                                  ${(getBayTotalCents(bay.bay_id) / 100).toFixed(2)}
+                                </span>
                               </label>
                             ))}
                           </div>
