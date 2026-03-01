@@ -46,6 +46,10 @@ import {
 } from "lucide-react";
 import { ChatWidget } from "@/components/chat/chat-widget";
 import { AuthModal } from "@/components/auth-modal";
+import {
+  BookingDetailsModal,
+  type BookingDetailData,
+} from "@/components/booking-details-modal";
 
 type Bay = {
   id: string;
@@ -318,6 +322,8 @@ export function AvailabilityWidget({
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [highlightedBookingIds, setHighlightedBookingIds] = useState<Set<string>>(new Set());
+  const [sidebarBooking, setSidebarBooking] = useState<BookingDetailData | null>(null);
+  const [sidebarModalOpen, setSidebarModalOpen] = useState(false);
 
   // Track whether we restored from localStorage (to auto-open panel)
   const restoredFromStorage = useRef(false);
@@ -1099,6 +1105,38 @@ export function AvailabilityWidget({
     );
   }
 
+  function openSidebarBooking(booking: Booking) {
+    const bayName = bays.find((b) => b.id === booking.bay_id)?.name ?? "Unknown Bay";
+    setSidebarBooking({
+      id: booking.id,
+      date: booking.date,
+      start_time: booking.start_time,
+      end_time: booking.end_time,
+      total_price_cents: booking.total_price_cents,
+      status: booking.status,
+      confirmation_code: booking.confirmation_code,
+      notes: booking.notes,
+      created_at: "",
+      bayName,
+      canCancel: true,
+      canModify: true,
+    });
+    setSidebarModalOpen(true);
+  }
+
+  async function handleSidebarCancel(formData: FormData) {
+    const bookingId = formData.get("booking_id") as string;
+    const supabase = createClient();
+    const { error } = await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
+    if (!error) {
+      fireNotification("canceled", { bookingId });
+      setBookings((prev) => prev.filter((b) => b.id !== bookingId));
+      setSidebarModalOpen(false);
+      setSidebarBooking(null);
+      fetchTimeGroups(selectedDate);
+    }
+  }
+
   // Auto-select the first eligible bay when selection changes
   const effectiveBayId = eligibleBays.some((b) => b.bay_id === selectedBayIdForBooking)
     ? selectedBayIdForBooking
@@ -1203,10 +1241,11 @@ export function AvailabilityWidget({
                     const isHighlighted = highlightedBookingIds.has(booking.id);
 
                     return (
-                      <a
+                      <button
+                        type="button"
                         key={booking.id}
-                        href={`/my-bookings?booking=${booking.confirmation_code}`}
-                        className={`block rounded-lg border bg-background p-3 transition-all duration-700 hover:bg-muted/50 ${
+                        onClick={() => openSidebarBooking(booking)}
+                        className={`block w-full rounded-lg border bg-background p-3 text-left transition-all duration-700 hover:bg-muted/50 ${
                           isHighlighted
                             ? "border-green-400 shadow-[0_0_8px_rgba(74,222,128,0.3)]"
                             : ""
@@ -1230,7 +1269,7 @@ export function AvailabilityWidget({
                             {price}
                           </span>
                         </div>
-                      </a>
+                      </button>
                     );
                   })}
                 </div>
@@ -2452,6 +2491,21 @@ export function AvailabilityWidget({
           </>,
           document.body
         )}
+
+      {/* Sidebar booking detail modal */}
+      <BookingDetailsModal
+        booking={sidebarBooking}
+        variant="customer"
+        timezone={timezone}
+        open={sidebarModalOpen}
+        onOpenChange={(open) => {
+          setSidebarModalOpen(open);
+          if (!open) setSidebarBooking(null);
+        }}
+        cancelAction={handleSidebarCancel}
+        cancellationWindowHours={cancellationWindowHours}
+        paymentMode={paymentMode}
+      />
 
       {/* Toast notification */}
       {toastData && (
