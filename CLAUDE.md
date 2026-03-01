@@ -190,3 +190,54 @@ src/
 ## Deployment
 
 - **Database migrations**: The user does not have direct CLI access to run Supabase migrations. When a new SQL migration is added, always provide the full SQL query in the chat so the user can run it manually in the Supabase SQL Editor.
+
+## Stripe
+
+### Overview
+EZ Booker uses **Stripe Connect (Standard)** so each facility org gets their own Stripe account. Customer payments flow through the org's connected account, with EZ Booker taking a platform fee via `application_fee_amount`.
+
+### Test Mode
+- All development uses Stripe **test mode** — no real money, no real bank accounts
+- Create a free Stripe account at https://dashboard.stripe.com
+- Complete your **platform profile** (required even in test mode before Connect works): Dashboard → Connect → Get started
+- Grab test keys from Dashboard → Developers → API keys
+
+### Environment Variables
+```
+STRIPE_SECRET_KEY=sk_test_...
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...              # For platform webhooks
+STRIPE_CONNECT_WEBHOOK_SECRET=whsec_...      # For Connect account webhooks
+STRIPE_PLATFORM_PRODUCT_ID=prod_...          # For org subscription billing
+```
+
+### Stripe MCP Connector
+The **Stripe MCP connector** is enabled in Claude's settings (Connectors). This gives Claude sessions direct access to the Stripe account — use it to:
+- List/inspect accounts, customers, payment intents, products, prices, subscriptions
+- Verify Connect account status and onboarding state
+- Check webhook endpoints and event logs
+- Search Stripe documentation
+
+When building or debugging Stripe integrations, **prefer using the MCP tools** over guessing at API responses. Query Stripe directly to verify state.
+
+### Test Card Numbers
+| Card | Scenario |
+|------|----------|
+| `4242 4242 4242 4242` | Succeeds |
+| `4000 0000 0000 3220` | Requires 3D Secure |
+| `4000 0000 0000 9995` | Declined (insufficient funds) |
+
+Use any future expiry date and any 3-digit CVC.
+
+### Connect Onboarding (Test Mode)
+When an admin clicks "Connect Stripe Account," they're redirected to Stripe's hosted onboarding. In test mode, Stripe shows a **"Skip this form"** button so you don't need real business details.
+
+### Key Files
+| File | Purpose |
+|------|---------|
+| `src/lib/stripe.ts` | Stripe SDK singleton (lazy-initialized via Proxy) |
+| `src/app/api/stripe/connect/route.ts` | GET (check status) + POST (create account + onboarding link) |
+| `src/app/api/stripe/webhooks/connect/route.ts` | Handles `account.updated` webhook events |
+| `src/app/api/org/payment-settings/route.ts` | GET/PUT org payment settings (payment mode, fees) |
+| `src/app/admin/settings/payment-settings.tsx` | Admin UI for Connect onboarding + payment config |
+| `supabase/migrations/00028_stripe_connect_tables.sql` | DB tables: `org_payment_settings`, `org_subscriptions`, `booking_payments` |
