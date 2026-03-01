@@ -69,6 +69,20 @@ export default async function BookingsListPage({
   const supabase = await createClient();
   const activeView = params.view === "daily" ? "daily" : "list";
 
+  // Fetch payment settings for cancellation/refund info
+  const { data: paymentSettings } = await supabase
+    .from("org_payment_settings")
+    .select("payment_mode, cancellation_window_hours, stripe_onboarding_complete")
+    .eq("org_id", org.id)
+    .single();
+
+  const cancellationWindowHours = paymentSettings?.cancellation_window_hours ?? 24;
+  const paymentMode =
+    paymentSettings?.payment_mode !== "none" &&
+    paymentSettings?.stripe_onboarding_complete
+      ? paymentSettings.payment_mode
+      : "none";
+
   // Load bays for filter dropdown + daily view columns
   const { data: bays } = await supabase
     .from("bays")
@@ -472,6 +486,8 @@ export default async function BookingsListPage({
             orgId={org.id}
             initialBookingCode={bookingCode}
             cancelAction={cancelBooking}
+            cancellationWindowHours={cancellationWindowHours}
+            paymentMode={paymentMode}
           />
         </>
       ) : (
@@ -487,6 +503,8 @@ export default async function BookingsListPage({
               cancelAction={cancelBooking}
               orgId={org.id}
               initialBookingCode={bookingCode}
+              cancellationWindowHours={cancellationWindowHours}
+              paymentMode={paymentMode}
             />
           </div>
         </div>

@@ -60,6 +60,33 @@ export default async function ModifyBookingPage({
     redirect("/my-bookings?error=" + encodeURIComponent("This booking can no longer be modified."));
   }
 
+  // Check cancellation window — customers can't modify inside the no-refund window
+  if (!isAdmin) {
+    const serviceClient = createServiceClient();
+    const { data: windowSettings } = await serviceClient
+      .from("org_payment_settings")
+      .select("cancellation_window_hours, payment_mode, stripe_onboarding_complete")
+      .eq("org_id", org.id)
+      .single();
+
+    if (
+      windowSettings &&
+      windowSettings.payment_mode !== "none" &&
+      windowSettings.stripe_onboarding_complete
+    ) {
+      const windowHours = windowSettings.cancellation_window_hours ?? 24;
+      const windowCutoff = bookingStart - windowHours * 60 * 60 * 1000;
+      if (Date.now() >= windowCutoff) {
+        redirect(
+          "/my-bookings?error=" +
+            encodeURIComponent(
+              `This booking is within the ${windowHours}-hour cancellation window and can no longer be modified.`
+            )
+        );
+      }
+    }
+  }
+
   // Fetch the booking's slot IDs
   const { data: bookingSlots } = await supabase
     .from("booking_slots")

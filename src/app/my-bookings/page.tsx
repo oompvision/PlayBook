@@ -40,6 +40,21 @@ export default async function MyBookingsPage({
   const auth = await ensureCustomerOrg(org.id);
   if (!auth) redirect(`/auth/login?redirect=/my-bookings`);
 
+  // Fetch payment settings for cancellation window info
+  const service = createServiceClient();
+  const { data: paymentSettings } = await service
+    .from("org_payment_settings")
+    .select("payment_mode, cancellation_window_hours, stripe_onboarding_complete")
+    .eq("org_id", org.id)
+    .single();
+
+  const cancellationWindowHours = paymentSettings?.cancellation_window_hours ?? 24;
+  const paymentMode =
+    paymentSettings?.payment_mode !== "none" &&
+    paymentSettings?.stripe_onboarding_complete
+      ? paymentSettings.payment_mode
+      : "none";
+
   const supabase = await createClient();
 
   const { data: bookings } = await supabase
@@ -253,6 +268,8 @@ export default async function MyBookingsPage({
           orgId={org.id}
           initialBookingCode={params.booking}
           cancelAction={cancelBooking}
+          cancellationWindowHours={cancellationWindowHours}
+          paymentMode={paymentMode}
         />
       </div>
     </div>

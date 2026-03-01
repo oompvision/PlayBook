@@ -41,6 +41,8 @@ type Props = {
   orgId: string;
   initialBookingCode?: string | null;
   cancelAction: (formData: FormData) => Promise<void>;
+  cancellationWindowHours?: number;
+  paymentMode?: string;
 };
 
 function updateBookingUrl(code: string | null) {
@@ -53,6 +55,15 @@ function updateBookingUrl(code: string | null) {
   window.history.replaceState(null, "", url.toString());
 }
 
+function isInsideCancellationWindow(
+  bookingStartTime: string,
+  windowHours: number
+): boolean {
+  const bookingStart = new Date(bookingStartTime).getTime();
+  const cutoff = bookingStart - windowHours * 60 * 60 * 1000;
+  return Date.now() >= cutoff;
+}
+
 export function MyBookingsList({
   upcoming,
   past,
@@ -61,6 +72,8 @@ export function MyBookingsList({
   orgId,
   initialBookingCode,
   cancelAction,
+  cancellationWindowHours = 24,
+  paymentMode = "none",
 }: Props) {
   const [selectedBooking, setSelectedBooking] =
     useState<BookingDetailData | null>(null);
@@ -341,6 +354,8 @@ export function MyBookingsList({
         onOpenChange={handleOpenChange}
         cancelAction={cancelAction}
         notice={filterNotice}
+        cancellationWindowHours={cancellationWindowHours}
+        paymentMode={paymentMode}
       />
     </>
   );

@@ -44,6 +44,8 @@ type Props = {
   orgId: string;
   initialBookingCode?: string | null;
   cancelAction: (formData: FormData) => Promise<void>;
+  cancellationWindowHours?: number;
+  paymentMode?: string;
 };
 
 function getCustomerDisplay(
@@ -83,6 +85,8 @@ export function AdminBookingsList({
   orgId,
   initialBookingCode,
   cancelAction,
+  cancellationWindowHours = 24,
+  paymentMode = "none",
 }: Props) {
   const [selectedBooking, setSelectedBooking] =
     useState<BookingDetailData | null>(null);
@@ -463,6 +467,8 @@ export function AdminBookingsList({
         onOpenChange={handleOpenChange}
         cancelAction={cancelAction}
         notice={filterNotice}
+        cancellationWindowHours={cancellationWindowHours}
+        paymentMode={paymentMode}
       />
     </>
   );
