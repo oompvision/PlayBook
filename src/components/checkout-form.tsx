@@ -30,6 +30,8 @@ export type CheckoutFormHandle = {
     paymentMethodId?: string;
     error?: string;
   }>;
+  /** Validates the form without confirming payment. Returns true if valid. */
+  validate: () => Promise<{ valid: boolean; error?: string }>;
 };
 
 type CheckoutFormProps = {
@@ -106,6 +108,16 @@ export const CheckoutForm = forwardRef<CheckoutFormHandle, CheckoutFormProps>(
     const [ready, setReady] = useState(false);
 
     useImperativeHandle(ref, () => ({
+      validate: async () => {
+        if (!stripe || !elements) {
+          return { valid: false, error: "Payment system not ready" };
+        }
+        const { error } = await elements.submit();
+        if (error) {
+          return { valid: false, error: error.message || "Please check your payment details" };
+        }
+        return { valid: true };
+      },
       submit: async () => {
         if (!stripe || !elements) {
           return { success: false, error: "Payment system not ready" };
@@ -223,17 +235,6 @@ export function PaymentSection({
           intentType={intentType}
         />
       </StripeCheckoutWrapper>
-
-      {/* Amount summary for upfront */}
-      {paymentMode === "charge_upfront" && amountCents > 0 && (
-        <p className="text-xs text-muted-foreground text-center">
-          You will be charged{" "}
-          <span className="font-medium">
-            ${(amountCents / 100).toFixed(2)}
-          </span>{" "}
-          now
-        </p>
-      )}
 
       {/* Passive agreement text */}
       <p className="text-xs text-muted-foreground text-center">

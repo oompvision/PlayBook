@@ -4,7 +4,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { PaymentSection, type CheckoutFormHandle } from "@/components/checkout-form";
+import {
+  StripeCheckoutWrapper,
+  CheckoutForm,
+  type CheckoutFormHandle,
+} from "@/components/checkout-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +16,12 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toast } from "@/components/ui/toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   ChevronLeft,
   ChevronRight,
@@ -22,10 +32,16 @@ import {
   Clock,
   Loader2,
   ArrowRight,
+  ArrowLeft,
   MessageSquare,
   LogIn,
   X,
   ExternalLink,
+  Check,
+  CreditCard,
+  AlertTriangle,
+  MapPin,
+  ShieldCheck,
 } from "lucide-react";
 import { ChatWidget } from "@/components/chat/chat-widget";
 import { AuthModal } from "@/components/auth-modal";
@@ -279,6 +295,12 @@ export function AvailabilityWidget({
   const [checkoutError, setCheckoutError] = useState("");
   const [policyAgreed, setPolicyAgreed] = useState(false);
   const [policyAgreedAt, setPolicyAgreedAt] = useState<string | null>(null);
+
+  // Multi-step wizard state (authenticated booking flow)
+  const [bookingStep, setBookingStep] = useState<1 | 2 | 3>(1);
+  const [paymentValidated, setPaymentValidated] = useState(false);
+  const [paymentValidationError, setPaymentValidationError] = useState("");
+  const [confirmPolicyModalOpen, setConfirmPolicyModalOpen] = useState(false);
 
   // Guest booking state (admin-guest mode)
   const [guestName, setGuestName] = useState("");
@@ -619,6 +641,11 @@ export function AvailabilityWidget({
     setCheckoutError("");
     setPolicyAgreed(false);
     setPolicyAgreedAt(null);
+    // Reset step wizard
+    setBookingStep(1);
+    setPaymentValidated(false);
+    setPaymentValidationError("");
+    setConfirmPolicyModalOpen(false);
   }
 
   // Save selection to localStorage before auth reload
@@ -1522,26 +1549,83 @@ export function AvailabilityWidget({
               ) : (
                 /* ---- Expanded booking panel ---- */
                 <div className="mx-auto max-w-lg px-6 py-6">
-                  {/* Panel header */}
-                  <div className="mb-6 flex items-center justify-between">
-                    <div>
-                      <h2 className="text-lg font-bold">
-                        {isModify ? "Review Modification" : "Confirm Booking"}
-                      </h2>
-                      <p className="text-sm text-muted-foreground">
-                        {isModify && originalBooking
-                          ? `Modifying ${formatTime(originalBooking.startTime, timezone)} – ${formatTime(originalBooking.endTime, timezone)}, ${new Date(originalBooking.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${originalBooking.bayName}`
-                          : formatDateLabel(selectedDate)}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleClosePanel}
-                      className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
-                  </div>
+                  {/* Panel header — sticky for authenticated step flow */}
+                  {(() => {
+                    const isAuthStepFlow = isAuthenticated && !isModify && mode !== "admin-guest";
+                    const totalSteps = requiresPayment ? 3 : 2;
+                    const stepLabels = requiresPayment
+                      ? ["Facility", "Payment", "Confirm"]
+                      : ["Facility", "Confirm"];
+                    const timeRangeStr = selectedSlotInfo.length > 0
+                      ? `${formatTime(selectedSlotInfo[0].start_time, timezone)} – ${formatTime(selectedSlotInfo[selectedSlotInfo.length - 1].end_time, timezone)}`
+                      : "";
+                    const shortDateStr = new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+                    return (
+                      <div className={isAuthStepFlow ? "sticky top-0 z-10 -mx-6 bg-background px-6 pb-4 pt-0" : "mb-6"}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h2 className="text-lg font-bold">
+                              {isModify ? "Review Modification" : "Confirm Booking"}
+                            </h2>
+                            <p className="text-sm text-muted-foreground">
+                              {isModify && originalBooking
+                                ? `Modifying ${formatTime(originalBooking.startTime, timezone)} – ${formatTime(originalBooking.endTime, timezone)}, ${new Date(originalBooking.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${originalBooking.bayName}`
+                                : isAuthStepFlow && timeRangeStr
+                                  ? `${shortDateStr} · ${timeRangeStr}`
+                                  : formatDateLabel(selectedDate)}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleClosePanel}
+                            className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                          >
+                            <X className="h-5 w-5" />
+                          </button>
+                        </div>
+
+                        {/* Step indicator — only for authenticated step flow */}
+                        {isAuthStepFlow && (
+                          <div className="mt-3 flex items-center gap-1">
+                            {stepLabels.map((label, i) => {
+                              const stepNum = i + 1;
+                              const isCurrent = bookingStep === stepNum;
+                              const isCompleted = bookingStep > stepNum;
+                              return (
+                                <div key={label} className="flex items-center gap-1">
+                                  {i > 0 && (
+                                    <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
+                                  )}
+                                  <button
+                                    type="button"
+                                    disabled={!isCompleted}
+                                    onClick={() => {
+                                      if (isCompleted) setBookingStep(stepNum as 1 | 2 | 3);
+                                    }}
+                                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                                      isCurrent
+                                        ? "bg-primary text-primary-foreground"
+                                        : isCompleted
+                                          ? "bg-primary/10 text-primary cursor-pointer hover:bg-primary/20"
+                                          : "bg-muted text-muted-foreground"
+                                    }`}
+                                  >
+                                    {isCompleted ? (
+                                      <Check className="h-3 w-3" />
+                                    ) : (
+                                      <span>{stepNum}</span>
+                                    )}
+                                    {label}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {isModify && originalBooking ? (
                     /* ---- Modify booking: old-vs-new comparison + confirm ---- */
@@ -1987,7 +2071,7 @@ export function AvailabilityWidget({
                       </Tabs>
                     </div>
                   ) : (
-                    /* ---- Authenticated: Booking summary + confirm ---- */
+                    /* ---- Authenticated: Multi-step booking wizard ---- */
                     <div>
                       {/* Error banner */}
                       {bookingError && (
@@ -1996,104 +2080,149 @@ export function AvailabilityWidget({
                         </div>
                       )}
 
-                      {/* Bay selector */}
-                      {eligibleBays.length > 1 && (
-                        <div className="mb-4">
-                          <p className="mb-2 text-sm font-medium">Select Facility</p>
-                          <div className="space-y-2">
-                            {eligibleBays.map((bay) => (
-                              <label
-                                key={bay.bay_id}
-                                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${
-                                  effectiveBayId === bay.bay_id
-                                    ? "border-primary bg-primary/5 ring-1 ring-primary"
-                                    : "hover:bg-accent"
-                                }`}
-                              >
-                                <input
-                                  type="radio"
-                                  name="bay-select-auth"
-                                  value={bay.bay_id}
-                                  checked={effectiveBayId === bay.bay_id}
-                                  onChange={() => setSelectedBayIdForBooking(bay.bay_id)}
-                                  className="sr-only"
-                                />
+                      {/* ═══ Step 1: Facility ═══ */}
+                      {bookingStep === 1 && (
+                        <div>
+                          {/* Bay selector */}
+                          {eligibleBays.length > 1 && (
+                            <div className="mb-4">
+                              <p className="mb-2 text-sm font-medium">Select Facility</p>
+                              <div className="space-y-2">
+                                {eligibleBays.map((bay) => (
+                                  <label
+                                    key={bay.bay_id}
+                                    className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                                      effectiveBayId === bay.bay_id
+                                        ? "border-primary bg-primary/5 ring-1 ring-primary"
+                                        : "hover:bg-accent"
+                                    }`}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name="bay-select-auth"
+                                      value={bay.bay_id}
+                                      checked={effectiveBayId === bay.bay_id}
+                                      onChange={() => {
+                                        setSelectedBayIdForBooking(bay.bay_id);
+                                        // Invalidate checkout intent since slot IDs depend on the bay
+                                        if (checkoutIntent) {
+                                          setCheckoutIntent(null);
+                                          setPaymentValidated(false);
+                                        }
+                                      }}
+                                      className="sr-only"
+                                    />
+                                    <div
+                                      className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
+                                        effectiveBayId === bay.bay_id
+                                          ? "border-primary"
+                                          : "border-muted-foreground/30"
+                                      }`}
+                                    >
+                                      {effectiveBayId === bay.bay_id && (
+                                        <div className="h-2 w-2 rounded-full bg-primary" />
+                                      )}
+                                    </div>
+                                    <span className="text-sm font-medium">{bay.bay_name}</span>
+                                    <span className="ml-auto text-sm text-muted-foreground">
+                                      ${(getBayTotalCents(bay.bay_id) / 100).toFixed(2)}
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Booking summary */}
+                          <div className="mb-4 rounded-lg border p-4">
+                            <div className="mb-3">
+                              <p className="font-medium">{selectedBayObj?.name}</p>
+                            </div>
+                            <div className="space-y-2">
+                              {selectedGroups.map((group) => (
                                 <div
-                                  className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
-                                    effectiveBayId === bay.bay_id
-                                      ? "border-primary"
-                                      : "border-muted-foreground/30"
-                                  }`}
+                                  key={group.start_time}
+                                  className="flex items-center justify-between text-sm"
                                 >
-                                  {effectiveBayId === bay.bay_id && (
-                                    <div className="h-2 w-2 rounded-full bg-primary" />
-                                  )}
+                                  <span>
+                                    {formatTime(group.start_time, timezone)} &ndash;{" "}
+                                    {formatTime(group.end_time, timezone)}
+                                    {group.slot_count > 1 && (
+                                      <span className="ml-2 text-xs text-muted-foreground">
+                                        ({group.slot_count} slots)
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="text-muted-foreground">
+                                    ${(group.price_cents / 100).toFixed(2)}
+                                  </span>
                                 </div>
-                                <span className="text-sm font-medium">{bay.bay_name}</span>
-                                <span className="ml-auto text-sm text-muted-foreground">
-                                  ${(getBayTotalCents(bay.bay_id) / 100).toFixed(2)}
-                                </span>
-                              </label>
-                            ))}
+                              ))}
+                            </div>
+                            <div className="mt-3 border-t pt-3">
+                              <div className="flex items-center justify-between font-bold">
+                                <span>Total</span>
+                                <span>${(totalCents / 100).toFixed(2)}</span>
+                              </div>
+                            </div>
                           </div>
+
+                          {/* Notes */}
+                          <div className="mb-4 space-y-2">
+                            <Label htmlFor="booking-notes">Notes (optional)</Label>
+                            <Input
+                              id="booking-notes"
+                              placeholder="Any special requests..."
+                              value={notes}
+                              onChange={(e) => setNotes(e.target.value)}
+                            />
+                          </div>
+
+                          {/* User info */}
+                          <p className="mb-4 text-sm text-muted-foreground">
+                            Booking as {userFullName || userEmail}
+                          </p>
+
+                          {/* Continue button */}
+                          <Button
+                            className="w-full"
+                            size="lg"
+                            onClick={() => {
+                              if (requiresPayment) {
+                                // Advance to payment step
+                                setBookingStep(2);
+                                setPaymentValidationError("");
+                                if (!checkoutIntent && !checkoutLoading) {
+                                  createCheckoutIntent();
+                                }
+                              } else {
+                                // No payment — skip directly to confirm step (step 2)
+                                setBookingStep(2);
+                              }
+                            }}
+                          >
+                            {requiresPayment ? (
+                              <>
+                                Continue to Payment
+                                <ArrowRight className="ml-2 h-4 w-4" />
+                              </>
+                            ) : (
+                              <>
+                                Continue to Confirm
+                                <ArrowRight className="ml-2 h-4 w-4" />
+                              </>
+                            )}
+                          </Button>
                         </div>
                       )}
 
-                      {/* Booking summary */}
-                      <div className="mb-4 rounded-lg border p-4">
-                        <div className="mb-3">
-                          <p className="font-medium">{selectedBayObj?.name}</p>
-                        </div>
-                        <div className="space-y-2">
-                          {selectedGroups.map((group) => (
-                            <div
-                              key={group.start_time}
-                              className="flex items-center justify-between text-sm"
-                            >
-                              <span>
-                                {formatTime(group.start_time, timezone)} &ndash;{" "}
-                                {formatTime(group.end_time, timezone)}
-                                {group.slot_count > 1 && (
-                                  <span className="ml-2 text-xs text-muted-foreground">
-                                    ({group.slot_count} slots)
-                                  </span>
-                                )}
-                              </span>
-                              <span className="text-muted-foreground">
-                                ${(group.price_cents / 100).toFixed(2)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="mt-3 border-t pt-3">
-                          <div className="flex items-center justify-between font-bold">
-                            <span>Total</span>
-                            <span>${(totalCents / 100).toFixed(2)}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Notes */}
-                      <div className="mb-4 space-y-2">
-                        <Label htmlFor="booking-notes">Notes (optional)</Label>
-                        <Input
-                          id="booking-notes"
-                          placeholder="Any special requests..."
-                          value={notes}
-                          onChange={(e) => setNotes(e.target.value)}
-                        />
-                      </div>
-
-                      {/* User info */}
-                      <p className="mb-4 text-sm text-muted-foreground">
-                        Booking as {userFullName || userEmail}
-                      </p>
-
-                      {/* Payment section — shown when org requires payment */}
-                      {requiresPayment && (
-                        <div className="mb-4">
+                      {/* ═══ Step 2: Payment (only when requiresPayment) ═══ */}
+                      {/* Stripe Elements must stay mounted across steps 2 & 3 so submit() works on confirm.
+                          We render the full payment step but hide it when not active. */}
+                      {requiresPayment && (bookingStep === 2 || bookingStep === 3) && (
+                        <div className={bookingStep !== 2 ? "hidden" : ""}>
                           {checkoutLoading ? (
-                            <div className="flex items-center justify-center rounded-lg border border-dashed py-8">
+                            <div className="flex items-center justify-center rounded-lg border border-dashed py-12">
                               <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
                               <span className="text-sm text-muted-foreground">
                                 Preparing payment...
@@ -2110,62 +2239,207 @@ export function AvailabilityWidget({
                               </button>
                             </div>
                           ) : checkoutIntent ? (
-                            <PaymentSection
-                              stripeAccountId={checkoutIntent.stripe_account_id}
-                              clientSecret={checkoutIntent.client_secret}
-                              intentType={checkoutIntent.intent_type}
-                              paymentMode={paymentMode}
-                              amountCents={checkoutIntent.amount_cents}
-                              cancellationPolicyText={checkoutIntent.cancellation_policy_text}
-                              onPolicyAgree={(agreedAt) => {
-                                setPolicyAgreed(true);
-                                setPolicyAgreedAt(agreedAt);
-                              }}
-                              policyAgreed={policyAgreed}
-                              checkoutFormRef={checkoutFormRef}
-                              isWithinCancellationWindow={isWithinCancellationWindow}
-                              cancellationWindowHours={cancellationWindowHours}
-                            />
-                          ) : (
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-2">
+                                <CreditCard className="h-4 w-4 text-muted-foreground" />
+                                <p className="text-sm font-medium">
+                                  {paymentMode === "charge_upfront"
+                                    ? "Payment Details"
+                                    : "Card on File"}
+                                </p>
+                              </div>
+
+                              <StripeCheckoutWrapper
+                                stripeAccountId={checkoutIntent.stripe_account_id}
+                                clientSecret={checkoutIntent.client_secret}
+                              >
+                                <CheckoutForm
+                                  ref={checkoutFormRef}
+                                  intentType={checkoutIntent.intent_type}
+                                />
+                              </StripeCheckoutWrapper>
+
+                              {paymentValidationError && (
+                                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                                  {paymentValidationError}
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
+
+                          {/* Navigation buttons */}
+                          <div className="mt-6 flex gap-3">
                             <Button
                               variant="outline"
-                              className="w-full"
-                              onClick={createCheckoutIntent}
+                              className="flex-1"
+                              onClick={() => {
+                                setBookingStep(1);
+                                setPaymentValidationError("");
+                              }}
                             >
-                              Enter Payment Details
+                              <ArrowLeft className="mr-2 h-4 w-4" />
+                              Back
                             </Button>
-                          )}
+                            <Button
+                              className="flex-1"
+                              disabled={!checkoutIntent || checkoutLoading}
+                              onClick={async () => {
+                                setPaymentValidationError("");
+                                if (!checkoutFormRef.current) {
+                                  setPaymentValidationError("Payment form not ready. Please try again.");
+                                  return;
+                                }
+                                const result = await checkoutFormRef.current.validate();
+                                if (!result.valid) {
+                                  setPaymentValidationError(result.error || "Please check your payment details.");
+                                  return;
+                                }
+                                setPaymentValidated(true);
+                                setBookingStep(3);
+                              }}
+                            >
+                              Continue to Confirm
+                              <ArrowRight className="ml-2 h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                       )}
 
-                      {/* Confirm button */}
-                      <Button
-                        className="w-full"
-                        size="lg"
-                        disabled={
-                          bookingInProgress ||
-                          (requiresPayment && !checkoutIntent) ||
-                          (requiresPayment && checkoutLoading)
-                        }
-                        onClick={handleConfirmBooking}
-                      >
-                        {bookingInProgress ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            {requiresPayment && paymentMode === "charge_upfront"
-                              ? "Processing payment..."
-                              : requiresPayment
-                                ? "Saving card..."
-                                : "Booking..."}
-                          </>
-                        ) : requiresPayment && paymentMode === "charge_upfront" ? (
-                          `Confirm & Pay $${(totalCents / 100).toFixed(2)}`
-                        ) : requiresPayment ? (
-                          "Confirm & Save Card"
-                        ) : (
-                          "Confirm Booking"
-                        )}
-                      </Button>
+                      {/* ═══ Step 2 (no payment) / Step 3 (with payment): Confirm ═══ */}
+                      {((bookingStep === 2 && !requiresPayment) ||
+                        (bookingStep === 3 && requiresPayment)) && (
+                        <div>
+                          {/* Summary card */}
+                          <div className="mb-4 space-y-3 rounded-lg border p-4">
+                            {/* Date & time */}
+                            <div className="flex items-center gap-2 text-sm">
+                              <CalendarCheck className="h-4 w-4 text-muted-foreground" />
+                              <span>
+                                {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                                {" · "}
+                                {selectedSlotInfo.length > 0
+                                  ? `${formatTime(selectedSlotInfo[0].start_time, timezone)} – ${formatTime(selectedSlotInfo[selectedSlotInfo.length - 1].end_time, timezone)}`
+                                  : ""}
+                              </span>
+                            </div>
+
+                            {/* Facility */}
+                            <div className="flex items-center gap-2 text-sm">
+                              <MapPin className="h-4 w-4 text-muted-foreground" />
+                              <span>{selectedBayObj?.name}</span>
+                            </div>
+
+                            {/* Payment method (if applicable) */}
+                            {requiresPayment && paymentValidated && (
+                              <div className="flex items-center gap-2 text-sm">
+                                <CreditCard className="h-4 w-4 text-muted-foreground" />
+                                <span>Payment method ready</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setBookingStep(2)}
+                                  className="ml-auto text-xs text-primary underline underline-offset-2 hover:text-primary/80"
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Total */}
+                            <div className="flex items-center justify-between border-t pt-3 text-sm font-bold">
+                              <span>Total</span>
+                              <span>${(totalCents / 100).toFixed(2)}</span>
+                            </div>
+                          </div>
+
+                          {/* Notes (if provided) */}
+                          {notes && (
+                            <div className="mb-4 rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+                              <span className="font-medium text-foreground">Note:</span> {notes}
+                            </div>
+                          )}
+
+                          {/* Terms + cancellation policy */}
+                          <p className="mb-2 text-xs text-muted-foreground text-center">
+                            By booking you agree to the terms and{" "}
+                            {checkoutIntent?.cancellation_policy_text ? (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmPolicyModalOpen(true)}
+                                className="underline underline-offset-2 hover:text-foreground transition-colors"
+                              >
+                                cancellation policy
+                              </button>
+                            ) : (
+                              "cancellation policy"
+                            )}
+                          </p>
+
+                          {/* Cancellation policy modal */}
+                          {checkoutIntent?.cancellation_policy_text && (
+                            <Dialog open={confirmPolicyModalOpen} onOpenChange={setConfirmPolicyModalOpen}>
+                              <DialogContent className="sm:max-w-md">
+                                <DialogHeader>
+                                  <DialogTitle className="flex items-center gap-2">
+                                    <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                    Cancellation Policy
+                                  </DialogTitle>
+                                </DialogHeader>
+                                <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/50">
+                                  <p className="text-sm leading-relaxed text-blue-700 dark:text-blue-300">
+                                    {checkoutIntent.cancellation_policy_text}
+                                  </p>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                          )}
+
+                          {/* No-cancellation window warning */}
+                          {isWithinCancellationWindow && (
+                            <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/50">
+                              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                              <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+                                This booking is less than {cancellationWindowHours} hours away and cannot be refunded or modified.
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Navigation + Confirm */}
+                          <div className="flex gap-3">
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setBookingStep(requiresPayment ? 2 : 1);
+                              }}
+                            >
+                              <ArrowLeft className="mr-2 h-4 w-4" />
+                              Back
+                            </Button>
+                            <Button
+                              className="flex-1"
+                              size="lg"
+                              disabled={bookingInProgress}
+                              onClick={handleConfirmBooking}
+                            >
+                              {bookingInProgress ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  {requiresPayment && paymentMode === "charge_upfront"
+                                    ? "Processing payment..."
+                                    : requiresPayment
+                                      ? "Saving card..."
+                                      : "Booking..."}
+                                </>
+                              ) : requiresPayment && paymentMode === "charge_upfront" ? (
+                                `Confirm & Pay $${(totalCents / 100).toFixed(2)}`
+                              ) : requiresPayment ? (
+                                "Confirm & Save Card"
+                              ) : (
+                                "Confirm Booking"
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
