@@ -1601,7 +1601,7 @@ export function AvailabilityWidget({
                               const stepNum = i + 1;
                               const isCurrent = bookingStep === stepNum;
                               const isCompleted = bookingStep > stepNum;
-                              // Don't allow going back to payment step once confirmed
+                              // Allow going back to step 1 always; never back to step 2 once confirmed
                               const canNavigate = isCompleted && !(confirmedPaymentMethodId && stepNum === 2);
                               return (
                                 <div key={label} className="flex items-center gap-1">
@@ -1612,7 +1612,17 @@ export function AvailabilityWidget({
                                     type="button"
                                     disabled={!canNavigate}
                                     onClick={() => {
-                                      if (canNavigate) setBookingStep(stepNum as 1 | 2 | 3);
+                                      if (!canNavigate) return;
+                                      // Going back to step 1 resets payment state
+                                      if (stepNum === 1 && requiresPayment && confirmedPaymentMethodId) {
+                                        setPaymentValidated(false);
+                                        setPaymentValidationError("");
+                                        setConfirmedPaymentMethodId(null);
+                                        setCardBrand(null);
+                                        setCardLast4(null);
+                                        setCheckoutIntent(null);
+                                      }
+                                      setBookingStep(stepNum as 1 | 2 | 3);
                                     }}
                                     className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                                       isCurrent
@@ -1625,7 +1635,7 @@ export function AvailabilityWidget({
                                     }`}
                                   >
                                     {isCompleted ? (
-                                      <Check className="h-3 w-3" />
+                                      <Check className="h-3 w-3 text-green-600" />
                                     ) : (
                                       <span>{stepNum}</span>
                                     )}
@@ -2451,7 +2461,17 @@ export function AvailabilityWidget({
                             <Button
                               variant="outline"
                               onClick={() => {
-                                setBookingStep(requiresPayment ? 2 : 1);
+                                // Always go back to step 1 — resets payment state
+                                // so a fresh intent is created when re-entering step 2
+                                setBookingStep(1);
+                                if (requiresPayment) {
+                                  setPaymentValidated(false);
+                                  setPaymentValidationError("");
+                                  setConfirmedPaymentMethodId(null);
+                                  setCardBrand(null);
+                                  setCardLast4(null);
+                                  setCheckoutIntent(null);
+                                }
                               }}
                             >
                               <ArrowLeft className="mr-2 h-4 w-4" />
