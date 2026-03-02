@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button"
-import { getTodayInTimezone, formatTimeInZone } from "@/lib/utils";
+import { formatTimeInZone, getVisualBookingStatus } from "@/lib/utils";
 import { SignOutButton } from "@/components/sign-out-button";
 import { OrgHeader } from "@/components/org-header";
 import { MyBookingsList } from "@/components/my-bookings-list";
@@ -39,6 +39,21 @@ export default async function MyBookingsPage({
 
   const auth = await ensureCustomerOrg(org.id);
   if (!auth) redirect(`/auth/login?redirect=/my-bookings`);
+
+  // Fetch payment settings for cancellation window info
+  const service = createServiceClient();
+  const { data: paymentSettings } = await service
+    .from("org_payment_settings")
+    .select("payment_mode, cancellation_window_hours, stripe_onboarding_complete")
+    .eq("org_id", org.id)
+    .single();
+
+  const cancellationWindowHours = paymentSettings?.cancellation_window_hours ?? 24;
+  const paymentMode =
+    paymentSettings?.payment_mode !== "none" &&
+    paymentSettings?.stripe_onboarding_complete
+      ? paymentSettings.payment_mode
+      : "none";
 
   const supabase = await createClient();
 
@@ -120,14 +135,15 @@ export default async function MyBookingsPage({
     }
   }
 
-  // Split into upcoming and past (using facility timezone)
-  const today = getTodayInTimezone(org.timezone);
-  const upcoming = enrichedBookings.filter(
-    (b) => b.date >= today && b.status === "confirmed"
-  );
-  const past = enrichedBookings.filter(
-    (b) => b.date < today || b.status === "cancelled"
-  );
+  // Split into upcoming+active vs past+cancelled (using visual status)
+  const upcoming = enrichedBookings.filter((b) => {
+    const vs = getVisualBookingStatus(b.status, b.start_time, b.end_time);
+    return vs === "confirmed" || vs === "active";
+  });
+  const past = enrichedBookings.filter((b) => {
+    const vs = getVisualBookingStatus(b.status, b.start_time, b.end_time);
+    return vs === "completed" || vs === "cancelled";
+  });
 
   async function cancelBooking(formData: FormData) {
     "use server";
@@ -253,6 +269,8 @@ export default async function MyBookingsPage({
           orgId={org.id}
           initialBookingCode={params.booking}
           cancelAction={cancelBooking}
+          cancellationWindowHours={cancellationWindowHours}
+          paymentMode={paymentMode}
         />
       </div>
     </div>

@@ -9,7 +9,7 @@ import {
   BookingDetailsModal,
   type BookingDetailData,
 } from "@/components/booking-details-modal";
-import { formatTimeInZone } from "@/lib/utils";
+import { formatTimeInZone, getVisualBookingStatus } from "@/lib/utils";
 
 type ModifiedFromInfo = {
   startTime: string;
@@ -41,6 +41,8 @@ type Props = {
   orgId: string;
   initialBookingCode?: string | null;
   cancelAction: (formData: FormData) => Promise<void>;
+  cancellationWindowHours?: number;
+  paymentMode?: string;
 };
 
 function updateBookingUrl(code: string | null) {
@@ -53,6 +55,15 @@ function updateBookingUrl(code: string | null) {
   window.history.replaceState(null, "", url.toString());
 }
 
+function isInsideCancellationWindow(
+  bookingStartTime: string,
+  windowHours: number
+): boolean {
+  const bookingStart = new Date(bookingStartTime).getTime();
+  const cutoff = bookingStart - windowHours * 60 * 60 * 1000;
+  return Date.now() >= cutoff;
+}
+
 export function MyBookingsList({
   upcoming,
   past,
@@ -61,6 +72,8 @@ export function MyBookingsList({
   orgId,
   initialBookingCode,
   cancelAction,
+  cancellationWindowHours = 24,
+  paymentMode = "none",
 }: Props) {
   const [selectedBooking, setSelectedBooking] =
     useState<BookingDetailData | null>(null);
@@ -235,6 +248,8 @@ export function MyBookingsList({
               day: "numeric",
             });
             const timeStr = `${formatTimeInZone(booking.start_time, timezone)} – ${formatTimeInZone(booking.end_time, timezone)}`;
+            const visualStatus = getVisualBookingStatus(booking.status, booking.start_time, booking.end_time);
+            const isActive = visualStatus === "active";
 
             return (
               <button
@@ -247,7 +262,17 @@ export function MyBookingsList({
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="font-medium">{dateStr}</p>
-                      <Badge variant="default">Confirmed</Badge>
+                      {isActive ? (
+                        <Badge className="bg-green-600 text-white hover:bg-green-600">
+                          <span className="relative mr-1.5 flex h-2 w-2">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+                          </span>
+                          Active
+                        </Badge>
+                      ) : (
+                        <Badge variant="default">Confirmed</Badge>
+                      )}
                     </div>
                     <p className="mt-0.5 text-sm text-muted-foreground">
                       {timeStr} · {bayMap[booking.bay_id] || "Facility"} · $
@@ -341,6 +366,8 @@ export function MyBookingsList({
         onOpenChange={handleOpenChange}
         cancelAction={cancelAction}
         notice={filterNotice}
+        cancellationWindowHours={cancellationWindowHours}
+        paymentMode={paymentMode}
       />
     </>
   );

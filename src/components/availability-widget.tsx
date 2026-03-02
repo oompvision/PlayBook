@@ -4,6 +4,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import {
+  StripeCheckoutWrapper,
+  CheckoutForm,
+  type CheckoutFormHandle,
+} from "@/components/checkout-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +16,12 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toast } from "@/components/ui/toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   ChevronLeft,
   ChevronRight,
@@ -21,13 +32,24 @@ import {
   Clock,
   Loader2,
   ArrowRight,
+  ArrowLeft,
+  ArrowUpRight,
   MessageSquare,
   LogIn,
   X,
   ExternalLink,
+  Check,
+  CreditCard,
+  AlertTriangle,
+  MapPin,
+  ShieldCheck,
 } from "lucide-react";
-import { ChatWidget } from "@/components/chat/chat-widget";
+import { ChatWidget, type BookingAction } from "@/components/chat/chat-widget";
 import { AuthModal } from "@/components/auth-modal";
+import {
+  BookingDetailsModal,
+  type BookingDetailData,
+} from "@/components/booking-details-modal";
 
 type Bay = {
   id: string;
@@ -93,6 +115,10 @@ type AvailabilityWidgetProps = {
   originalBooking?: OriginalBookingInfo;
   /** Where to redirect after modification — e.g. "/my-bookings" or "/admin/bookings" */
   modifyRedirectBase?: string;
+  /** Org's payment mode — "none" | "charge_upfront" | "hold" | "hold_charge_manual" */
+  paymentMode?: string;
+  /** Cancellation window in hours (default 24) */
+  cancellationWindowHours?: number;
 };
 
 type ToastData = {
@@ -207,6 +233,8 @@ export function AvailabilityWidget({
   mode = "customer",
   originalBooking,
   modifyRedirectBase,
+  paymentMode = "none",
+  cancellationWindowHours = 24,
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const isModify = mode === "modify";
@@ -256,6 +284,32 @@ export function AvailabilityWidget({
   const [signUpLoading, setSignUpLoading] = useState(false);
   const [signUpSuccess, setSignUpSuccess] = useState(false);
 
+  // Checkout / payment state
+  const requiresPayment = paymentMode !== "none" && mode === "customer";
+  const checkoutFormRef = useRef<CheckoutFormHandle | null>(null);
+  const [checkoutIntent, setCheckoutIntent] = useState<{
+    client_secret: string;
+    intent_type: "payment" | "setup";
+    intent_id: string;
+    stripe_customer_id: string;
+    stripe_account_id: string;
+    amount_cents: number;
+    cancellation_policy_text: string;
+  } | null>(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [policyAgreed, setPolicyAgreed] = useState(false);
+  const [policyAgreedAt, setPolicyAgreedAt] = useState<string | null>(null);
+
+  // Multi-step wizard state (authenticated booking flow)
+  const [bookingStep, setBookingStep] = useState<1 | 2 | 3>(1);
+  const [paymentValidated, setPaymentValidated] = useState(false);
+  const [paymentValidationError, setPaymentValidationError] = useState("");
+  const [confirmPolicyModalOpen, setConfirmPolicyModalOpen] = useState(false);
+  const [cardBrand, setCardBrand] = useState<string | null>(null);
+  const [cardLast4, setCardLast4] = useState<string | null>(null);
+  const [confirmedPaymentMethodId, setConfirmedPaymentMethodId] = useState<string | null>(null);
+
   // Guest booking state (admin-guest mode)
   const [guestName, setGuestName] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
@@ -267,12 +321,14 @@ export function AvailabilityWidget({
   // Bookings state
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
-  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [highlightedBookingIds, setHighlightedBookingIds] = useState<Set<string>>(new Set());
+  const [sidebarBooking, setSidebarBooking] = useState<BookingDetailData | null>(null);
+  const [sidebarModalOpen, setSidebarModalOpen] = useState(false);
 
   // Track whether we restored from localStorage (to auto-open panel)
   const restoredFromStorage = useRef(false);
+  // Pending booking action from chat (needs to wait for timeGroups to load after date change)
+  const pendingBookingAction = useRef<BookingAction | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -493,6 +549,76 @@ export function AvailabilityWidget({
     fetchTimeGroups(selectedDate);
   }, [selectedDate, fetchTimeGroups]);
 
+  // Process pending booking action after time groups load
+  useEffect(() => {
+    if (!pendingBookingAction.current || loading || timeGroups.length === 0) return;
+    const action = pendingBookingAction.current;
+    pendingBookingAction.current = null;
+
+    // Find the matching time group by formatted start_time
+    const normalizeTime = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+    const requestedTime = normalizeTime(action.start_time);
+
+    const matchedGroup = timeGroups.find((g) => {
+      const formatted = normalizeTime(formatTime(g.start_time, timezone));
+      return formatted === requestedTime;
+    });
+
+    if (!matchedGroup) return;
+
+    // Find the matching bay in the group
+    const matchedBay = matchedGroup.available_bays.find((b) =>
+      b.bay_name.toLowerCase().includes(action.bay_name.toLowerCase())
+    );
+
+    // Select the time slot
+    setSelectedTimeKeys(new Set([matchedGroup.key]));
+    if (matchedBay) {
+      setSelectedBayIdForBooking(matchedBay.bay_id);
+    }
+    // Open the booking panel
+    setPanelOpen(true);
+    setBookingStep(1);
+  }, [loading, timeGroups, timezone]);
+
+  // Handle booking action from chat assistant
+  const handleBookingAction = useCallback(
+    (action: BookingAction) => {
+      // If we need to change the date, set it and store the action for later
+      if (action.date !== selectedDate) {
+        pendingBookingAction.current = action;
+        setSelectedDate(action.date);
+      } else {
+        // Same date — time groups are already loaded, process immediately
+        pendingBookingAction.current = action;
+        // Trigger the effect by touching a dependency — the effect will run on next render
+        // since we just set the ref. Force a re-render by setting loading momentarily.
+        // Actually, just process inline since timeGroups are already available:
+        const normalizeTime = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+        const requestedTime = normalizeTime(action.start_time);
+
+        const matchedGroup = timeGroups.find((g) => {
+          const formatted = normalizeTime(formatTime(g.start_time, timezone));
+          return formatted === requestedTime;
+        });
+
+        if (matchedGroup) {
+          const matchedBay = matchedGroup.available_bays.find((b) =>
+            b.bay_name.toLowerCase().includes(action.bay_name.toLowerCase())
+          );
+          setSelectedTimeKeys(new Set([matchedGroup.key]));
+          if (matchedBay) {
+            setSelectedBayIdForBooking(matchedBay.bay_id);
+          }
+          setPanelOpen(true);
+          setBookingStep(1);
+          pendingBookingAction.current = null;
+        }
+      }
+    },
+    [selectedDate, timeGroups, timezone]
+  );
+
   // Auto-open panel after restoring from localStorage (post-auth reload)
   useEffect(() => {
     if (mounted && selectedTimeKeys.size > 0 && isAuthenticated) {
@@ -589,6 +715,20 @@ export function AvailabilityWidget({
     setGuestName("");
     setGuestEmail("");
     setGuestPhone("");
+    // Reset checkout state
+    setCheckoutIntent(null);
+    setCheckoutLoading(false);
+    setCheckoutError("");
+    setPolicyAgreed(false);
+    setPolicyAgreedAt(null);
+    // Reset step wizard
+    setBookingStep(1);
+    setPaymentValidated(false);
+    setPaymentValidationError("");
+    setConfirmPolicyModalOpen(false);
+    setCardBrand(null);
+    setCardLast4(null);
+    setConfirmedPaymentMethodId(null);
   }
 
   // Save selection to localStorage before auth reload
@@ -653,12 +793,113 @@ export function AvailabilityWidget({
     setSignUpLoading(false);
   }
 
+  // Create checkout intent (PaymentIntent or SetupIntent) on the org's connected account
+  async function createCheckoutIntent() {
+    const slotIdsArray = selectedSlotInfo.map((s) => s.slot_id);
+    setCheckoutLoading(true);
+    setCheckoutError("");
+
+    try {
+      const res = await fetch("/api/stripe/create-checkout-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slot_ids: slotIdsArray }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setCheckoutError(err.error || "Failed to prepare payment");
+        setCheckoutLoading(false);
+        return;
+      }
+
+      const data = await res.json();
+      setCheckoutIntent(data);
+    } catch {
+      setCheckoutError("Network error. Please try again.");
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }
+
+  // Record booking payment after successful booking + payment
+  async function recordBookingPayment(
+    bookingId: string,
+    paymentMethodId?: string
+  ) {
+    if (!checkoutIntent) return;
+    try {
+      await fetch("/api/stripe/record-booking-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          booking_id: bookingId,
+          intent_id: checkoutIntent.intent_id,
+          intent_type: checkoutIntent.intent_type,
+          stripe_customer_id: checkoutIntent.stripe_customer_id,
+          stripe_payment_method_id: paymentMethodId,
+          amount_cents: checkoutIntent.amount_cents,
+          cancellation_policy_text: checkoutIntent.cancellation_policy_text,
+          policy_agreed_at: policyAgreedAt,
+        }),
+      });
+    } catch {
+      // Non-critical: booking exists, payment confirmed in Stripe
+      console.error("Failed to record booking payment");
+    }
+  }
+
+  // Cancel/refund intent when booking fails after payment
+  async function cancelIntent() {
+    if (!checkoutIntent) return;
+    try {
+      await fetch("/api/stripe/cancel-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          intent_id: checkoutIntent.intent_id,
+          intent_type: checkoutIntent.intent_type,
+        }),
+      });
+    } catch {
+      console.error("Failed to cancel intent");
+    }
+  }
+
   // Confirm booking — client-side via Supabase RPC
   async function handleConfirmBooking() {
     if (!userProfileId || !effectiveBayId) return;
 
     setBookingInProgress(true);
     setBookingError("");
+
+    // If payment is required, use the already-confirmed payment method from step 2
+    let paymentMethodId: string | undefined;
+    if (requiresPayment && checkoutIntent) {
+      if (!policyAgreedAt) {
+        setPolicyAgreed(true);
+        setPolicyAgreedAt(new Date().toISOString());
+      }
+
+      if (confirmedPaymentMethodId) {
+        // Payment was already confirmed in step 2 via confirmAndGetCardInfo()
+        paymentMethodId = confirmedPaymentMethodId;
+      } else {
+        // Fallback: confirm payment now (e.g., non-step flow)
+        if (!checkoutFormRef.current) {
+          setBookingError("Payment form not ready. Please try again.");
+          setBookingInProgress(false);
+          return;
+        }
+        const result = await checkoutFormRef.current.submit();
+        if (!result.success) {
+          setBookingError(result.error || "Payment failed. Please try again.");
+          setBookingInProgress(false);
+          return;
+        }
+        paymentMethodId = result.paymentMethodId;
+      }
+    }
 
     const supabase = createClient();
     const slotIdsArray = selectedSlotInfo.map((s) => s.slot_id);
@@ -671,7 +912,15 @@ export function AvailabilityWidget({
 
     const unavailable = freshSlots?.filter((s) => s.status !== "available") || [];
     if (unavailable.length > 0) {
-      setBookingError("One or more selected slots are no longer available. Please close and select different time slots.");
+      // Slots taken after payment — cancel/refund the intent
+      if (requiresPayment && checkoutIntent) {
+        await cancelIntent();
+        setCheckoutIntent(null);
+        setPolicyAgreed(false);
+        setPolicyAgreedAt(null);
+      }
+      setBookingError("One or more selected slots are no longer available. Please close and select different time slots." +
+        (requiresPayment ? " Your payment has been cancelled." : ""));
       setBookingInProgress(false);
       return;
     }
@@ -687,6 +936,14 @@ export function AvailabilityWidget({
     });
 
     if (error) {
+      // Booking failed after payment — cancel/refund
+      if (requiresPayment && checkoutIntent) {
+        await cancelIntent();
+        setCheckoutIntent(null);
+        setPolicyAgreed(false);
+        setPolicyAgreedAt(null);
+      }
+
       // Show friendly message for slot-conflict errors instead of raw DB errors
       const msg = error.message;
       if (
@@ -695,10 +952,11 @@ export function AvailabilityWidget({
         msg.includes("not available")
       ) {
         setBookingError(
-          "One or more selected slots are no longer available. Please close and select different time slots."
+          "One or more selected slots are no longer available. Please close and select different time slots." +
+          (requiresPayment ? " Your payment has been refunded." : "")
         );
       } else {
-        setBookingError(msg);
+        setBookingError(msg + (requiresPayment ? " Your payment has been refunded." : ""));
       }
       setBookingInProgress(false);
       // Refresh availability so stale slots disappear
@@ -714,6 +972,13 @@ export function AvailabilityWidget({
     const newBookingIds = bookingResults.map(
       (r: { booking_id: string }) => r.booking_id
     );
+
+    // Record booking payment (fire-and-forget for each booking)
+    if (requiresPayment && checkoutIntent) {
+      for (const br of bookingResults) {
+        recordBookingPayment(br.booking_id, paymentMethodId);
+      }
+    }
 
     // Trigger booking notifications (fire-and-forget)
     for (const br of bookingResults) {
@@ -739,6 +1004,9 @@ export function AvailabilityWidget({
     setSelectedBayIdForBooking("");
     setNotes("");
     setBookingInProgress(false);
+    setCheckoutIntent(null);
+    setPolicyAgreed(false);
+    setPolicyAgreedAt(null);
 
     // Show toast
     setToastData({
@@ -863,9 +1131,38 @@ export function AvailabilityWidget({
     }
 
     const result = data as {
+      booking_id: string;
       confirmation_code: string;
       old_confirmation_code: string;
+      total_price_cents: number;
     };
+
+    // Handle payment adjustments for modified bookings
+    if (paymentMode !== "none" && result.booking_id) {
+      try {
+        const payRes = await fetch("/api/stripe/modify-booking-payment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            old_booking_id: originalBooking.id,
+            new_booking_id: result.booking_id,
+            new_amount_cents: totalCents,
+          }),
+        });
+
+        if (payRes.ok) {
+          const payData = await payRes.json();
+          if (payData.status === "requires_action" && payData.client_secret) {
+            // Off-session charge requires 3DS — for now we proceed with a warning
+            // The admin can handle the remaining charge manually
+            console.warn("Modification payment requires additional authentication");
+          }
+        }
+      } catch {
+        // Non-critical: booking is modified, payment adjustment can be handled by admin
+        console.error("Failed to adjust payment for modification");
+      }
+    }
 
     // Trigger modification notification (fire-and-forget)
     fireNotification("modified", {
@@ -880,20 +1177,36 @@ export function AvailabilityWidget({
     );
   }
 
-  async function handleCancelBooking(bookingId: string) {
-    setCancellingId(bookingId);
+  function openSidebarBooking(booking: Booking) {
+    const bayName = bays.find((b) => b.id === booking.bay_id)?.name ?? "Unknown Bay";
+    setSidebarBooking({
+      id: booking.id,
+      date: booking.date,
+      start_time: booking.start_time,
+      end_time: booking.end_time,
+      total_price_cents: booking.total_price_cents,
+      status: booking.status,
+      confirmation_code: booking.confirmation_code,
+      notes: booking.notes,
+      created_at: "",
+      bayName,
+      canCancel: true,
+      canModify: true,
+    });
+    setSidebarModalOpen(true);
+  }
+
+  async function handleSidebarCancel(formData: FormData) {
+    const bookingId = formData.get("booking_id") as string;
     const supabase = createClient();
     const { error } = await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
     if (!error) {
-      // Trigger cancellation notification (fire-and-forget)
       fireNotification("canceled", { bookingId });
-
       setBookings((prev) => prev.filter((b) => b.id !== bookingId));
-      setExpandedBookingId(null);
-      // Refresh time groups in case cancellation freed up availability
+      setSidebarModalOpen(false);
+      setSidebarBooking(null);
       fetchTimeGroups(selectedDate);
     }
-    setCancellingId(null);
   }
 
   // Auto-select the first eligible bay when selection changes
@@ -920,10 +1233,23 @@ export function AvailabilityWidget({
     return result.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
   }
 
+  function getBayTotalCents(bayId: string): number {
+    return getSelectedSlotInfo(bayId).reduce((sum, s) => sum + s.price_cents, 0);
+  }
+
   const selectedSlotInfo = getSelectedSlotInfo(effectiveBayId);
   const totalCents = selectedSlotInfo.reduce((sum, s) => sum + s.price_cents, 0);
 
   const selectedBayObj = bays.find((b) => b.id === effectiveBayId);
+
+  // Check if earliest selected slot is within the cancellation window
+  const isWithinCancellationWindow = (() => {
+    if (paymentMode === "none" || selectedSlotInfo.length === 0) return false;
+    const earliest = selectedSlotInfo[0]; // already sorted by start_time
+    const startMs = new Date(earliest.start_time).getTime();
+    const cutoff = startMs - cancellationWindowHours * 60 * 60 * 1000;
+    return Date.now() >= cutoff;
+  })();
 
   // Group consecutive selected slots for display in the confirm panel
   const selectedGroups: Array<{ start_time: string; end_time: string; price_cents: number; slot_count: number }> = [];
@@ -980,83 +1306,42 @@ export function AvailabilityWidget({
               ) : (
                 <div className="space-y-2">
                   {bookings.map((booking) => {
-                    const isExpanded = expandedBookingId === booking.id;
                     const bayName =
                       bays.find((b) => b.id === booking.bay_id)?.name ??
                       "Unknown Bay";
                     const price = `$${(booking.total_price_cents / 100).toFixed(2)}`;
-                    const isCancelling = cancellingId === booking.id;
                     const isHighlighted = highlightedBookingIds.has(booking.id);
 
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={booking.id}
-                        className={`rounded-lg border bg-background transition-all duration-700 ${
+                        onClick={() => openSidebarBooking(booking)}
+                        className={`block w-full rounded-lg border bg-background p-3 text-left transition-all duration-700 hover:bg-muted/50 ${
                           isHighlighted
                             ? "border-green-400 shadow-[0_0_8px_rgba(74,222,128,0.3)]"
                             : ""
                         }`}
                       >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedBookingId(
-                              isExpanded ? null : booking.id
-                            )
-                          }
-                          className="flex w-full flex-col gap-1 p-3 text-left"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono text-[11px] text-muted-foreground">
-                              {booking.confirmation_code}
-                            </span>
-                            {isExpanded ? (
-                              <ChevronUp className="h-3 w-3 text-muted-foreground" />
-                            ) : (
-                              <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                            )}
-                          </div>
-                          <p className="text-sm font-medium">{bayName}</p>
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs text-muted-foreground">
-                              {formatBookingDate(booking.date)} &middot;{" "}
-                              {formatTime(booking.start_time, timezone)}{" "}
-                              &ndash;{" "}
-                              {formatTime(booking.end_time, timezone)}
-                            </p>
-                            <span className="text-xs font-semibold">
-                              {price}
-                            </span>
-                          </div>
-                        </button>
-                        {isExpanded && (
-                          <div className="border-t px-3 py-2.5">
-                            {booking.notes && (
-                              <p className="mb-2 text-xs text-muted-foreground">
-                                {booking.notes}
-                              </p>
-                            )}
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-7 w-full text-xs text-destructive hover:bg-destructive/10"
-                              disabled={isCancelling}
-                              onClick={() =>
-                                handleCancelBooking(booking.id)
-                              }
-                            >
-                              {isCancelling ? (
-                                <>
-                                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                                  Cancelling...
-                                </>
-                              ) : (
-                                "Cancel Booking"
-                              )}
-                            </Button>
-                          </div>
-                        )}
-                      </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-[11px] text-muted-foreground">
+                            {booking.confirmation_code}
+                          </span>
+                          <ArrowUpRight className="h-3 w-3 text-muted-foreground" />
+                        </div>
+                        <p className="mt-1 text-sm font-medium">{bayName}</p>
+                        <div className="mt-1 flex items-center justify-between">
+                          <p className="text-xs text-muted-foreground">
+                            {formatBookingDate(booking.date)} &middot;{" "}
+                            {formatTime(booking.start_time, timezone)}{" "}
+                            &ndash;{" "}
+                            {formatTime(booking.end_time, timezone)}
+                          </p>
+                          <span className="text-xs font-semibold">
+                            {price}
+                          </span>
+                        </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -1105,6 +1390,7 @@ export function AvailabilityWidget({
                   facilitySlug={facilitySlug}
                   orgName={orgName}
                   mode="sidebar"
+                  onBookingAction={handleBookingAction}
                 />
               </div>
             )}
@@ -1325,26 +1611,97 @@ export function AvailabilityWidget({
               ) : (
                 /* ---- Expanded booking panel ---- */
                 <div className="mx-auto max-w-lg px-6 py-6">
-                  {/* Panel header */}
-                  <div className="mb-6 flex items-center justify-between">
-                    <div>
-                      <h2 className="text-lg font-bold">
-                        {isModify ? "Review Modification" : "Confirm Booking"}
-                      </h2>
-                      <p className="text-sm text-muted-foreground">
-                        {isModify && originalBooking
-                          ? `Modifying ${formatTime(originalBooking.startTime, timezone)} – ${formatTime(originalBooking.endTime, timezone)}, ${new Date(originalBooking.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${originalBooking.bayName}`
-                          : formatDateLabel(selectedDate)}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleClosePanel}
-                      className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
-                  </div>
+                  {/* Panel header — sticky for authenticated step flow */}
+                  {(() => {
+                    const isAuthStepFlow = isAuthenticated && !isModify && mode !== "admin-guest";
+                    const totalSteps = requiresPayment ? 3 : 2;
+                    const stepLabels = requiresPayment
+                      ? ["Select Facility", "Payment Method", "Confirm Booking"]
+                      : ["Select Facility", "Confirm Booking"];
+                    const timeRangeStr = selectedSlotInfo.length > 0
+                      ? `${formatTime(selectedSlotInfo[0].start_time, timezone)} – ${formatTime(selectedSlotInfo[selectedSlotInfo.length - 1].end_time, timezone)}`
+                      : "";
+                    const shortDateStr = new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+                    return (
+                      <div className={isAuthStepFlow ? "sticky top-0 z-10 -mx-6 bg-background px-6 pb-4 pt-0" : "mb-6"}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h2 className="text-lg font-bold">
+                              {isModify ? "Review Modification" : "Confirm Booking"}
+                            </h2>
+                            <p className="text-sm text-muted-foreground">
+                              {isModify && originalBooking
+                                ? `Modifying ${formatTime(originalBooking.startTime, timezone)} – ${formatTime(originalBooking.endTime, timezone)}, ${new Date(originalBooking.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${originalBooking.bayName}`
+                                : isAuthStepFlow && timeRangeStr
+                                  ? `${shortDateStr} · ${timeRangeStr}`
+                                  : formatDateLabel(selectedDate)}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleClosePanel}
+                            className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                          >
+                            <X className="h-5 w-5" />
+                          </button>
+                        </div>
+
+                        {/* Step indicator — only for authenticated step flow */}
+                        {isAuthStepFlow && (
+                          <div className="mt-3 flex items-center gap-1">
+                            {stepLabels.map((label, i) => {
+                              const stepNum = i + 1;
+                              const isCurrent = bookingStep === stepNum;
+                              const isCompleted = bookingStep > stepNum;
+                              // Allow going back to step 1 always; never back to step 2 once confirmed
+                              const canNavigate = isCompleted && !(confirmedPaymentMethodId && stepNum === 2);
+                              return (
+                                <div key={label} className="flex items-center gap-1">
+                                  {i > 0 && (
+                                    <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
+                                  )}
+                                  <button
+                                    type="button"
+                                    disabled={!canNavigate}
+                                    onClick={() => {
+                                      if (!canNavigate) return;
+                                      // Going back to step 1 resets payment state
+                                      if (stepNum === 1 && requiresPayment && confirmedPaymentMethodId) {
+                                        setPaymentValidated(false);
+                                        setPaymentValidationError("");
+                                        setConfirmedPaymentMethodId(null);
+                                        setCardBrand(null);
+                                        setCardLast4(null);
+                                        setCheckoutIntent(null);
+                                      }
+                                      setBookingStep(stepNum as 1 | 2 | 3);
+                                    }}
+                                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                                      isCurrent
+                                        ? "bg-primary text-primary-foreground"
+                                        : isCompleted && canNavigate
+                                          ? "bg-primary/10 text-primary cursor-pointer hover:bg-primary/20"
+                                          : isCompleted
+                                            ? "bg-primary/10 text-primary"
+                                            : "bg-muted text-muted-foreground"
+                                    }`}
+                                  >
+                                    {isCompleted ? (
+                                      <Check className="h-3 w-3 text-green-600" strokeWidth={3} />
+                                    ) : (
+                                      <span>{stepNum}</span>
+                                    )}
+                                    {label}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {isModify && originalBooking ? (
                     /* ---- Modify booking: old-vs-new comparison + confirm ---- */
@@ -1390,6 +1747,9 @@ export function AvailabilityWidget({
                                   )}
                                 </div>
                                 <span className="text-sm font-medium">{bay.bay_name}</span>
+                                <span className="ml-auto text-sm text-muted-foreground">
+                                  ${(getBayTotalCents(bay.bay_id) / 100).toFixed(2)}
+                                </span>
                               </label>
                             ))}
                           </div>
@@ -1532,6 +1892,9 @@ export function AvailabilityWidget({
                                   )}
                                 </div>
                                 <span className="text-sm font-medium">{bay.bay_name}</span>
+                                <span className="ml-auto text-sm text-muted-foreground">
+                                  ${(getBayTotalCents(bay.bay_id) / 100).toFixed(2)}
+                                </span>
                               </label>
                             ))}
                           </div>
@@ -1784,7 +2147,7 @@ export function AvailabilityWidget({
                       </Tabs>
                     </div>
                   ) : (
-                    /* ---- Authenticated: Booking summary + confirm ---- */
+                    /* ---- Authenticated: Multi-step booking wizard ---- */
                     <div>
                       {/* Error banner */}
                       {bookingError && (
@@ -1793,112 +2156,406 @@ export function AvailabilityWidget({
                         </div>
                       )}
 
-                      {/* Bay selector */}
-                      {eligibleBays.length > 1 && (
-                        <div className="mb-4">
-                          <p className="mb-2 text-sm font-medium">Select Facility</p>
-                          <div className="space-y-2">
-                            {eligibleBays.map((bay) => (
-                              <label
-                                key={bay.bay_id}
-                                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${
-                                  effectiveBayId === bay.bay_id
-                                    ? "border-primary bg-primary/5 ring-1 ring-primary"
-                                    : "hover:bg-accent"
-                                }`}
-                              >
-                                <input
-                                  type="radio"
-                                  name="bay-select-auth"
-                                  value={bay.bay_id}
-                                  checked={effectiveBayId === bay.bay_id}
-                                  onChange={() => setSelectedBayIdForBooking(bay.bay_id)}
-                                  className="sr-only"
-                                />
+                      {/* ═══ Step 1: Facility ═══ */}
+                      {bookingStep === 1 && (
+                        <div>
+                          {/* Bay selector */}
+                          {eligibleBays.length > 1 && (
+                            <div className="mb-4">
+                              <p className="mb-2 text-sm font-medium">Select Facility</p>
+                              <div className="space-y-2">
+                                {eligibleBays.map((bay) => (
+                                  <label
+                                    key={bay.bay_id}
+                                    className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                                      effectiveBayId === bay.bay_id
+                                        ? "border-primary bg-primary/5 ring-1 ring-primary"
+                                        : "hover:bg-accent"
+                                    }`}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name="bay-select-auth"
+                                      value={bay.bay_id}
+                                      checked={effectiveBayId === bay.bay_id}
+                                      onChange={() => {
+                                        setSelectedBayIdForBooking(bay.bay_id);
+                                        // Invalidate checkout intent since slot IDs depend on the bay
+                                        if (checkoutIntent) {
+                                          setCheckoutIntent(null);
+                                          setPaymentValidated(false);
+                                          setCardBrand(null);
+                                          setCardLast4(null);
+                                          setConfirmedPaymentMethodId(null);
+                                        }
+                                      }}
+                                      className="sr-only"
+                                    />
+                                    <div
+                                      className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
+                                        effectiveBayId === bay.bay_id
+                                          ? "border-primary"
+                                          : "border-muted-foreground/30"
+                                      }`}
+                                    >
+                                      {effectiveBayId === bay.bay_id && (
+                                        <div className="h-2 w-2 rounded-full bg-primary" />
+                                      )}
+                                    </div>
+                                    <span className="text-sm font-medium">{bay.bay_name}</span>
+                                    <span className="ml-auto text-sm text-muted-foreground">
+                                      ${(getBayTotalCents(bay.bay_id) / 100).toFixed(2)}
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Booking summary */}
+                          <div className="mb-4 rounded-lg border p-4">
+                            <div className="mb-3">
+                              <p className="font-medium">{selectedBayObj?.name}</p>
+                            </div>
+                            <div className="space-y-2">
+                              {selectedGroups.map((group) => (
                                 <div
-                                  className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${
-                                    effectiveBayId === bay.bay_id
-                                      ? "border-primary"
-                                      : "border-muted-foreground/30"
-                                  }`}
+                                  key={group.start_time}
+                                  className="flex items-center justify-between text-sm"
                                 >
-                                  {effectiveBayId === bay.bay_id && (
-                                    <div className="h-2 w-2 rounded-full bg-primary" />
-                                  )}
+                                  <span>
+                                    {formatTime(group.start_time, timezone)} &ndash;{" "}
+                                    {formatTime(group.end_time, timezone)}
+                                    {group.slot_count > 1 && (
+                                      <span className="ml-2 text-xs text-muted-foreground">
+                                        ({group.slot_count} slots)
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="text-muted-foreground">
+                                    ${(group.price_cents / 100).toFixed(2)}
+                                  </span>
                                 </div>
-                                <span className="text-sm font-medium">{bay.bay_name}</span>
-                              </label>
-                            ))}
+                              ))}
+                            </div>
+                            <div className="mt-3 border-t pt-3">
+                              <div className="flex items-center justify-between font-bold">
+                                <span>Total</span>
+                                <span>${(totalCents / 100).toFixed(2)}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Notes */}
+                          <div className="mb-4 space-y-2">
+                            <Label htmlFor="booking-notes">Notes (optional)</Label>
+                            <Input
+                              id="booking-notes"
+                              placeholder="Any special requests..."
+                              value={notes}
+                              onChange={(e) => setNotes(e.target.value)}
+                            />
+                          </div>
+
+                          {/* User info */}
+                          <p className="mb-4 text-sm text-muted-foreground">
+                            Booking as {userFullName || userEmail}
+                          </p>
+
+                          {/* Continue button */}
+                          <Button
+                            className="w-full"
+                            size="lg"
+                            onClick={() => {
+                              if (requiresPayment) {
+                                // Advance to payment step
+                                setBookingStep(2);
+                                setPaymentValidationError("");
+                                if (!checkoutIntent && !checkoutLoading) {
+                                  createCheckoutIntent();
+                                }
+                              } else {
+                                // No payment — skip directly to confirm step (step 2)
+                                setBookingStep(2);
+                              }
+                            }}
+                          >
+                            {requiresPayment ? (
+                              <>
+                                Continue to Payment
+                                <ArrowRight className="ml-2 h-4 w-4" />
+                              </>
+                            ) : (
+                              <>
+                                Continue to Confirm
+                                <ArrowRight className="ml-2 h-4 w-4" />
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* ═══ Step 2: Payment (only when requiresPayment) ═══ */}
+                      {/* Stripe Elements must stay mounted across steps 2 & 3 so submit() works on confirm.
+                          We render the full payment step but hide it when not active. */}
+                      {requiresPayment && (bookingStep === 2 || bookingStep === 3) && (
+                        <div className={bookingStep !== 2 ? "hidden" : ""}>
+                          {checkoutLoading ? (
+                            <div className="flex items-center justify-center rounded-lg border border-dashed py-12">
+                              <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground">
+                                Preparing payment...
+                              </span>
+                            </div>
+                          ) : checkoutError ? (
+                            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                              {checkoutError}
+                              <button
+                                className="ml-2 underline"
+                                onClick={createCheckoutIntent}
+                              >
+                                Retry
+                              </button>
+                            </div>
+                          ) : checkoutIntent ? (
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-2">
+                                <CreditCard className="h-4 w-4 text-muted-foreground" />
+                                <p className="text-sm font-medium">
+                                  {paymentMode === "charge_upfront"
+                                    ? "Payment Details"
+                                    : "Card on File"}
+                                </p>
+                              </div>
+
+                              <StripeCheckoutWrapper
+                                stripeAccountId={checkoutIntent.stripe_account_id}
+                                clientSecret={checkoutIntent.client_secret}
+                              >
+                                <CheckoutForm
+                                  ref={checkoutFormRef}
+                                  intentType={checkoutIntent.intent_type}
+                                />
+                              </StripeCheckoutWrapper>
+
+                              {paymentValidationError && (
+                                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                                  {paymentValidationError}
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
+
+                          {/* Navigation buttons */}
+                          <div className="mt-6 flex gap-3">
+                            <Button
+                              variant="outline"
+                              className="flex-1"
+                              onClick={() => {
+                                setBookingStep(1);
+                                setPaymentValidationError("");
+                              }}
+                            >
+                              <ArrowLeft className="mr-2 h-4 w-4" />
+                              Back
+                            </Button>
+                            <Button
+                              className="flex-1"
+                              disabled={!checkoutIntent || checkoutLoading}
+                              onClick={async () => {
+                                setPaymentValidationError("");
+                                if (!checkoutFormRef.current) {
+                                  setPaymentValidationError("Payment form not ready. Please try again.");
+                                  return;
+                                }
+                                // Confirm payment and extract card info in one step
+                                const result = await checkoutFormRef.current.confirmAndGetCardInfo();
+                                if (!result.success) {
+                                  setPaymentValidationError(result.error || "Please check your payment details.");
+                                  return;
+                                }
+                                setPaymentValidated(true);
+                                if (result.paymentMethodId) setConfirmedPaymentMethodId(result.paymentMethodId);
+
+                                // Get card brand + last4
+                                let brand = result.cardBrand;
+                                let last4 = result.cardLast4;
+
+                                // If card details not returned (payment_method was a string ID),
+                                // fetch from server
+                                if (result.paymentMethodId && (!brand || !last4)) {
+                                  try {
+                                    const res = await fetch(`/api/stripe/card-details?pm=${result.paymentMethodId}`);
+                                    if (res.ok) {
+                                      const data = await res.json();
+                                      brand = data.brand || brand;
+                                      last4 = data.last4 || last4;
+                                    }
+                                  } catch {
+                                    // Non-critical — fallback text will show
+                                  }
+                                }
+
+                                if (brand) setCardBrand(brand);
+                                if (last4) setCardLast4(last4);
+
+                                // Implicit policy agreement
+                                if (!policyAgreedAt) {
+                                  setPolicyAgreed(true);
+                                  setPolicyAgreedAt(new Date().toISOString());
+                                }
+                                setBookingStep(3);
+                              }}
+                            >
+                              Continue to Confirm
+                              <ArrowRight className="ml-2 h-4 w-4" />
+                            </Button>
                           </div>
                         </div>
                       )}
 
-                      {/* Booking summary */}
-                      <div className="mb-4 rounded-lg border p-4">
-                        <div className="mb-3">
-                          <p className="font-medium">{selectedBayObj?.name}</p>
-                        </div>
-                        <div className="space-y-2">
-                          {selectedGroups.map((group) => (
-                            <div
-                              key={group.start_time}
-                              className="flex items-center justify-between text-sm"
-                            >
+                      {/* ═══ Step 2 (no payment) / Step 3 (with payment): Confirm ═══ */}
+                      {((bookingStep === 2 && !requiresPayment) ||
+                        (bookingStep === 3 && requiresPayment)) && (
+                        <div>
+                          {/* Summary card */}
+                          <div className="mb-4 space-y-3 rounded-lg border p-4">
+                            {/* Date & time */}
+                            <div className="flex items-center gap-2 text-sm">
+                              <CalendarCheck className="h-4 w-4 text-muted-foreground" />
                               <span>
-                                {formatTime(group.start_time, timezone)} &ndash;{" "}
-                                {formatTime(group.end_time, timezone)}
-                                {group.slot_count > 1 && (
-                                  <span className="ml-2 text-xs text-muted-foreground">
-                                    ({group.slot_count} slots)
-                                  </span>
-                                )}
-                              </span>
-                              <span className="text-muted-foreground">
-                                ${(group.price_cents / 100).toFixed(2)}
+                                {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                                {" · "}
+                                {selectedSlotInfo.length > 0
+                                  ? `${formatTime(selectedSlotInfo[0].start_time, timezone)} – ${formatTime(selectedSlotInfo[selectedSlotInfo.length - 1].end_time, timezone)}`
+                                  : ""}
                               </span>
                             </div>
-                          ))}
-                        </div>
-                        <div className="mt-3 border-t pt-3">
-                          <div className="flex items-center justify-between font-bold">
-                            <span>Total</span>
-                            <span>${(totalCents / 100).toFixed(2)}</span>
+
+                            {/* Facility */}
+                            <div className="flex items-center gap-2 text-sm">
+                              <MapPin className="h-4 w-4 text-muted-foreground" />
+                              <span>{selectedBayObj?.name}</span>
+                            </div>
+
+                            {/* Payment method (if applicable) */}
+                            {requiresPayment && paymentValidated && (
+                              <div className="flex items-center gap-2 text-sm">
+                                <CreditCard className="h-4 w-4 text-muted-foreground" />
+                                <span>
+                                  {cardBrand && cardLast4
+                                    ? `${cardBrand.charAt(0).toUpperCase() + cardBrand.slice(1)} •••• ${cardLast4}`
+                                    : "Payment method confirmed"}
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Total */}
+                            <div className="flex items-center justify-between border-t pt-3 text-sm font-bold">
+                              <span>Total</span>
+                              <span>${(totalCents / 100).toFixed(2)}</span>
+                            </div>
+                          </div>
+
+                          {/* Notes (if provided) */}
+                          {notes && (
+                            <div className="mb-4 rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+                              <span className="font-medium text-foreground">Note:</span> {notes}
+                            </div>
+                          )}
+
+                          {/* Terms + cancellation policy */}
+                          <p className="mb-2 text-xs text-muted-foreground text-center">
+                            By booking you agree to the terms and{" "}
+                            {checkoutIntent?.cancellation_policy_text ? (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmPolicyModalOpen(true)}
+                                className="underline underline-offset-2 hover:text-foreground transition-colors"
+                              >
+                                cancellation policy
+                              </button>
+                            ) : (
+                              "cancellation policy"
+                            )}
+                          </p>
+
+                          {/* Cancellation policy modal */}
+                          {checkoutIntent?.cancellation_policy_text && (
+                            <Dialog open={confirmPolicyModalOpen} onOpenChange={setConfirmPolicyModalOpen}>
+                              <DialogContent className="sm:max-w-md">
+                                <DialogHeader>
+                                  <DialogTitle className="flex items-center gap-2">
+                                    <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                    Cancellation Policy
+                                  </DialogTitle>
+                                </DialogHeader>
+                                <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/50">
+                                  <p className="text-sm leading-relaxed text-blue-700 dark:text-blue-300">
+                                    {checkoutIntent.cancellation_policy_text}
+                                  </p>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                          )}
+
+                          {/* No-cancellation window warning */}
+                          {isWithinCancellationWindow && (
+                            <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/50">
+                              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                              <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+                                Booking is less than {cancellationWindowHours}h away and cannot be refunded or modified.
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Navigation + Confirm */}
+                          <div className="flex gap-3">
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                // Always go back to step 1 — resets payment state
+                                // so a fresh intent is created when re-entering step 2
+                                setBookingStep(1);
+                                if (requiresPayment) {
+                                  setPaymentValidated(false);
+                                  setPaymentValidationError("");
+                                  setConfirmedPaymentMethodId(null);
+                                  setCardBrand(null);
+                                  setCardLast4(null);
+                                  setCheckoutIntent(null);
+                                }
+                              }}
+                            >
+                              <ArrowLeft className="mr-2 h-4 w-4" />
+                              Back
+                            </Button>
+                            <Button
+                              className="flex-1"
+                              size="lg"
+                              disabled={bookingInProgress}
+                              onClick={handleConfirmBooking}
+                            >
+                              {bookingInProgress ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  {requiresPayment && paymentMode === "charge_upfront"
+                                    ? "Processing payment..."
+                                    : requiresPayment
+                                      ? "Saving card..."
+                                      : "Booking..."}
+                                </>
+                              ) : requiresPayment && paymentMode === "charge_upfront" ? (
+                                `Confirm & Pay $${(totalCents / 100).toFixed(2)}`
+                              ) : requiresPayment ? (
+                                "Confirm & Save Card"
+                              ) : (
+                                "Confirm Booking"
+                              )}
+                            </Button>
                           </div>
                         </div>
-                      </div>
-
-                      {/* Notes */}
-                      <div className="mb-4 space-y-2">
-                        <Label htmlFor="booking-notes">Notes (optional)</Label>
-                        <Input
-                          id="booking-notes"
-                          placeholder="Any special requests..."
-                          value={notes}
-                          onChange={(e) => setNotes(e.target.value)}
-                        />
-                      </div>
-
-                      {/* User info */}
-                      <p className="mb-4 text-sm text-muted-foreground">
-                        Booking as {userFullName || userEmail}
-                      </p>
-
-                      {/* Confirm button */}
-                      <Button
-                        className="w-full"
-                        size="lg"
-                        disabled={bookingInProgress}
-                        onClick={handleConfirmBooking}
-                      >
-                        {bookingInProgress ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Booking...
-                          </>
-                        ) : (
-                          "Confirm Booking"
-                        )}
-                      </Button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1907,6 +2564,21 @@ export function AvailabilityWidget({
           </>,
           document.body
         )}
+
+      {/* Sidebar booking detail modal */}
+      <BookingDetailsModal
+        booking={sidebarBooking}
+        variant="customer"
+        timezone={timezone}
+        open={sidebarModalOpen}
+        onOpenChange={(open) => {
+          setSidebarModalOpen(open);
+          if (!open) setSidebarBooking(null);
+        }}
+        cancelAction={handleSidebarCancel}
+        cancellationWindowHours={cancellationWindowHours}
+        paymentMode={paymentMode}
+      />
 
       {/* Toast notification */}
       {toastData && (

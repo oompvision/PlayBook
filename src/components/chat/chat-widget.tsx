@@ -7,18 +7,29 @@ import { ChatMessage, TypingIndicator, type Message } from "./chat-message";
 import { SendHorizontal, MessageSquare } from "lucide-react";
 
 const QUICK_REPLIES_DELIMITER = "\n\n<<QUICK_REPLIES>>\n";
+const BOOKING_ACTION_DELIMITER = "\n\n<<BOOKING_ACTION>>\n";
+
+export type BookingAction = {
+  date: string;
+  bay_name: string;
+  start_time: string;
+  slot_ids?: string[];
+};
 
 type ChatWidgetProps = {
   facilitySlug: string;
   orgName: string;
   /** "sidebar" = narrow sidebar embed, "inline" = full-width mobile embed, "panel" = floating popup */
   mode?: "sidebar" | "inline" | "panel";
+  /** Callback when the AI triggers a booking checkout action */
+  onBookingAction?: (action: BookingAction) => void;
 };
 
 export function ChatWidget({
   facilitySlug,
   orgName,
   mode = "panel",
+  onBookingAction,
 }: ChatWidgetProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -79,8 +90,10 @@ export function ChatWidget({
           if (done) break;
 
           assistantText += decoder.decode(value, { stream: true });
-          // Strip quick replies delimiter from display during streaming
-          const displayText = assistantText.split(QUICK_REPLIES_DELIMITER)[0];
+          // Strip action delimiters from display during streaming
+          const displayText = assistantText
+            .split(BOOKING_ACTION_DELIMITER)[0]
+            .split(QUICK_REPLIES_DELIMITER)[0];
           setMessages((prev) => {
             const updated = [...prev];
             updated[updated.length - 1] = {
@@ -91,11 +104,32 @@ export function ChatWidget({
           });
         }
 
+        // Parse booking action from the final text
+        let cleanedText = assistantText;
+        if (cleanedText.includes(BOOKING_ACTION_DELIMITER)) {
+          const delimIndex = cleanedText.indexOf(BOOKING_ACTION_DELIMITER);
+          const afterDelim = cleanedText.slice(delimIndex + BOOKING_ACTION_DELIMITER.length);
+          cleanedText = cleanedText.slice(0, delimIndex);
+          // The booking action JSON may be followed by quick replies
+          const actionJson = afterDelim.split(QUICK_REPLIES_DELIMITER)[0];
+          try {
+            const action = JSON.parse(actionJson) as BookingAction;
+            onBookingAction?.(action);
+          } catch {
+            // JSON parse failed — ignore
+          }
+          // Re-attach quick replies portion if present
+          if (afterDelim.includes(QUICK_REPLIES_DELIMITER)) {
+            const qrIndex = afterDelim.indexOf(QUICK_REPLIES_DELIMITER);
+            cleanedText += afterDelim.slice(qrIndex);
+          }
+        }
+
         // Parse quick replies from the final text
-        if (assistantText.includes(QUICK_REPLIES_DELIMITER)) {
-          const delimIndex = assistantText.indexOf(QUICK_REPLIES_DELIMITER);
-          const displayText = assistantText.slice(0, delimIndex);
-          const repliesJson = assistantText.slice(
+        if (cleanedText.includes(QUICK_REPLIES_DELIMITER)) {
+          const delimIndex = cleanedText.indexOf(QUICK_REPLIES_DELIMITER);
+          const displayText = cleanedText.slice(0, delimIndex);
+          const repliesJson = cleanedText.slice(
             delimIndex + QUICK_REPLIES_DELIMITER.length
           );
           try {
@@ -114,7 +148,17 @@ export function ChatWidget({
           } catch {
             // JSON parse failed — just show the text without buttons
           }
-        } else if (!assistantText.trim()) {
+        } else if (cleanedText !== assistantText) {
+          // Booking action was stripped — update display with clean text
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              role: "model",
+              content: cleanedText,
+            };
+            return updated;
+          });
+        } else if (!cleanedText.trim()) {
           setMessages((prev) => {
             const updated = [...prev];
             updated[updated.length - 1] = {
@@ -141,7 +185,7 @@ export function ChatWidget({
         inputRef.current?.focus();
       }
     },
-    [facilitySlug]
+    [facilitySlug, onBookingAction]
   );
 
   function handleSubmit(e: React.FormEvent) {

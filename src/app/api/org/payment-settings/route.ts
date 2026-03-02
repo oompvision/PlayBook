@@ -190,6 +190,7 @@ export async function PUT(request: NextRequest) {
       "no_show_fee_cents",
       "no_show_fee_type",
       "processing_fee_absorbed_by",
+      "cancellation_policy_text",
     ];
 
     const updateData: Record<string, unknown> = {};

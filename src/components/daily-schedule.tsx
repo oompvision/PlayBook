@@ -34,6 +34,8 @@ export interface DailyScheduleProps {
   cancelAction: (formData: FormData) => Promise<void>;
   orgId: string;
   initialBookingCode?: string | null;
+  cancellationWindowHours?: number;
+  paymentMode?: string;
 }
 
 function formatTime(timestamp: string, timezone: string): string {
@@ -113,6 +115,8 @@ export function DailySchedule({
   cancelAction,
   orgId,
   initialBookingCode,
+  cancellationWindowHours = 24,
+  paymentMode = "none",
 }: DailyScheduleProps) {
   const [selectedDate, setSelectedDate] = useState(initialDate);
   const [showCancelled, setShowCancelled] = useState(false);
@@ -765,6 +769,8 @@ export function DailySchedule({
         open={urlModalOpen}
         onOpenChange={handleUrlModalClose}
         cancelAction={cancelAction}
+        cancellationWindowHours={cancellationWindowHours}
+        paymentMode={paymentMode}
       />
     </div>
   );

@@ -92,3 +92,29 @@ export function formatTimeInZone(
     minute: "2-digit",
   });
 }
+
+/**
+ * Compute a visual booking status from the DB status + date/time.
+ * Returns "active" | "confirmed" | "completed" | "cancelled".
+ * - "active": confirmed + currently within start→end time
+ * - "confirmed": confirmed + in the future
+ * - "completed": confirmed + end time has passed
+ * - "cancelled": DB status is cancelled
+ */
+export type VisualBookingStatus = "active" | "confirmed" | "completed" | "cancelled";
+
+export function getVisualBookingStatus(
+  dbStatus: string,
+  startTime: string,
+  endTime: string,
+): VisualBookingStatus {
+  if (dbStatus === "cancelled") return "cancelled";
+
+  const now = Date.now();
+  const start = new Date(startTime).getTime();
+  const end = new Date(endTime).getTime();
+
+  if (now >= start && now < end) return "active";
+  if (now >= end) return "completed";
+  return "confirmed";
+}
