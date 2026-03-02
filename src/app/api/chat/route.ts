@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type, type FunctionDeclaration, type Content, type Part } from "@google/genai";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { toTimestamp, getTodayInTimezone, formatTimeInZone } from "@/lib/utils";
 import { getAuthUser } from "@/lib/auth";
 import { createNotification, notifyOrgAdmins } from "@/lib/notifications";
@@ -360,10 +361,23 @@ async function executeCreateBooking(
     bay_name?: string;
     start_time?: string;
     notes?: string;
-  }
+  },
+  paymentContext: { requiresPayment: boolean; paymentMode: string; cancellationPolicyText: string | null }
 ) {
   if (!customerId) {
     return { error: "You need to be signed in to make a booking. Please log in first." };
+  }
+
+  // If payment is required, don't create the booking — direct them to the booking wizard
+  if (paymentContext.requiresPayment) {
+    const modeLabel =
+      paymentContext.paymentMode === "charge_upfront"
+        ? "requires upfront payment"
+        : "requires a card on file";
+    return {
+      requires_payment: true,
+      message: `This facility ${modeLabel}. To complete your booking, please use the booking form on the main page where you can securely enter your payment details. Select your desired time slots and follow the checkout steps.`,
+    };
   }
 
   const supabase = await createClient();
@@ -540,6 +554,7 @@ async function executeCreateBooking(
     success: true,
     bookings: results,
     message: `Booking confirmed! Your confirmation ${results.length === 1 ? "code is" : "codes are"}: ${results.map((r) => r.confirmation_code).join(", ")}`,
+    policy_notice: paymentContext.cancellationPolicyText || null,
   };
 }
 
@@ -647,6 +662,20 @@ export async function POST(request: Request) {
   const customerId = auth?.profile?.id ?? null;
   const customerName = auth?.profile?.full_name ?? null;
 
+  // Fetch payment settings for this org
+  const service = createServiceClient();
+  const { data: paymentSettings } = await service
+    .from("org_payment_settings")
+    .select("payment_mode, stripe_onboarding_complete, cancellation_policy_text")
+    .eq("org_id", org.id)
+    .single();
+
+  const paymentMode = paymentSettings?.payment_mode ?? "none";
+  const stripeReady = paymentSettings?.stripe_onboarding_complete ?? false;
+  const requiresPayment = paymentMode !== "none" && stripeReady;
+  const cancellationPolicyText = paymentSettings?.cancellation_policy_text ?? null;
+  const paymentContext = { requiresPayment, paymentMode, cancellationPolicyText };
+
   // Build system instruction
   const { data: bays } = await supabase
     .from("bays")
@@ -703,7 +732,17 @@ Booking guidelines:
 - When a booking is created, share the confirmation code with the customer.
 - Use get_my_bookings to look up a customer's existing bookings when they ask.
 - For create_booking, you can provide EITHER slot_ids (from get_available_slots) OR date + bay_name + start_time. When confirming a booking the customer already discussed, prefer passing date, bay_name, and start_time directly — this is simpler and more reliable.
-
+${requiresPayment ? `
+Payment policy:
+- This facility requires payment to complete a booking (mode: ${paymentMode}).
+- You CANNOT complete bookings directly in chat. When the customer wants to book, call create_booking anyway — the system will return a message directing them to the booking form on the main page.
+- Help them find the right time slots, then guide them to complete the booking through the main page's booking form where they can securely enter payment details.
+- When directing them, suggest they select the specific time slots you discussed on the main page and follow the checkout steps.
+` : `
+Payment policy:
+- This facility does not require payment at booking time. You can complete bookings directly in chat.
+- When confirming a booking, include this notice: "By confirming, you agree to the facility's terms and cancellation policy."${cancellationPolicyText ? `\n- Cancellation policy: ${cancellationPolicyText}` : ""}
+`}
 Quick reply buttons:
 - ALWAYS call suggest_quick_replies to offer clickable buttons when the customer needs to make a choice.
 - When to use quick replies:
@@ -817,7 +856,8 @@ Quick reply buttons:
                 bay_name?: string;
                 start_time?: string;
                 notes?: string;
-              }
+              },
+              paymentContext
             );
             break;
           case "cancel_booking":
