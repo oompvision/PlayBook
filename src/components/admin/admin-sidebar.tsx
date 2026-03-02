@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Building2,
   Calendar,
+  CalendarCog,
   LayoutTemplate,
   CalendarCheck,
   Users,
@@ -15,18 +16,34 @@ import {
   Settings,
 } from "lucide-react";
 
-const navItems = [
+const baseNavItems = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
   { label: "Facilities", href: "/admin/bays", icon: Building2 },
+];
+
+const slotBasedNavItems = [
   { label: "Schedule", href: "/admin/schedule", icon: Calendar },
   { label: "Templates", href: "/admin/templates", icon: LayoutTemplate },
+];
+
+const dynamicNavItems = [
+  { label: "Schedule Rules", href: "/admin/schedule/rules", icon: CalendarCog },
+];
+
+const commonNavItems = [
   { label: "Bookings", href: "/admin/bookings", icon: CalendarCheck },
   { label: "Customers", href: "/admin/customers", icon: Users },
   { label: "Revenue", href: "/admin/revenue", icon: DollarSign },
   { label: "Settings", href: "/admin/settings", icon: Settings },
 ];
 
-export function AdminSidebar({ slug }: { slug: string }) {
+export function AdminSidebar({
+  slug,
+  schedulingType = "slot_based",
+}: {
+  slug: string;
+  schedulingType?: string;
+}) {
   const pathname = usePathname();
   const { isMobileOpen, toggleMobileSidebar } = useSidebar();
 
@@ -54,7 +71,13 @@ export function AdminSidebar({ slug }: { slug: string }) {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="space-y-1">
-          {navItems.map((item) => {
+          {[
+            ...baseNavItems,
+            ...(schedulingType === "dynamic"
+              ? dynamicNavItems
+              : slotBasedNavItems),
+            ...commonNavItems,
+          ].map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
             return (

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { BrandingSettings } from "./branding-settings";
 import { PaymentSettings } from "./payment-settings";
 import { CancellationPolicySettings } from "./cancellation-policy-settings";
+import { SchedulingModeSettings } from "./scheduling-mode-settings";
 import { EmailSettingsToggles } from "@/components/admin/email-settings-toggles";
 import {
   Settings,
@@ -124,6 +125,12 @@ export default async function FacilitySettingsPage({
         orgId={org.id}
         logoUrl={org.logo_url}
         coverPhotoUrl={org.cover_photo_url}
+      />
+
+      {/* Scheduling Mode */}
+      <SchedulingModeSettings
+        initialMode={org.scheduling_type ?? "slot_based"}
+        initialBookableWindowDays={org.bookable_window_days ?? 30}
       />
 
       {/* Facility Details */}
