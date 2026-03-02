@@ -13,10 +13,11 @@ import {
   Download,
   List,
   Search,
-  SlidersHorizontal,
   UserPlus,
-  X,
 } from "lucide-react";
+
+type Tab = "upcoming" | "completed" | "canceled";
+type SubTab = "future" | "past";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -30,15 +31,21 @@ async function getOrg() {
   return data;
 }
 
+function getDateDaysAgo(today: string, days: number): string {
+  const d = new Date(today + "T12:00:00");
+  d.setDate(d.getDate() - days);
+  return d.toISOString().split("T")[0];
+}
+
 export default async function BookingsListPage({
   searchParams,
 }: {
   searchParams: Promise<{
     view?: string;
+    tab?: string;
+    subtab?: string;
     from?: string;
     to?: string;
-    status?: string;
-    bay?: string;
     q?: string;
     booking?: string;
     cancelled?: string;
@@ -53,11 +60,9 @@ export default async function BookingsListPage({
   const params = await searchParams;
 
   // Backwards-compat: old notification links used ?q=PB-XXXXXX.
-  // Detect confirmation code pattern and treat as ?booking= instead.
   const bookingCode =
     params.booking ||
     (params.q && /^PB-[A-Z0-9]{6}$/i.test(params.q.trim()) ? params.q.trim() : null);
-  // Only use q for customer search if it's not a confirmation code
   const customerSearch =
     params.q && bookingCode !== params.q?.trim() ? params.q : undefined;
 
@@ -83,7 +88,7 @@ export default async function BookingsListPage({
       ? paymentSettings.payment_mode
       : "none";
 
-  // Load bays for filter dropdown + daily view columns
+  // Load bays for facility filter + daily view columns
   const { data: bays } = await supabase
     .from("bays")
     .select("id, name")
@@ -92,28 +97,69 @@ export default async function BookingsListPage({
     .order("sort_order")
     .order("created_at");
 
-  // Build bookings query (includes guest fields + modified_from)
+  const today = getTodayInTimezone(org.timezone);
+  const thirtyDaysAgo = getDateDaysAgo(today, 30);
+  const nowTimestamp = new Date().toISOString();
+
+  // Determine active tab
+  const validTabs: Tab[] = ["upcoming", "completed", "canceled"];
+  const activeTab: Tab = validTabs.includes(params.tab as Tab)
+    ? (params.tab as Tab)
+    : "upcoming";
+  const activeSubTab: SubTab =
+    activeTab === "canceled" && params.subtab === "past" ? "past" : "future";
+
+  // Compute tab context for client component
+  const tabContext =
+    activeTab === "canceled"
+      ? (`canceled-${activeSubTab}` as "canceled-future" | "canceled-past")
+      : activeTab;
+
+  // Per-tab default date ranges
+  const isFutureFacing =
+    activeTab === "upcoming" ||
+    (activeTab === "canceled" && activeSubTab === "future");
+  const defaultFrom = isFutureFacing ? today : thirtyDaysAgo;
+  const defaultTo = isFutureFacing ? "" : today;
+
+  const effectiveFrom = params.from ?? defaultFrom;
+  const effectiveTo = params.to ?? defaultTo;
+
+  // Build bookings query (includes guest fields + modified_from + updated_at)
   let query = supabase
     .from("bookings")
     .select(
-      "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, created_at, customer_id, bay_id, is_guest, guest_name, guest_email, guest_phone, modified_from"
+      "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, created_at, updated_at, customer_id, bay_id, is_guest, guest_name, guest_email, guest_phone, modified_from"
     )
     .eq("org_id", org.id)
     .order("date", { ascending: false })
     .order("start_time", { ascending: false });
 
   if (activeView === "list") {
-    if (params.from) {
-      query = query.gte("date", params.from);
+    // Tab-specific status + time filters
+    switch (activeTab) {
+      case "upcoming":
+        query = query.eq("status", "confirmed").gte("end_time", nowTimestamp);
+        break;
+      case "completed":
+        query = query.eq("status", "confirmed").lt("end_time", nowTimestamp);
+        break;
+      case "canceled":
+        query = query.eq("status", "cancelled");
+        if (activeSubTab === "future") {
+          query = query.gte("start_time", nowTimestamp);
+        } else {
+          query = query.lt("start_time", nowTimestamp);
+        }
+        break;
     }
-    if (params.to) {
-      query = query.lte("date", params.to);
+
+    // Date range filters on the date column
+    if (effectiveFrom) {
+      query = query.gte("date", effectiveFrom);
     }
-    if (params.status && params.status !== "all") {
-      query = query.eq("status", params.status);
-    }
-    if (params.bay) {
-      query = query.eq("bay_id", params.bay);
+    if (effectiveTo) {
+      query = query.lte("date", effectiveTo);
     }
   }
 
@@ -123,7 +169,7 @@ export default async function BookingsListPage({
     console.error("Failed to load bookings:", bookingsError.message);
   }
 
-  // Build bay map first (needed for modified_from enrichment below)
+  // Build bay map (needed for modified_from enrichment below)
   const bayMap: Record<string, string> = {};
   if (bays) {
     for (const b of bays) {
@@ -135,7 +181,10 @@ export default async function BookingsListPage({
   const modifiedFromIds = [
     ...new Set(bookings?.map((b) => b.modified_from).filter(Boolean) ?? []),
   ];
-  const modifiedFromInfoMap: Record<string, { start_time: string; end_time: string; date: string; bay_id: string }> = {};
+  const modifiedFromInfoMap: Record<
+    string,
+    { start_time: string; end_time: string; date: string; bay_id: string }
+  > = {};
   if (modifiedFromIds.length > 0) {
     const { data: originals } = await supabase
       .from("bookings")
@@ -143,24 +192,34 @@ export default async function BookingsListPage({
       .in("id", modifiedFromIds);
     if (originals) {
       for (const o of originals) {
-        modifiedFromInfoMap[o.id] = { start_time: o.start_time, end_time: o.end_time, date: o.date, bay_id: o.bay_id };
+        modifiedFromInfoMap[o.id] = {
+          start_time: o.start_time,
+          end_time: o.end_time,
+          date: o.date,
+          bay_id: o.bay_id,
+        };
       }
     }
   }
 
   // Enrich bookings with modified_from_info
-  const enrichedBookings = bookings?.map((b) => {
-    const info = b.modified_from ? modifiedFromInfoMap[b.modified_from] ?? null : null;
-    return {
-      ...b,
-      modified_from_info: info ? {
-        startTime: info.start_time,
-        endTime: info.end_time,
-        date: info.date,
-        bayName: bayMap[info.bay_id] || "Facility",
-      } : null,
-    };
-  }) ?? [];
+  const enrichedBookings =
+    bookings?.map((b) => {
+      const info = b.modified_from
+        ? (modifiedFromInfoMap[b.modified_from] ?? null)
+        : null;
+      return {
+        ...b,
+        modified_from_info: info
+          ? {
+              startTime: info.start_time,
+              endTime: info.end_time,
+              date: info.date,
+              bayName: bayMap[info.bay_id] || "Facility",
+            }
+          : null,
+      };
+    }) ?? [];
 
   // Look up customer names (filter out null customer_ids from guest bookings)
   const customerIds = [
@@ -212,7 +271,9 @@ export default async function BookingsListPage({
     if (toastBookings) {
       for (const tb of toastBookings) {
         const timeRange = `${formatTimeInZone(tb.start_time, org.timezone)} – ${formatTimeInZone(tb.end_time, org.timezone)}`;
-        const dateLabel = new Date(tb.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        const dateLabel = new Date(
+          tb.date + "T12:00:00"
+        ).toLocaleDateString("en-US", { month: "short", day: "numeric" });
         const bayLabel = bayMap[tb.bay_id] || "Facility";
         const label = `${timeRange}, ${dateLabel}, ${bayLabel}`;
         if (tb.confirmation_code === params.old) toastOldLabel = label;
@@ -232,7 +293,9 @@ export default async function BookingsListPage({
     const service = createServiceClient();
     const { data: bookingInfo } = await service
       .from("bookings")
-      .select("id, org_id, customer_id, bay_id, date, start_time, end_time, confirmation_code, is_guest, guest_name, guest_email")
+      .select(
+        "id, org_id, customer_id, bay_id, date, start_time, end_time, confirmation_code, is_guest, guest_name, guest_email"
+      )
       .eq("id", bookingId)
       .single();
 
@@ -248,16 +311,30 @@ export default async function BookingsListPage({
 
     // Send cancellation notifications (fire-and-forget)
     if (bookingInfo) {
-      const { data: bookingBay } = await service.from("bays").select("name").eq("id", bookingInfo.bay_id).single();
+      const { data: bookingBay } = await service
+        .from("bays")
+        .select("name")
+        .eq("id", bookingInfo.bay_id)
+        .single();
       const bayName = bookingBay?.name ?? "Facility";
       const orgName = org.name;
       const tz = org.timezone;
       const timeStr = `${formatTimeInZone(bookingInfo.start_time, tz)} – ${formatTimeInZone(bookingInfo.end_time, tz)}`;
-      const dateStr = new Date(bookingInfo.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      const dateStr = new Date(
+        bookingInfo.date + "T12:00:00"
+      ).toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
       const code = bookingInfo.confirmation_code;
 
       if (bookingInfo.customer_id) {
-        const { data: customerProfile } = await service.from("profiles").select("email, full_name").eq("id", bookingInfo.customer_id).single();
+        const { data: customerProfile } = await service
+          .from("profiles")
+          .select("email, full_name")
+          .eq("id", bookingInfo.customer_id)
+          .single();
         createNotification({
           orgId: bookingInfo.org_id,
           recipientId: bookingInfo.customer_id,
@@ -284,10 +361,19 @@ export default async function BookingsListPage({
     redirect("/admin/bookings?cancelled=true");
   }
 
-  const today = getTodayInTimezone(org.timezone);
-
-  // Check if any filters are active
-  const hasActiveFilters = params.from || params.to || (params.status && params.status !== "all") || params.bay || customerSearch;
+  // Tab href helper — preserves search query, sets tab defaults
+  function tabHref(tab: Tab, subtab?: SubTab): string {
+    const p = new URLSearchParams();
+    p.set("view", "list");
+    p.set("tab", tab);
+    if (tab === "canceled" && subtab) {
+      p.set("subtab", subtab);
+    }
+    if (customerSearch) {
+      p.set("q", customerSearch);
+    }
+    return `/admin/bookings?${p.toString()}`;
+  }
 
   return (
     <div>
@@ -304,7 +390,7 @@ export default async function BookingsListPage({
           </div>
           <div className="inline-flex self-start rounded-lg bg-gray-100 p-0.5 dark:bg-gray-900">
             <a
-              href="/admin/bookings?view=list"
+              href={`/admin/bookings?view=list&tab=${activeTab}${activeTab === "canceled" ? `&subtab=${activeSubTab}` : ""}`}
               className={`inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
                 activeView === "list"
                   ? "bg-white text-gray-900 shadow-sm dark:bg-gray-800 dark:text-white"
@@ -368,7 +454,8 @@ export default async function BookingsListPage({
       )}
       {params.guest_booked && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
-          Guest booking created successfully.{params.codes ? ` Confirmation: ${params.codes}` : ""}
+          Guest booking created successfully.
+          {params.codes ? ` Confirmation: ${params.codes}` : ""}
         </div>
       )}
       {params.modified && (
@@ -386,10 +473,23 @@ export default async function BookingsListPage({
 
       {activeView === "list" ? (
         <>
-          {/* Inline Filter Bar */}
-          <form className="mb-6">
+          {/* Simplified Filter Bar: Search + Date Range */}
+          <form className="mb-5">
             <input type="hidden" name="view" value="list" />
+            <input type="hidden" name="tab" value={activeTab} />
+            {activeTab === "canceled" && (
+              <input type="hidden" name="subtab" value={activeSubTab} />
+            )}
             <div className="flex flex-wrap items-end gap-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  name="q"
+                  placeholder="Search customer..."
+                  defaultValue={params.q ?? ""}
+                  className="h-10 w-56 rounded-lg border border-gray-300 bg-white py-2.5 pl-9 pr-3 text-sm text-gray-800 shadow-sm transition-colors placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
+                />
+              </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   From
@@ -397,7 +497,7 @@ export default async function BookingsListPage({
                 <input
                   type="date"
                   name="from"
-                  defaultValue={params.from ?? ""}
+                  defaultValue={effectiveFrom}
                   className="h-10 w-38 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm transition-colors placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
                 />
               </div>
@@ -408,75 +508,64 @@ export default async function BookingsListPage({
                 <input
                   type="date"
                   name="to"
-                  defaultValue={params.to ?? ""}
+                  defaultValue={effectiveTo}
                   className="h-10 w-38 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm transition-colors placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
                 />
               </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Status
-                </label>
-                <select
-                  name="status"
-                  defaultValue={params.status ?? "all"}
-                  className="h-10 rounded-lg border border-gray-300 bg-white px-3 pr-8 text-sm text-gray-800 shadow-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-                >
-                  <option value="all">All statuses</option>
-                  <option value="confirmed">Confirmed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Facility
-                </label>
-                <select
-                  name="bay"
-                  defaultValue={params.bay ?? ""}
-                  className="h-10 rounded-lg border border-gray-300 bg-white px-3 pr-8 text-sm text-gray-800 shadow-sm transition-colors focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-                >
-                  <option value="">All facilities</option>
-                  {bays?.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Customer
-                </label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                  <input
-                    name="q"
-                    placeholder="Name or email..."
-                    defaultValue={params.q ?? ""}
-                    className="h-10 w-44 rounded-lg border border-gray-300 bg-white py-2.5 pl-9 pr-3 text-sm text-gray-800 shadow-sm transition-colors placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
-                  />
-                </div>
-              </div>
-              <button
-                type="submit"
-                className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                Filter
-              </button>
-              {hasActiveFilters && (
-                <a href="/admin/bookings?view=list">
-                  <button
-                    type="button"
-                    className="inline-flex h-10 items-center gap-1 rounded-lg px-3 text-sm font-medium text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                    Clear
-                  </button>
-                </a>
-              )}
             </div>
           </form>
+
+          {/* Tab Navigation */}
+          <div className="mb-4 border-b border-gray-200 dark:border-gray-700">
+            <nav className="-mb-px flex gap-6">
+              {(
+                [
+                  { tab: "upcoming" as Tab, label: "Upcoming" },
+                  { tab: "completed" as Tab, label: "Completed" },
+                  { tab: "canceled" as Tab, label: "Canceled" },
+                ] as const
+              ).map(({ tab, label }) => (
+                <a
+                  key={tab}
+                  href={tabHref(
+                    tab,
+                    tab === "canceled" ? activeSubTab : undefined
+                  )}
+                  className={`inline-flex items-center border-b-2 px-1 py-3 text-sm font-medium transition-colors ${
+                    activeTab === tab
+                      ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400"
+                      : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200"
+                  }`}
+                >
+                  {label}
+                </a>
+              ))}
+            </nav>
+          </div>
+
+          {/* Canceled Sub-Tabs */}
+          {activeTab === "canceled" && (
+            <div className="mb-4 flex gap-2">
+              {(
+                [
+                  { subtab: "future" as SubTab, label: "Canceled - Future" },
+                  { subtab: "past" as SubTab, label: "Canceled - Past" },
+                ] as const
+              ).map(({ subtab, label }) => (
+                <a
+                  key={subtab}
+                  href={tabHref("canceled", subtab)}
+                  className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                    activeSubTab === subtab
+                      ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+                  }`}
+                >
+                  {label}
+                </a>
+              ))}
+            </div>
+          )}
 
           <AdminBookingsList
             bookings={filtered}
@@ -488,10 +577,14 @@ export default async function BookingsListPage({
             cancelAction={cancelBooking}
             cancellationWindowHours={cancellationWindowHours}
             paymentMode={paymentMode}
+            bays={bays ?? []}
+            tabContext={tabContext}
+            showCanceledAt={activeTab === "canceled"}
+            initialFromDate={effectiveFrom}
           />
         </>
       ) : (
-        /* Daily View - wrapped in TailAdmin card */
+        /* Daily View - wrapped in card */
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
           <div className="p-4 sm:p-6">
             <DailySchedule
