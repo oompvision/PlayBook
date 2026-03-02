@@ -44,7 +44,7 @@ import {
   MapPin,
   ShieldCheck,
 } from "lucide-react";
-import { ChatWidget } from "@/components/chat/chat-widget";
+import { ChatWidget, type BookingAction } from "@/components/chat/chat-widget";
 import { AuthModal } from "@/components/auth-modal";
 import {
   BookingDetailsModal,
@@ -327,6 +327,8 @@ export function AvailabilityWidget({
 
   // Track whether we restored from localStorage (to auto-open panel)
   const restoredFromStorage = useRef(false);
+  // Pending booking action from chat (needs to wait for timeGroups to load after date change)
+  const pendingBookingAction = useRef<BookingAction | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -546,6 +548,76 @@ export function AvailabilityWidget({
   useEffect(() => {
     fetchTimeGroups(selectedDate);
   }, [selectedDate, fetchTimeGroups]);
+
+  // Process pending booking action after time groups load
+  useEffect(() => {
+    if (!pendingBookingAction.current || loading || timeGroups.length === 0) return;
+    const action = pendingBookingAction.current;
+    pendingBookingAction.current = null;
+
+    // Find the matching time group by formatted start_time
+    const normalizeTime = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+    const requestedTime = normalizeTime(action.start_time);
+
+    const matchedGroup = timeGroups.find((g) => {
+      const formatted = normalizeTime(formatTime(g.start_time, timezone));
+      return formatted === requestedTime;
+    });
+
+    if (!matchedGroup) return;
+
+    // Find the matching bay in the group
+    const matchedBay = matchedGroup.available_bays.find((b) =>
+      b.bay_name.toLowerCase().includes(action.bay_name.toLowerCase())
+    );
+
+    // Select the time slot
+    setSelectedTimeKeys(new Set([matchedGroup.key]));
+    if (matchedBay) {
+      setSelectedBayIdForBooking(matchedBay.bay_id);
+    }
+    // Open the booking panel
+    setPanelOpen(true);
+    setBookingStep(1);
+  }, [loading, timeGroups, timezone]);
+
+  // Handle booking action from chat assistant
+  const handleBookingAction = useCallback(
+    (action: BookingAction) => {
+      // If we need to change the date, set it and store the action for later
+      if (action.date !== selectedDate) {
+        pendingBookingAction.current = action;
+        setSelectedDate(action.date);
+      } else {
+        // Same date — time groups are already loaded, process immediately
+        pendingBookingAction.current = action;
+        // Trigger the effect by touching a dependency — the effect will run on next render
+        // since we just set the ref. Force a re-render by setting loading momentarily.
+        // Actually, just process inline since timeGroups are already available:
+        const normalizeTime = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+        const requestedTime = normalizeTime(action.start_time);
+
+        const matchedGroup = timeGroups.find((g) => {
+          const formatted = normalizeTime(formatTime(g.start_time, timezone));
+          return formatted === requestedTime;
+        });
+
+        if (matchedGroup) {
+          const matchedBay = matchedGroup.available_bays.find((b) =>
+            b.bay_name.toLowerCase().includes(action.bay_name.toLowerCase())
+          );
+          setSelectedTimeKeys(new Set([matchedGroup.key]));
+          if (matchedBay) {
+            setSelectedBayIdForBooking(matchedBay.bay_id);
+          }
+          setPanelOpen(true);
+          setBookingStep(1);
+          pendingBookingAction.current = null;
+        }
+      }
+    },
+    [selectedDate, timeGroups, timezone]
+  );
 
   // Auto-open panel after restoring from localStorage (post-auth reload)
   useEffect(() => {
@@ -1318,6 +1390,7 @@ export function AvailabilityWidget({
                   facilitySlug={facilitySlug}
                   orgName={orgName}
                   mode="sidebar"
+                  onBookingAction={handleBookingAction}
                 />
               </div>
             )}

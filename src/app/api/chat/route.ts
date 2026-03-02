@@ -131,6 +131,36 @@ const toolDeclarations: FunctionDeclaration[] = [
       required: ["options"],
     },
   },
+  {
+    name: "start_checkout",
+    description:
+      "Open the booking checkout flow for the customer with specific time slots pre-selected. Use this INSTEAD of create_booking when the facility requires payment. This will open the booking wizard on the main page with the correct date, bay, and time slots already selected so the customer can enter payment details and confirm. Call this after the customer confirms they want to book the discussed time slots.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        date: {
+          type: Type.STRING,
+          description: "The booking date in YYYY-MM-DD format.",
+        },
+        bay_name: {
+          type: Type.STRING,
+          description: 'The facility name (e.g., "Bay 3").',
+        },
+        start_time: {
+          type: Type.STRING,
+          description:
+            'The start time in 12-hour format (e.g., "3:00 PM").',
+        },
+        slot_ids: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description:
+            "Optional array of slot IDs from a prior get_available_slots response.",
+        },
+      },
+      required: ["date", "bay_name", "start_time"],
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -368,15 +398,11 @@ async function executeCreateBooking(
     return { error: "You need to be signed in to make a booking. Please log in first." };
   }
 
-  // If payment is required, don't create the booking — direct them to the booking wizard
+  // Safety net: if payment is required, block create_booking (Gemini should use start_checkout instead)
   if (paymentContext.requiresPayment) {
-    const modeLabel =
-      paymentContext.paymentMode === "charge_upfront"
-        ? "requires upfront payment"
-        : "requires a card on file";
     return {
       requires_payment: true,
-      message: `This facility ${modeLabel}. To complete your booking, please use the booking form on the main page where you can securely enter your payment details. Select your desired time slots and follow the checkout steps.`,
+      message: "This facility requires payment. Use the start_checkout tool instead to open the booking form with payment entry for the customer.",
     };
   }
 
@@ -735,13 +761,15 @@ Booking guidelines:
 ${requiresPayment ? `
 Payment policy:
 - This facility requires payment to complete a booking (mode: ${paymentMode}).
-- You CANNOT complete bookings directly in chat. When the customer wants to book, call create_booking anyway — the system will return a message directing them to the booking form on the main page.
-- Help them find the right time slots, then guide them to complete the booking through the main page's booking form where they can securely enter payment details.
-- When directing them, suggest they select the specific time slots you discussed on the main page and follow the checkout steps.
+- You CANNOT complete bookings directly in chat. Do NOT use create_booking — it will not work.
+- Instead, use the start_checkout tool to open the booking form with the correct slots pre-selected.
+- Flow: help the customer find the right time slots → confirm the details (date, bay, time, price) → when they agree, call start_checkout with the date, bay_name, and start_time. This will automatically open the booking form for them with payment entry.
+- After calling start_checkout, tell the customer something like "I've opened the booking form for you — just add your payment details and confirm!"
 ` : `
 Payment policy:
-- This facility does not require payment at booking time. You can complete bookings directly in chat.
+- This facility does not require payment at booking time. You can complete bookings directly in chat using create_booking.
 - When confirming a booking, include this notice: "By confirming, you agree to the facility's terms and cancellation policy."${cancellationPolicyText ? `\n- Cancellation policy: ${cancellationPolicyText}` : ""}
+- Do NOT use start_checkout when no payment is required — use create_booking instead.
 `}
 Quick reply buttons:
 - ALWAYS call suggest_quick_replies to offer clickable buttons when the customer needs to make a choice.
@@ -764,6 +792,7 @@ Quick reply buttons:
   try {
     let finalText = "";
     let quickReplies: string[] = [];
+    let bookingAction: { date: string; bay_name: string; start_time: string; slot_ids?: string[] } | null = null;
 
     // Tool call loop — up to 5 rounds to prevent infinite loops
     for (let i = 0; i < 5; i++) {
@@ -784,13 +813,17 @@ Quick reply buttons:
 
       const parts = candidate.content?.parts ?? [];
 
-      // Separate quick-reply calls from real tool calls
+      // Separate intercepted tool calls from real tool calls
       const allCalls = parts.filter((p) => p.functionCall);
+      const interceptedNames = new Set(["suggest_quick_replies", "start_checkout"]);
       const quickReplyCall = allCalls.find(
         (p) => p.functionCall?.name === "suggest_quick_replies"
       );
+      const checkoutCall = allCalls.find(
+        (p) => p.functionCall?.name === "start_checkout"
+      );
       const realCalls = allCalls.filter(
-        (p) => p.functionCall?.name !== "suggest_quick_replies"
+        (p) => !interceptedNames.has(p.functionCall?.name ?? "")
       );
 
       // Capture quick replies if present
@@ -798,6 +831,19 @@ Quick reply buttons:
         const opts = quickReplyCall.functionCall?.args?.options;
         if (Array.isArray(opts)) {
           quickReplies = opts.map(String);
+        }
+      }
+
+      // Capture booking checkout action if present
+      if (checkoutCall) {
+        const args = checkoutCall.functionCall?.args as Record<string, unknown> | undefined;
+        if (args) {
+          bookingAction = {
+            date: String(args.date ?? ""),
+            bay_name: String(args.bay_name ?? ""),
+            start_time: String(args.start_time ?? ""),
+            slot_ids: Array.isArray(args.slot_ids) ? args.slot_ids.map(String) : undefined,
+          };
         }
       }
 
@@ -812,7 +858,7 @@ Quick reply buttons:
 
       // Add the model's response (real tool calls only) to the conversation
       const modelParts: Part[] = parts
-        .filter((p) => p.functionCall?.name !== "suggest_quick_replies")
+        .filter((p) => !interceptedNames.has(p.functionCall?.name ?? ""))
         .map((p) => {
           if (p.functionCall) {
             return { functionCall: p.functionCall } as Part;
@@ -881,6 +927,11 @@ Quick reply buttons:
 
       // Add function responses to conversation
       currentMessages.push({ role: "user", parts: responseParts });
+    }
+
+    // Append booking action delimiter if present (before quick replies)
+    if (bookingAction) {
+      finalText += `\n\n<<BOOKING_ACTION>>\n${JSON.stringify(bookingAction)}`;
     }
 
     // Append quick replies delimiter if present
