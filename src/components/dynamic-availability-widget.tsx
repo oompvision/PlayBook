@@ -8,17 +8,20 @@ import {
   CheckoutForm,
   type CheckoutFormHandle,
 } from "@/components/checkout-form";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Toast } from "@/components/ui/toast";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { AuthModal } from "@/components/auth-modal";
 import { ChatWidget, type BookingAction } from "@/components/chat/chat-widget";
 import {
   CalendarIcon,
@@ -30,7 +33,6 @@ import {
   ChevronRight,
   ChevronDown,
   X,
-  LogIn,
   ArrowRight,
   ArrowLeft,
   MapPin,
@@ -210,11 +212,26 @@ export function DynamicAvailabilityWidget(
   // Selected time slot for booking
   const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null);
 
-  // Booking panel
-  const [showBookingPanel, setShowBookingPanel] = useState(false);
+  // Booking panel (portal-based bottom-up overlay)
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [bookingNotes, setBookingNotes] = useState("");
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState("");
+
+  // Inline auth state
+  const [authTab, setAuthTab] = useState<string>("signin");
+  const [signInEmail, setSignInEmail] = useState("");
+  const [signInPassword, setSignInPassword] = useState("");
+  const [signInError, setSignInError] = useState("");
+  const [signInLoading, setSignInLoading] = useState(false);
+  const [signUpName, setSignUpName] = useState("");
+  const [signUpPhone, setSignUpPhone] = useState("");
+  const [signUpEmail, setSignUpEmail] = useState("");
+  const [signUpPassword, setSignUpPassword] = useState("");
+  const [signUpError, setSignUpError] = useState("");
+  const [signUpLoading, setSignUpLoading] = useState(false);
+  const [signUpSuccess, setSignUpSuccess] = useState(false);
 
   // Multi-step wizard state (for payment flow)
   const [bookingStep, setBookingStep] = useState<1 | 2 | 3>(1);
@@ -252,9 +269,16 @@ export function DynamicAvailabilityWidget(
       cancellationWindowHours * 60 * 60 * 1000
     : false;
 
+  // ─── Mounted guard for portal rendering ─────────────────
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // ─── Restore pending booking after auth ─────────────────
 
   useEffect(() => {
+    if (!mounted) return;
     if (isAuthenticated) {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -269,8 +293,13 @@ export function DynamicAvailabilityWidget(
         } catch {}
         localStorage.removeItem(STORAGE_KEY);
       }
+      // Reopen panel if we saved session state before auth
+      if (sessionStorage.getItem("playbook-dynamic-panel-reopen")) {
+        sessionStorage.removeItem("playbook-dynamic-panel-reopen");
+        // Panel will open after availability loads and slot is re-selected
+      }
     }
-  }, [isAuthenticated, orgId, todayStr]);
+  }, [mounted, isAuthenticated, orgId, todayStr]);
 
   // ─── Fetch availability ─────────────────────────────────
 
@@ -430,15 +459,100 @@ export function DynamicAvailabilityWidget(
 
   function handleSelectSlot(slot: AvailableSlot) {
     setSelectedSlot(slot);
-    setShowBookingPanel(true);
+    setPanelOpen(false);
+    resetPaymentState();
+  }
+
+  function handleOpenPanel() {
+    setBookingError("");
+    setPanelOpen(true);
+  }
+
+  function handleClosePanel() {
+    setPanelOpen(false);
+    setBookingError("");
+    setBookingNotes("");
+    // Reset auth form state
+    setSignInEmail("");
+    setSignInPassword("");
+    setSignInError("");
+    setSignUpName("");
+    setSignUpEmail("");
+    setSignUpPassword("");
+    setSignUpError("");
+    setSignUpSuccess(false);
+    setAuthTab("signin");
+    // Reset checkout state
     resetPaymentState();
   }
 
   function handleCancelSelection() {
     setSelectedSlot(null);
-    setShowBookingPanel(false);
+    setPanelOpen(false);
     setBookingNotes("");
     resetPaymentState();
+  }
+
+  // Save selection to localStorage before auth reload
+  function saveSelectionToStorage() {
+    const data = {
+      orgId,
+      date: selectedDate,
+      duration: selectedDuration,
+      groupId: selectedGroupId,
+      bayId: selectedBayId,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    sessionStorage.setItem("playbook-dynamic-panel-reopen", "true");
+  }
+
+  // Inline sign-in handler
+  async function handlePanelSignIn(e: React.FormEvent) {
+    e.preventDefault();
+    setSignInLoading(true);
+    setSignInError("");
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithPassword({
+      email: signInEmail,
+      password: signInPassword,
+    });
+
+    if (error) {
+      setSignInError(error.message);
+      setSignInLoading(false);
+      return;
+    }
+
+    // Save selection to localStorage, reload to refresh session cookies
+    saveSelectionToStorage();
+    window.location.reload();
+  }
+
+  // Inline sign-up handler
+  async function handlePanelSignUp(e: React.FormEvent) {
+    e.preventDefault();
+    setSignUpLoading(true);
+    setSignUpError("");
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.signUp({
+      email: signUpEmail,
+      password: signUpPassword,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        data: { full_name: signUpName, phone: signUpPhone || undefined },
+      },
+    });
+
+    if (error) {
+      setSignUpError(error.message);
+      setSignUpLoading(false);
+      return;
+    }
+
+    setSignUpSuccess(true);
+    setSignUpLoading(false);
   }
 
   async function handleConfirmBooking() {
@@ -547,18 +661,6 @@ export function DynamicAvailabilityWidget(
     }
   }
 
-  function handleAuthRequired() {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        orgId,
-        date: selectedDate,
-        duration: selectedDuration,
-        groupId: selectedGroupId,
-        bayId: selectedBayId,
-      })
-    );
-  }
 
   // ─── Chat booking action handler ─────────────────────
 
@@ -871,490 +973,6 @@ export function DynamicAvailabilityWidget(
         )}
       </div>
 
-      {/* ─── Booking CTA Bar (Portal) ─── */}
-      {selectedSlot &&
-        !showBookingPanel &&
-        createPortal(
-          <div className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-            <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold">
-                  {formatTime(selectedSlot.start_time, timezone)} &ndash;{" "}
-                  {formatTime(selectedSlot.end_time, timezone)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formatDateLabel(selectedDate)} &middot;{" "}
-                  {formatDurationLong(selectedDuration)} &middot; $
-                  {(selectedSlot.price_cents / 100).toFixed(2)}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleCancelSelection}
-                  className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-                {isAuthenticated ? (
-                  <Button onClick={() => setShowBookingPanel(true)}>
-                    Continue to Book
-                  </Button>
-                ) : (
-                  <AuthModal
-                    trigger={
-                      <Button onClick={handleAuthRequired}>
-                        <LogIn className="mr-2 h-4 w-4" />
-                        Sign in to Book
-                      </Button>
-                    }
-                  />
-                )}
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
-
-      {/* ─── Inline Booking Panel (Multi-Step Wizard) ─── */}
-      {showBookingPanel && selectedSlot && isAuthenticated && (
-        <div className="rounded-xl border bg-card p-6 space-y-4">
-          {/* Panel header with step indicator */}
-          <div>
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold">
-                  {bookingStep === 1
-                    ? "Booking Details"
-                    : bookingStep === 2 && requiresPayment
-                    ? "Payment Method"
-                    : "Confirm Booking"}
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  {formatShortDate(selectedDate)} &middot;{" "}
-                  {formatTime(selectedSlot.start_time, timezone)} &ndash;{" "}
-                  {formatTime(selectedSlot.end_time, timezone)}
-                </p>
-              </div>
-              <button
-                onClick={handleCancelSelection}
-                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Step indicator */}
-            <div className="mt-3 flex items-center gap-1">
-              {stepLabels.map((label, i) => {
-                const stepNum = i + 1;
-                const isCurrent = bookingStep === stepNum;
-                const isCompleted = bookingStep > stepNum;
-                const canNavigate =
-                  isCompleted && !(confirmedPaymentMethodId && stepNum === 2);
-                return (
-                  <div key={label} className="flex items-center gap-1">
-                    {i > 0 && (
-                      <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
-                    )}
-                    <button
-                      type="button"
-                      disabled={!canNavigate}
-                      onClick={() => {
-                        if (!canNavigate) return;
-                        if (
-                          stepNum === 1 &&
-                          requiresPayment &&
-                          confirmedPaymentMethodId
-                        ) {
-                          resetPaymentState();
-                        }
-                        setBookingStep(stepNum as 1 | 2 | 3);
-                      }}
-                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
-                        isCurrent
-                          ? "bg-primary text-primary-foreground"
-                          : isCompleted && canNavigate
-                          ? "bg-primary/10 text-primary cursor-pointer hover:bg-primary/20"
-                          : isCompleted
-                          ? "bg-primary/10 text-primary"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {isCompleted ? (
-                        <Check
-                          className="h-3 w-3 text-green-600"
-                          strokeWidth={3}
-                        />
-                      ) : (
-                        <span>{stepNum}</span>
-                      )}
-                      {label}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Error banner */}
-          {bookingError && (
-            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              {bookingError}
-            </div>
-          )}
-
-          {/* ═══ Step 1: Booking Details ═══ */}
-          {bookingStep === 1 && (
-            <div className="space-y-4">
-              {/* Summary */}
-              <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Date</span>
-                  <span className="font-medium">
-                    {formatDateLabel(selectedDate)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Time</span>
-                  <span className="font-medium">
-                    {formatTime(selectedSlot.start_time, timezone)} &ndash;{" "}
-                    {formatTime(selectedSlot.end_time, timezone)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Duration</span>
-                  <span className="font-medium">
-                    {formatDurationLong(selectedDuration)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Facility</span>
-                  <span className="font-medium">{selectedSlot.bay_name}</span>
-                </div>
-                <div className="flex justify-between border-t pt-2 text-sm">
-                  <span className="font-medium">Total</span>
-                  <span className="text-lg font-bold">
-                    ${(selectedSlot.price_cents / 100).toFixed(2)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Notes */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Notes (optional)
-                </label>
-                <textarea
-                  value={bookingNotes}
-                  onChange={(e) => setBookingNotes(e.target.value)}
-                  placeholder="Any special requests..."
-                  rows={2}
-                  className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-
-              {/* User info */}
-              <p className="text-sm text-muted-foreground">
-                Booking as {userFullName || userEmail}
-              </p>
-
-              {/* Continue button */}
-              <Button
-                className="w-full"
-                size="lg"
-                onClick={() => {
-                  setBookingError("");
-                  if (requiresPayment) {
-                    setBookingStep(2);
-                    setPaymentValidationError("");
-                    if (!checkoutIntent && !checkoutLoading) {
-                      createCheckoutIntent();
-                    }
-                  } else {
-                    // No payment — skip directly to confirm step
-                    setBookingStep(2);
-                  }
-                }}
-              >
-                {requiresPayment ? (
-                  <>
-                    Continue to Payment
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </>
-                ) : (
-                  <>
-                    Continue to Confirm
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </>
-                )}
-              </Button>
-            </div>
-          )}
-
-          {/* ═══ Step 2: Payment (only when requiresPayment) ═══ */}
-          {/* Stripe Elements must stay mounted across steps 2 & 3 so submit() works on confirm */}
-          {requiresPayment && (bookingStep === 2 || bookingStep === 3) && (
-            <div className={bookingStep !== 2 ? "hidden" : ""}>
-              {checkoutLoading ? (
-                <div className="flex items-center justify-center rounded-lg border border-dashed py-12">
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">
-                    Preparing payment...
-                  </span>
-                </div>
-              ) : checkoutError ? (
-                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                  {checkoutError}
-                  <button
-                    className="ml-2 underline"
-                    onClick={createCheckoutIntent}
-                  >
-                    Retry
-                  </button>
-                </div>
-              ) : checkoutIntent ? (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <CreditCard className="h-4 w-4 text-muted-foreground" />
-                    <p className="text-sm font-medium">
-                      {paymentMode === "charge_upfront"
-                        ? "Payment Details"
-                        : "Card on File"}
-                    </p>
-                  </div>
-
-                  <StripeCheckoutWrapper
-                    stripeAccountId={checkoutIntent.stripe_account_id}
-                    clientSecret={checkoutIntent.client_secret}
-                  >
-                    <CheckoutForm
-                      ref={checkoutFormRef}
-                      intentType={checkoutIntent.intent_type}
-                    />
-                  </StripeCheckoutWrapper>
-
-                  {paymentValidationError && (
-                    <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                      {paymentValidationError}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-
-              {/* Navigation buttons */}
-              <div className="mt-6 flex gap-3">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    setBookingStep(1);
-                    setPaymentValidationError("");
-                  }}
-                >
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back
-                </Button>
-                <Button
-                  className="flex-1"
-                  disabled={!checkoutIntent || checkoutLoading}
-                  onClick={async () => {
-                    setPaymentValidationError("");
-                    if (!checkoutFormRef.current) {
-                      setPaymentValidationError(
-                        "Payment form not ready. Please try again."
-                      );
-                      return;
-                    }
-                    // Confirm payment and extract card info
-                    const result =
-                      await checkoutFormRef.current.confirmAndGetCardInfo();
-                    if (!result.success) {
-                      setPaymentValidationError(
-                        result.error || "Please check your payment details."
-                      );
-                      return;
-                    }
-                    setPaymentValidated(true);
-                    if (result.paymentMethodId)
-                      setConfirmedPaymentMethodId(result.paymentMethodId);
-
-                    // Get card brand + last4
-                    let brand = result.cardBrand;
-                    let last4 = result.cardLast4;
-
-                    if (result.paymentMethodId && (!brand || !last4)) {
-                      try {
-                        const res = await fetch(
-                          `/api/stripe/card-details?pm=${result.paymentMethodId}`
-                        );
-                        if (res.ok) {
-                          const data = await res.json();
-                          brand = data.brand || brand;
-                          last4 = data.last4 || last4;
-                        }
-                      } catch {
-                        // Non-critical
-                      }
-                    }
-
-                    if (brand) setCardBrand(brand);
-                    if (last4) setCardLast4(last4);
-
-                    // Implicit policy agreement
-                    if (!policyAgreedAt) {
-                      setPolicyAgreed(true);
-                      setPolicyAgreedAt(new Date().toISOString());
-                    }
-                    setBookingStep(3);
-                  }}
-                >
-                  Continue to Confirm
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* ═══ Confirm Step (Step 2 no-payment / Step 3 with payment) ═══ */}
-          {((bookingStep === 2 && !requiresPayment) ||
-            (bookingStep === 3 && requiresPayment)) && (
-            <div>
-              {/* Summary card */}
-              <div className="mb-4 space-y-3 rounded-lg border p-4">
-                <div className="flex items-center gap-2 text-sm">
-                  <CalendarCheck className="h-4 w-4 text-muted-foreground" />
-                  <span>
-                    {formatShortDate(selectedDate)}
-                    {" · "}
-                    {formatTime(selectedSlot.start_time, timezone)} &ndash;{" "}
-                    {formatTime(selectedSlot.end_time, timezone)}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 text-sm">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
-                  <span>{selectedSlot.bay_name}</span>
-                </div>
-
-                {requiresPayment && paymentValidated && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <CreditCard className="h-4 w-4 text-muted-foreground" />
-                    <span>
-                      {cardBrand && cardLast4
-                        ? `${cardBrand.charAt(0).toUpperCase() + cardBrand.slice(1)} •••• ${cardLast4}`
-                        : "Payment method confirmed"}
-                    </span>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between border-t pt-3 text-sm font-bold">
-                  <span>Total</span>
-                  <span>
-                    ${(selectedSlot.price_cents / 100).toFixed(2)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Notes (if provided) */}
-              {bookingNotes && (
-                <div className="mb-4 rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
-                  <span className="font-medium text-foreground">Note:</span>{" "}
-                  {bookingNotes}
-                </div>
-              )}
-
-              {/* Terms + cancellation policy */}
-              <p className="mb-2 text-center text-xs text-muted-foreground">
-                By booking you agree to the terms and{" "}
-                {checkoutIntent?.cancellation_policy_text ? (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmPolicyModalOpen(true)}
-                    className="underline underline-offset-2 transition-colors hover:text-foreground"
-                  >
-                    cancellation policy
-                  </button>
-                ) : (
-                  "cancellation policy"
-                )}
-              </p>
-
-              {/* Cancellation policy modal */}
-              {checkoutIntent?.cancellation_policy_text && (
-                <Dialog
-                  open={confirmPolicyModalOpen}
-                  onOpenChange={setConfirmPolicyModalOpen}
-                >
-                  <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2">
-                        <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                        Cancellation Policy
-                      </DialogTitle>
-                    </DialogHeader>
-                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/50">
-                      <p className="text-sm leading-relaxed text-blue-700 dark:text-blue-300">
-                        {checkoutIntent.cancellation_policy_text}
-                      </p>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              )}
-
-              {/* No-cancellation window warning */}
-              {isWithinCancellationWindow && (
-                <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/50">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-300">
-                    Booking is less than {cancellationWindowHours}h away and
-                    cannot be refunded or modified.
-                  </p>
-                </div>
-              )}
-
-              {/* Navigation + Confirm */}
-              <div className="flex gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setBookingStep(1);
-                    if (requiresPayment) {
-                      resetPaymentState();
-                    }
-                  }}
-                >
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back
-                </Button>
-                <Button
-                  className="flex-1"
-                  size="lg"
-                  disabled={bookingLoading}
-                  onClick={handleConfirmBooking}
-                >
-                  {bookingLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {requiresPayment && paymentMode === "charge_upfront"
-                        ? "Processing payment..."
-                        : requiresPayment
-                        ? "Saving card..."
-                        : "Booking..."}
-                    </>
-                  ) : requiresPayment && paymentMode === "charge_upfront" ? (
-                    `Confirm & Pay $${(selectedSlot.price_cents / 100).toFixed(2)}`
-                  ) : requiresPayment ? (
-                    "Confirm & Save Card"
-                  ) : (
-                    "Confirm Booking"
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* ─── Toast ─── */}
       {toast && (
         <Toast
@@ -1365,8 +983,649 @@ export function DynamicAvailabilityWidget(
       )}
 
       {/* Spacer for CTA bar when a slot is selected */}
-      {selectedSlot && !showBookingPanel && <div className="h-20" />}
+      {selectedSlot && <div className="h-20" />}
       </div>{/* end Main Content */}
+
+      {/* ===== Booking bar / slide-up panel — portalled to body ===== */}
+      {selectedSlot &&
+        mounted &&
+        createPortal(
+          <>
+            {/* Backdrop overlay when panel is open */}
+            {panelOpen && (
+              <div
+                className="fixed inset-0 z-50 bg-black/40 transition-opacity"
+                onClick={handleClosePanel}
+              />
+            )}
+
+            {/* The bar / panel */}
+            <div
+              className={`fixed inset-x-0 bottom-0 z-50 bg-background transition-all duration-300 ease-in-out ${
+                panelOpen
+                  ? "max-h-[85vh] overflow-y-auto rounded-t-2xl shadow-2xl"
+                  : "border-t shadow-[0_-4px_12px_rgba(0,0,0,0.1)]"
+              }`}
+            >
+              {!panelOpen ? (
+                /* ---- Collapsed CTA bar ---- */
+                <div className="mx-auto flex max-w-6xl items-center justify-between p-4 px-6">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">
+                      {formatTime(selectedSlot.start_time, timezone)} &ndash;{" "}
+                      {formatTime(selectedSlot.end_time, timezone)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDateLabel(selectedDate)} &middot;{" "}
+                      {formatDurationLong(selectedDuration)} &middot; $
+                      {(selectedSlot.price_cents / 100).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleCancelSelection}
+                      className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                    <Button onClick={handleOpenPanel} className="gap-2">
+                      Continue to Book
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                /* ---- Expanded booking panel ---- */
+                <div className="mx-auto max-w-lg px-6 py-6">
+                  {/* Panel header */}
+                  <div className={isAuthenticated ? "sticky top-0 z-10 -mx-6 bg-background px-6 pb-4 pt-0" : "mb-6"}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-lg font-bold">Confirm Booking</h2>
+                        <p className="text-sm text-muted-foreground">
+                          {formatShortDate(selectedDate)} &middot;{" "}
+                          {formatTime(selectedSlot.start_time, timezone)} &ndash;{" "}
+                          {formatTime(selectedSlot.end_time, timezone)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleClosePanel}
+                        className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+
+                    {/* Step indicator — only for authenticated users */}
+                    {isAuthenticated && (
+                      <div className="mt-3 flex items-center gap-1">
+                        {stepLabels.map((label, i) => {
+                          const stepNum = i + 1;
+                          const isCurrent = bookingStep === stepNum;
+                          const isCompleted = bookingStep > stepNum;
+                          const canNavigate =
+                            isCompleted && !(confirmedPaymentMethodId && stepNum === 2);
+                          return (
+                            <div key={label} className="flex items-center gap-1">
+                              {i > 0 && (
+                                <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
+                              )}
+                              <button
+                                type="button"
+                                disabled={!canNavigate}
+                                onClick={() => {
+                                  if (!canNavigate) return;
+                                  if (
+                                    stepNum === 1 &&
+                                    requiresPayment &&
+                                    confirmedPaymentMethodId
+                                  ) {
+                                    resetPaymentState();
+                                  }
+                                  setBookingStep(stepNum as 1 | 2 | 3);
+                                }}
+                                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                                  isCurrent
+                                    ? "bg-primary text-primary-foreground"
+                                    : isCompleted && canNavigate
+                                    ? "bg-primary/10 text-primary cursor-pointer hover:bg-primary/20"
+                                    : isCompleted
+                                    ? "bg-primary/10 text-primary"
+                                    : "bg-muted text-muted-foreground"
+                                }`}
+                              >
+                                {isCompleted ? (
+                                  <Check
+                                    className="h-3 w-3 text-green-600"
+                                    strokeWidth={3}
+                                  />
+                                ) : (
+                                  <span>{stepNum}</span>
+                                )}
+                                {label}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {!isAuthenticated ? (
+                    /* ---- Auth form for unauthenticated users ---- */
+                    <div>
+                      {/* Booking summary preview above auth */}
+                      <div className="mb-6 rounded-lg border bg-muted/50 p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium">{selectedSlot.bay_name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatDurationLong(selectedDuration)}
+                            </p>
+                          </div>
+                          <span className="text-sm font-bold">
+                            ${(selectedSlot.price_cents / 100).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="mb-4 text-sm text-muted-foreground">
+                        Sign in or create an account to complete your booking.
+                      </p>
+
+                      <Tabs value={authTab} onValueChange={setAuthTab} className="w-full">
+                        <TabsList className="grid w-full grid-cols-2">
+                          <TabsTrigger value="signin">Sign In</TabsTrigger>
+                          <TabsTrigger value="signup">Sign Up</TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="signin">
+                          <form onSubmit={handlePanelSignIn} className="space-y-4 pt-2">
+                            {signInError && (
+                              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                                {signInError}
+                              </div>
+                            )}
+                            <div className="space-y-2">
+                              <Label htmlFor="dynamic-panel-signin-email">Email</Label>
+                              <Input
+                                id="dynamic-panel-signin-email"
+                                type="email"
+                                placeholder="you@example.com"
+                                value={signInEmail}
+                                onChange={(e) => setSignInEmail(e.target.value)}
+                                required
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="dynamic-panel-signin-password">Password</Label>
+                              <Input
+                                id="dynamic-panel-signin-password"
+                                type="password"
+                                value={signInPassword}
+                                onChange={(e) => setSignInPassword(e.target.value)}
+                                required
+                              />
+                            </div>
+                            <Button type="submit" className="w-full" disabled={signInLoading}>
+                              {signInLoading ? "Signing in..." : "Sign In & Book"}
+                            </Button>
+                          </form>
+                        </TabsContent>
+
+                        <TabsContent value="signup">
+                          {signUpSuccess ? (
+                            <div className="space-y-3 pt-2">
+                              <div className="rounded-md bg-muted p-4 text-center">
+                                <p className="font-medium">Check your email</p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                  We sent a confirmation link to{" "}
+                                  <span className="font-medium">{signUpEmail}</span>. Click
+                                  the link to activate your account, then sign in.
+                                </p>
+                              </div>
+                              <Button
+                                variant="outline"
+                                className="w-full"
+                                onClick={() => {
+                                  setSignUpSuccess(false);
+                                  setAuthTab("signin");
+                                  setSignInEmail(signUpEmail);
+                                }}
+                              >
+                                Go to Sign In
+                              </Button>
+                            </div>
+                          ) : (
+                            <form onSubmit={handlePanelSignUp} className="space-y-4 pt-2">
+                              {signUpError && (
+                                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                                  {signUpError}
+                                </div>
+                              )}
+                              <div className="space-y-2">
+                                <Label htmlFor="dynamic-panel-signup-name">Full Name</Label>
+                                <Input
+                                  id="dynamic-panel-signup-name"
+                                  type="text"
+                                  placeholder="John Doe"
+                                  value={signUpName}
+                                  onChange={(e) => setSignUpName(e.target.value)}
+                                  required
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="dynamic-panel-signup-phone">
+                                  Phone Number{" "}
+                                  <span className="text-muted-foreground font-normal">(optional)</span>
+                                </Label>
+                                <Input
+                                  id="dynamic-panel-signup-phone"
+                                  type="tel"
+                                  placeholder="(555) 123-4567"
+                                  value={signUpPhone}
+                                  onChange={(e) => setSignUpPhone(e.target.value)}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="dynamic-panel-signup-email">Email</Label>
+                                <Input
+                                  id="dynamic-panel-signup-email"
+                                  type="email"
+                                  placeholder="you@example.com"
+                                  value={signUpEmail}
+                                  onChange={(e) => setSignUpEmail(e.target.value)}
+                                  required
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="dynamic-panel-signup-password">Password</Label>
+                                <Input
+                                  id="dynamic-panel-signup-password"
+                                  type="password"
+                                  placeholder="At least 6 characters"
+                                  value={signUpPassword}
+                                  onChange={(e) => setSignUpPassword(e.target.value)}
+                                  minLength={6}
+                                  required
+                                />
+                              </div>
+                              <Button type="submit" className="w-full" disabled={signUpLoading}>
+                                {signUpLoading ? "Creating account..." : "Create Account"}
+                              </Button>
+                            </form>
+                          )}
+                        </TabsContent>
+                      </Tabs>
+                    </div>
+                  ) : (
+                    /* ---- Authenticated: Multi-step booking wizard ---- */
+                    <div className="space-y-4">
+                      {/* Error banner */}
+                      {bookingError && (
+                        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                          {bookingError}
+                        </div>
+                      )}
+
+                      {/* ═══ Step 1: Booking Details ═══ */}
+                      {bookingStep === 1 && (
+                        <div className="space-y-4">
+                          {/* Summary */}
+                          <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Date</span>
+                              <span className="font-medium">
+                                {formatDateLabel(selectedDate)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Time</span>
+                              <span className="font-medium">
+                                {formatTime(selectedSlot.start_time, timezone)} &ndash;{" "}
+                                {formatTime(selectedSlot.end_time, timezone)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Duration</span>
+                              <span className="font-medium">
+                                {formatDurationLong(selectedDuration)}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-muted-foreground">Facility</span>
+                              <span className="font-medium">{selectedSlot.bay_name}</span>
+                            </div>
+                            <div className="flex justify-between border-t pt-2 text-sm">
+                              <span className="font-medium">Total</span>
+                              <span className="text-lg font-bold">
+                                ${(selectedSlot.price_cents / 100).toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Notes */}
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-muted-foreground">
+                              Notes (optional)
+                            </label>
+                            <textarea
+                              value={bookingNotes}
+                              onChange={(e) => setBookingNotes(e.target.value)}
+                              placeholder="Any special requests..."
+                              rows={2}
+                              className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            />
+                          </div>
+
+                          {/* User info */}
+                          <p className="text-sm text-muted-foreground">
+                            Booking as {userFullName || userEmail}
+                          </p>
+
+                          {/* Continue button */}
+                          <Button
+                            className="w-full"
+                            size="lg"
+                            onClick={() => {
+                              setBookingError("");
+                              if (requiresPayment) {
+                                setBookingStep(2);
+                                setPaymentValidationError("");
+                                if (!checkoutIntent && !checkoutLoading) {
+                                  createCheckoutIntent();
+                                }
+                              } else {
+                                // No payment — skip directly to confirm step
+                                setBookingStep(2);
+                              }
+                            }}
+                          >
+                            {requiresPayment ? (
+                              <>
+                                Continue to Payment
+                                <ArrowRight className="ml-2 h-4 w-4" />
+                              </>
+                            ) : (
+                              <>
+                                Continue to Confirm
+                                <ArrowRight className="ml-2 h-4 w-4" />
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* ═══ Step 2: Payment (only when requiresPayment) ═══ */}
+                      {/* Stripe Elements must stay mounted across steps 2 & 3 so submit() works on confirm */}
+                      {requiresPayment && (bookingStep === 2 || bookingStep === 3) && (
+                        <div className={bookingStep !== 2 ? "hidden" : ""}>
+                          {checkoutLoading ? (
+                            <div className="flex items-center justify-center rounded-lg border border-dashed py-12">
+                              <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground">
+                                Preparing payment...
+                              </span>
+                            </div>
+                          ) : checkoutError ? (
+                            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                              {checkoutError}
+                              <button
+                                className="ml-2 underline"
+                                onClick={createCheckoutIntent}
+                              >
+                                Retry
+                              </button>
+                            </div>
+                          ) : checkoutIntent ? (
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-2">
+                                <CreditCard className="h-4 w-4 text-muted-foreground" />
+                                <p className="text-sm font-medium">
+                                  {paymentMode === "charge_upfront"
+                                    ? "Payment Details"
+                                    : "Card on File"}
+                                </p>
+                              </div>
+
+                              <StripeCheckoutWrapper
+                                stripeAccountId={checkoutIntent.stripe_account_id}
+                                clientSecret={checkoutIntent.client_secret}
+                              >
+                                <CheckoutForm
+                                  ref={checkoutFormRef}
+                                  intentType={checkoutIntent.intent_type}
+                                />
+                              </StripeCheckoutWrapper>
+
+                              {paymentValidationError && (
+                                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                                  {paymentValidationError}
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
+
+                          {/* Navigation buttons */}
+                          <div className="mt-6 flex gap-3">
+                            <Button
+                              variant="outline"
+                              className="flex-1"
+                              onClick={() => {
+                                setBookingStep(1);
+                                setPaymentValidationError("");
+                              }}
+                            >
+                              <ArrowLeft className="mr-2 h-4 w-4" />
+                              Back
+                            </Button>
+                            <Button
+                              className="flex-1"
+                              disabled={!checkoutIntent || checkoutLoading}
+                              onClick={async () => {
+                                setPaymentValidationError("");
+                                if (!checkoutFormRef.current) {
+                                  setPaymentValidationError(
+                                    "Payment form not ready. Please try again."
+                                  );
+                                  return;
+                                }
+                                // Confirm payment and extract card info
+                                const result =
+                                  await checkoutFormRef.current.confirmAndGetCardInfo();
+                                if (!result.success) {
+                                  setPaymentValidationError(
+                                    result.error || "Please check your payment details."
+                                  );
+                                  return;
+                                }
+                                setPaymentValidated(true);
+                                if (result.paymentMethodId)
+                                  setConfirmedPaymentMethodId(result.paymentMethodId);
+
+                                // Get card brand + last4
+                                let brand = result.cardBrand;
+                                let last4 = result.cardLast4;
+
+                                if (result.paymentMethodId && (!brand || !last4)) {
+                                  try {
+                                    const res = await fetch(
+                                      `/api/stripe/card-details?pm=${result.paymentMethodId}`
+                                    );
+                                    if (res.ok) {
+                                      const data = await res.json();
+                                      brand = data.brand || brand;
+                                      last4 = data.last4 || last4;
+                                    }
+                                  } catch {
+                                    // Non-critical
+                                  }
+                                }
+
+                                if (brand) setCardBrand(brand);
+                                if (last4) setCardLast4(last4);
+
+                                // Implicit policy agreement
+                                if (!policyAgreedAt) {
+                                  setPolicyAgreed(true);
+                                  setPolicyAgreedAt(new Date().toISOString());
+                                }
+                                setBookingStep(3);
+                              }}
+                            >
+                              Continue to Confirm
+                              <ArrowRight className="ml-2 h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ═══ Confirm Step (Step 2 no-payment / Step 3 with payment) ═══ */}
+                      {((bookingStep === 2 && !requiresPayment) ||
+                        (bookingStep === 3 && requiresPayment)) && (
+                        <div>
+                          {/* Summary card */}
+                          <div className="mb-4 space-y-3 rounded-lg border p-4">
+                            <div className="flex items-center gap-2 text-sm">
+                              <CalendarCheck className="h-4 w-4 text-muted-foreground" />
+                              <span>
+                                {formatShortDate(selectedDate)}
+                                {" · "}
+                                {formatTime(selectedSlot.start_time, timezone)} &ndash;{" "}
+                                {formatTime(selectedSlot.end_time, timezone)}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 text-sm">
+                              <MapPin className="h-4 w-4 text-muted-foreground" />
+                              <span>{selectedSlot.bay_name}</span>
+                            </div>
+
+                            {requiresPayment && paymentValidated && (
+                              <div className="flex items-center gap-2 text-sm">
+                                <CreditCard className="h-4 w-4 text-muted-foreground" />
+                                <span>
+                                  {cardBrand && cardLast4
+                                    ? `${cardBrand.charAt(0).toUpperCase() + cardBrand.slice(1)} •••• ${cardLast4}`
+                                    : "Payment method confirmed"}
+                                </span>
+                              </div>
+                            )}
+
+                            <div className="flex items-center justify-between border-t pt-3 text-sm font-bold">
+                              <span>Total</span>
+                              <span>
+                                ${(selectedSlot.price_cents / 100).toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Notes (if provided) */}
+                          {bookingNotes && (
+                            <div className="mb-4 rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+                              <span className="font-medium text-foreground">Note:</span>{" "}
+                              {bookingNotes}
+                            </div>
+                          )}
+
+                          {/* Terms + cancellation policy */}
+                          <p className="mb-2 text-center text-xs text-muted-foreground">
+                            By booking you agree to the terms and{" "}
+                            {checkoutIntent?.cancellation_policy_text ? (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmPolicyModalOpen(true)}
+                                className="underline underline-offset-2 transition-colors hover:text-foreground"
+                              >
+                                cancellation policy
+                              </button>
+                            ) : (
+                              "cancellation policy"
+                            )}
+                          </p>
+
+                          {/* Cancellation policy modal */}
+                          {checkoutIntent?.cancellation_policy_text && (
+                            <Dialog
+                              open={confirmPolicyModalOpen}
+                              onOpenChange={setConfirmPolicyModalOpen}
+                            >
+                              <DialogContent className="sm:max-w-md">
+                                <DialogHeader>
+                                  <DialogTitle className="flex items-center gap-2">
+                                    <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                    Cancellation Policy
+                                  </DialogTitle>
+                                </DialogHeader>
+                                <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/50">
+                                  <p className="text-sm leading-relaxed text-blue-700 dark:text-blue-300">
+                                    {checkoutIntent.cancellation_policy_text}
+                                  </p>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                          )}
+
+                          {/* No-cancellation window warning */}
+                          {isWithinCancellationWindow && (
+                            <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/50">
+                              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                              <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+                                Booking is less than {cancellationWindowHours}h away and
+                                cannot be refunded or modified.
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Navigation + Confirm */}
+                          <div className="flex gap-3">
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setBookingStep(1);
+                                if (requiresPayment) {
+                                  resetPaymentState();
+                                }
+                              }}
+                            >
+                              <ArrowLeft className="mr-2 h-4 w-4" />
+                              Back
+                            </Button>
+                            <Button
+                              className="flex-1"
+                              size="lg"
+                              disabled={bookingLoading}
+                              onClick={handleConfirmBooking}
+                            >
+                              {bookingLoading ? (
+                                <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                  {requiresPayment && paymentMode === "charge_upfront"
+                                    ? "Processing payment..."
+                                    : requiresPayment
+                                    ? "Saving card..."
+                                    : "Booking..."}
+                                </>
+                              ) : requiresPayment && paymentMode === "charge_upfront" ? (
+                                `Confirm & Pay $${(selectedSlot.price_cents / 100).toFixed(2)}`
+                              ) : requiresPayment ? (
+                                "Confirm & Save Card"
+                              ) : (
+                                "Confirm Booking"
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </>,
+          document.body
+        )}
     </div>
   );
 }
