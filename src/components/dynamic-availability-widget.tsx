@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -306,27 +305,24 @@ export function DynamicAvailabilityWidget(
 
     setBookingLoading(true);
     try {
-      const supabase = createClient();
-      const { data, error } = await supabase.rpc("create_dynamic_booking", {
-        p_org_id: orgId,
-        p_customer_id: userProfileId,
-        p_bay_id: selectedSlot.bay_id,
-        p_date: selectedDate,
-        p_start_time: selectedSlot.start_time,
-        p_end_time: selectedSlot.end_time,
-        p_price_cents: selectedSlot.price_cents,
-        p_notes: bookingNotes || null,
+      // Use the server-side API for booking — handles group consolidation
+      const res = await fetch("/api/bookings/dynamic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          org_id: orgId,
+          bay_id: selectedGroupId ? undefined : selectedSlot.bay_id,
+          group_id: selectedGroupId || undefined,
+          date: selectedDate,
+          start_time: selectedSlot.start_time,
+          end_time: selectedSlot.end_time,
+          price_cents: selectedSlot.price_cents,
+          notes: bookingNotes || null,
+        }),
       });
 
-      if (error) throw error;
-
-      const result = data as {
-        booking_id: string;
-        confirmation_code: string;
-        total_price_cents: number;
-        start_time: string;
-        end_time: string;
-      };
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Booking failed");
 
       // Reset state
       handleCancelSelection();
@@ -341,9 +337,10 @@ export function DynamicAvailabilityWidget(
       }
 
       // Desktop: show toast and refresh availability
+      const bayInfo = result.bay_name ? ` — ${result.bay_name}` : "";
       setToast({
         message: "Booking confirmed!",
-        description: `Confirmation code: ${result.confirmation_code}`,
+        description: `Confirmation code: ${result.confirmation_code}${bayInfo}`,
       });
 
       fetchAvailability();

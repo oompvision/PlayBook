@@ -14,6 +14,7 @@ import {
   Users,
   DollarSign,
   Settings,
+  Layers,
 } from "lucide-react";
 
 const baseNavItems = [
@@ -28,6 +29,7 @@ const slotBasedNavItems = [
 
 const dynamicNavItems = [
   { label: "Schedule Rules", href: "/admin/schedule/rules", icon: CalendarCog },
+  { label: "Facility Groups", href: "/admin/bays/groups", icon: Layers },
 ];
 
 const commonNavItems = [
