@@ -24,6 +24,10 @@ import {
 } from "@/components/ui/dialog";
 import { ChatWidget, type BookingAction } from "@/components/chat/chat-widget";
 import {
+  BookingDetailsModal,
+  type BookingDetailData,
+} from "@/components/booking-details-modal";
+import {
   CalendarIcon,
   CalendarCheck,
   Clock,
@@ -32,10 +36,14 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   X,
   ArrowRight,
   ArrowLeft,
+  ArrowUpRight,
+  ExternalLink,
   MapPin,
+  LogIn,
   Check,
   ShieldCheck,
   AlertTriangle,
@@ -63,6 +71,18 @@ type AvailableSlot = {
   price_cents: number;
   bay_id: string;
   bay_name: string;
+};
+
+type Booking = {
+  id: string;
+  confirmation_code: string;
+  bay_id: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  total_price_cents: number;
+  status: string;
+  notes: string | null;
 };
 
 type ToastData = {
@@ -124,6 +144,15 @@ function formatDateLabel(dateStr: string): string {
 function formatShortDate(dateStr: string): string {
   const d = new Date(dateStr + "T12:00:00");
   return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatBookingDate(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  return d.toLocaleDateString("en-US", {
+    weekday: "short",
     month: "short",
     day: "numeric",
   });
@@ -256,9 +285,14 @@ export function DynamicAvailabilityWidget(
   // Calendar popover
   const [calendarOpen, setCalendarOpen] = useState(false);
 
-  // Chat sidebar
+  // Sidebar: confirmed bookings + chat
   const [chatExpanded, setChatExpanded] = useState(false);
   const pendingBookingAction = useRef<BookingAction | null>(null);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [highlightedBookingIds, setHighlightedBookingIds] = useState<Set<string>>(new Set());
+  const [sidebarBooking, setSidebarBooking] = useState<BookingDetailData | null>(null);
+  const [sidebarModalOpen, setSidebarModalOpen] = useState(false);
 
   // Max date
   const maxDate = addDays(todayStr, bookableWindowDays);
@@ -300,6 +334,30 @@ export function DynamicAvailabilityWidget(
       }
     }
   }, [mounted, isAuthenticated, orgId, todayStr]);
+
+  // ─── Fetch confirmed bookings for sidebar ─────────────
+
+  const fetchBookings = useCallback(async () => {
+    if (!isAuthenticated) return;
+    setBookingsLoading(true);
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("bookings")
+      .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, status, notes")
+      .eq("org_id", orgId)
+      .eq("status", "confirmed")
+      .gte("date", todayStr)
+      .order("date")
+      .order("start_time");
+    setBookings(data || []);
+    setBookingsLoading(false);
+  }, [isAuthenticated, orgId, todayStr]);
+
+  useEffect(() => {
+    if (mounted && isAuthenticated) {
+      fetchBookings();
+    }
+  }, [mounted, isAuthenticated, fetchBookings]);
 
   // ─── Fetch availability ─────────────────────────────────
 
@@ -555,6 +613,39 @@ export function DynamicAvailabilityWidget(
     setSignUpLoading(false);
   }
 
+  // ─── Sidebar booking handlers ──────────────────────────
+
+  function openSidebarBooking(booking: Booking) {
+    const bayName = bays.find((b) => b.id === booking.bay_id)?.name ?? "Unknown Bay";
+    setSidebarBooking({
+      id: booking.id,
+      date: booking.date,
+      start_time: booking.start_time,
+      end_time: booking.end_time,
+      total_price_cents: booking.total_price_cents,
+      status: booking.status,
+      confirmation_code: booking.confirmation_code,
+      notes: booking.notes,
+      created_at: "",
+      bayName,
+      canCancel: true,
+      canModify: true,
+    });
+    setSidebarModalOpen(true);
+  }
+
+  async function handleSidebarCancel(formData: FormData) {
+    const bookingId = formData.get("booking_id") as string;
+    const supabase = createClient();
+    const { error } = await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
+    if (!error) {
+      setBookings((prev) => prev.filter((b) => b.id !== bookingId));
+      setSidebarModalOpen(false);
+      setSidebarBooking(null);
+      fetchAvailability();
+    }
+  }
+
   async function handleConfirmBooking() {
     if (!selectedSlot || !userProfileId) return;
 
@@ -638,14 +729,21 @@ export function DynamicAvailabilityWidget(
         return;
       }
 
-      // Desktop: show toast and refresh availability
+      // Desktop: show toast, refresh availability, and highlight in sidebar
       const bayInfo = result.bay_name ? ` — ${result.bay_name}` : "";
       setToast({
         message: "Booking confirmed!",
         description: `Confirmation code: ${result.confirmation_code}${bayInfo}`,
       });
 
+      // Highlight new booking in sidebar
+      if (result.booking_id) {
+        setHighlightedBookingIds(new Set([result.booking_id]));
+        setTimeout(() => setHighlightedBookingIds(new Set()), 8000);
+      }
+
       fetchAvailability();
+      fetchBookings();
     } catch (err) {
       // Booking failed after payment — cancel/refund
       if (requiresPayment && checkoutIntent) {
@@ -741,26 +839,107 @@ export function DynamicAvailabilityWidget(
     : ["Booking Details", "Confirm Booking"];
 
   return (
-    <div className="flex gap-4">
-      {/* ═══ Chat Sidebar (desktop only) ═══ */}
-      {facilitySlug && (
-        <div className="hidden w-80 shrink-0 lg:block">
-          <div className="sticky top-20 flex flex-col rounded-xl border bg-card shadow-sm">
-            {/* Chat toggle */}
+    <div className="flex items-start gap-6">
+      {/* ===== Sidebar — Confirmed Bookings + Chat Assistant (desktop only) ===== */}
+      <div className="sticky top-[4.5rem] hidden w-72 shrink-0 flex-col rounded-xl border bg-card shadow-sm lg:flex max-h-[calc(100vh-5.5rem)]">
+        {/* Bookings section — scrollable */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {isAuthenticated ? (
+            <div className="p-3">
+              <div className="mb-3 flex items-center gap-2 px-1">
+                <CalendarCheck className="h-4 w-4 text-muted-foreground" />
+                <h3 className="flex-1 text-sm font-semibold">Confirmed Bookings</h3>
+                <a
+                  href="/my-bookings"
+                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  title="View all bookings"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+              {bookingsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : bookings.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-8 text-center">
+                  <CalendarCheck className="h-8 w-8 text-muted-foreground/20" />
+                  <p className="text-xs text-muted-foreground">
+                    No upcoming bookings
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {bookings.map((booking) => {
+                    const bayName =
+                      bays.find((b) => b.id === booking.bay_id)?.name ??
+                      "Unknown Bay";
+                    const price = `$${(booking.total_price_cents / 100).toFixed(2)}`;
+                    const isHighlighted = highlightedBookingIds.has(booking.id);
+
+                    return (
+                      <button
+                        type="button"
+                        key={booking.id}
+                        onClick={() => openSidebarBooking(booking)}
+                        className={`block w-full rounded-lg border bg-background p-3 text-left transition-all duration-700 hover:bg-muted/50 ${
+                          isHighlighted
+                            ? "border-green-400 shadow-[0_0_8px_rgba(74,222,128,0.3)]"
+                            : ""
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-[11px] text-muted-foreground">
+                            {booking.confirmation_code}
+                          </span>
+                          <ArrowUpRight className="h-3 w-3 text-muted-foreground" />
+                        </div>
+                        <p className="mt-1 text-sm font-medium">{bayName}</p>
+                        <div className="mt-1 flex items-center justify-between">
+                          <p className="text-xs text-muted-foreground">
+                            {formatBookingDate(booking.date)} &middot;{" "}
+                            {formatTime(booking.start_time, timezone)}{" "}
+                            &ndash;{" "}
+                            {formatTime(booking.end_time, timezone)}
+                          </p>
+                          <span className="text-xs font-semibold">
+                            {price}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 p-6 text-center">
+              <LogIn className="h-8 w-8 text-muted-foreground/20" />
+              <div>
+                <p className="text-sm font-medium">Your Bookings</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Sign in to see your confirmed bookings
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Chat Assistant — pinned to bottom of sidebar */}
+        {facilitySlug && (
+          <div className="shrink-0 border-t">
             <button
               type="button"
-              onClick={() => setChatExpanded((prev) => !prev)}
-              className="flex w-full items-center justify-between rounded-t-xl border-b px-4 py-3 text-sm font-medium transition-colors hover:bg-accent"
+              onClick={() => setChatExpanded((v) => !v)}
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-muted-foreground" />
-                <span>Booking Assistant</span>
-              </div>
-              <ChevronDown
-                className={`h-4 w-4 text-muted-foreground transition-transform ${
-                  chatExpanded ? "rotate-180" : ""
-                }`}
-              />
+              <Sparkles className="h-3.5 w-3.5" />
+              <span className="flex-1">Booking Assistant</span>
+              {chatExpanded ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronUp className="h-3.5 w-3.5" />
+              )}
             </button>
             {chatExpanded && (
               <div className="h-[28rem] px-2 pb-2">
@@ -773,8 +952,8 @@ export function DynamicAvailabilityWidget(
               </div>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* ═══ Main Content ═══ */}
       <div className="min-w-0 flex-1 space-y-4">
@@ -1626,6 +1805,21 @@ export function DynamicAvailabilityWidget(
           </>,
           document.body
         )}
+
+      {/* Sidebar booking detail modal */}
+      <BookingDetailsModal
+        booking={sidebarBooking}
+        variant="customer"
+        timezone={timezone}
+        open={sidebarModalOpen}
+        onOpenChange={(open) => {
+          setSidebarModalOpen(open);
+          if (!open) setSidebarBooking(null);
+        }}
+        cancelAction={handleSidebarCancel}
+        cancellationWindowHours={cancellationWindowHours}
+        paymentMode={paymentMode}
+      />
     </div>
   );
 }
