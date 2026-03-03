@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ArrowLeft, Check } from "lucide-react";
+import { Check } from "lucide-react";
 
 type ProfileData = {
   id: string;
@@ -94,7 +93,7 @@ export default function AccountPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex flex-1 items-center justify-center">
         <p className="text-sm text-muted-foreground">Loading...</p>
       </div>
     );
@@ -109,20 +108,12 @@ export default function AccountPage() {
     phone !== (profile.phone || "");
 
   return (
-    <div className="flex min-h-screen flex-col items-center p-4 pt-8 sm:pt-16">
+    <div className="flex flex-1 flex-col items-center p-4 pt-8 sm:pt-16">
       <div className="w-full max-w-md">
-        <Link
-          href="/"
-          className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Link>
-
         <Card>
           <CardHeader className="text-center">
             {/* Avatar */}
-            <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary text-xl font-semibold">
+            <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground text-xl font-semibold">
               {fullName
                 ? fullName
                     .split(" ")

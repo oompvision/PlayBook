@@ -5,13 +5,8 @@ import { ensureCustomerOrg } from "@/lib/auth";
 import { createNotification, notifyOrgAdmins } from "@/lib/notifications";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import { Button } from "@/components/ui/button"
 import { formatTimeInZone, getVisualBookingStatus } from "@/lib/utils";
-import { SignOutButton } from "@/components/sign-out-button";
-import { OrgHeader } from "@/components/org-header";
 import { MyBookingsList } from "@/components/my-bookings-list";
-import { NotificationBell } from "@/components/notifications/notification-bell";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -207,20 +202,9 @@ export default async function MyBookingsPage({
   }
 
   return (
-    <div className="min-h-screen p-8">
+    <div className="flex-1 p-8">
       <div className="mx-auto max-w-2xl">
-        <div className="flex items-center justify-between">
-          <OrgHeader name={org.name} logoUrl={org.logo_url} />
-          <div className="flex items-center gap-2">
-            <Link href="/">
-              <Button>Book a Session</Button>
-            </Link>
-            <NotificationBell userId={auth.profile.id} viewAllHref="/notifications" />
-            <SignOutButton variant="outline" size="sm" className="" />
-          </div>
-        </div>
-
-        <div className="mt-4">
+        <div>
           <h1 className="text-3xl font-bold tracking-tight">My Bookings</h1>
           <p className="mt-2 text-muted-foreground">
             View your upcoming and past bookings.
