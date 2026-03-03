@@ -1,21 +1,40 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import {
+  StripeCheckoutWrapper,
+  CheckoutForm,
+  type CheckoutFormHandle,
+} from "@/components/checkout-form";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Toast } from "@/components/ui/toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { AuthModal } from "@/components/auth-modal";
 import {
   CalendarIcon,
+  CalendarCheck,
   Clock,
+  CreditCard,
   Loader2,
   ChevronLeft,
   ChevronRight,
   X,
   LogIn,
+  ArrowRight,
+  ArrowLeft,
+  MapPin,
+  Check,
+  ShieldCheck,
+  AlertTriangle,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -44,6 +63,16 @@ type AvailableSlot = {
 type ToastData = {
   message: string;
   description?: string;
+};
+
+type CheckoutIntent = {
+  client_secret: string;
+  intent_type: "payment" | "setup";
+  intent_id: string;
+  stripe_customer_id: string;
+  stripe_account_id: string;
+  amount_cents: number;
+  cancellation_policy_text: string;
 };
 
 type DynamicAvailabilityWidgetProps = {
@@ -182,6 +211,24 @@ export function DynamicAvailabilityWidget(
   const [showBookingPanel, setShowBookingPanel] = useState(false);
   const [bookingNotes, setBookingNotes] = useState("");
   const [bookingLoading, setBookingLoading] = useState(false);
+  const [bookingError, setBookingError] = useState("");
+
+  // Multi-step wizard state (for payment flow)
+  const [bookingStep, setBookingStep] = useState<1 | 2 | 3>(1);
+
+  // Stripe payment state
+  const checkoutFormRef = useRef<CheckoutFormHandle | null>(null);
+  const [checkoutIntent, setCheckoutIntent] = useState<CheckoutIntent | null>(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [paymentValidated, setPaymentValidated] = useState(false);
+  const [paymentValidationError, setPaymentValidationError] = useState("");
+  const [confirmedPaymentMethodId, setConfirmedPaymentMethodId] = useState<string | null>(null);
+  const [cardBrand, setCardBrand] = useState<string | null>(null);
+  const [cardLast4, setCardLast4] = useState<string | null>(null);
+  const [policyAgreed, setPolicyAgreed] = useState(false);
+  const [policyAgreedAt, setPolicyAgreedAt] = useState<string | null>(null);
+  const [confirmPolicyModalOpen, setConfirmPolicyModalOpen] = useState(false);
 
   // Toast
   const [toast, setToast] = useState<ToastData | null>(null);
@@ -191,6 +238,12 @@ export function DynamicAvailabilityWidget(
 
   // Max date
   const maxDate = addDays(todayStr, bookableWindowDays);
+
+  // Check if booking is within cancellation window
+  const isWithinCancellationWindow = selectedSlot
+    ? new Date(selectedSlot.start_time).getTime() - Date.now() <
+      cancellationWindowHours * 60 * 60 * 1000
+    : false;
 
   // ─── Restore pending booking after auth ─────────────────
 
@@ -205,7 +258,6 @@ export function DynamicAvailabilityWidget(
             setSelectedDuration(pending.duration || 60);
             if (pending.groupId) setSelectedGroupId(pending.groupId);
             if (pending.bayId) setSelectedBayId(pending.bayId);
-            // Don't restore the slot — refetch availability
           }
         } catch {}
         localStorage.removeItem(STORAGE_KEY);
@@ -218,12 +270,10 @@ export function DynamicAvailabilityWidget(
   const fetchAvailability = useCallback(async () => {
     if (!selectedDate || !selectedDuration) return;
 
-    // Need either a group or bay selected (or single-option auto-selected)
     const bayIdParam = selectedBayId;
     const groupIdParam = selectedGroupId;
 
     if (!bayIdParam && !groupIdParam) {
-      // If all bays are in one group, we can still query all bays
       if (bays.length > 0 && !hasMultipleOptions) {
         // Fall through — will query all bays
       } else {
@@ -254,7 +304,6 @@ export function DynamicAvailabilityWidget(
       const data = await res.json();
       setAvailableSlots(data.slots || []);
 
-      // Update durations if returned from API
       if (data.available_durations?.length > 0) {
         setDurations(data.available_durations);
       }
@@ -277,35 +326,148 @@ export function DynamicAvailabilityWidget(
     fetchAvailability();
   }, [fetchAvailability]);
 
+  // ─── Stripe: Create checkout intent ─────────────────────
+
+  async function createCheckoutIntent() {
+    if (!selectedSlot) return;
+
+    setCheckoutLoading(true);
+    setCheckoutError("");
+
+    try {
+      const res = await fetch("/api/stripe/create-checkout-intent-dynamic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ price_cents: selectedSlot.price_cents }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        setCheckoutError(err.error || "Failed to prepare payment");
+        setCheckoutLoading(false);
+        return;
+      }
+
+      const data = await res.json();
+      setCheckoutIntent(data);
+    } catch {
+      setCheckoutError("Network error. Please try again.");
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }
+
+  // ─── Stripe: Record booking payment ─────────────────────
+
+  async function recordBookingPayment(
+    bookingId: string,
+    paymentMethodId?: string
+  ) {
+    if (!checkoutIntent) return;
+    try {
+      await fetch("/api/stripe/record-booking-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          booking_id: bookingId,
+          intent_id: checkoutIntent.intent_id,
+          intent_type: checkoutIntent.intent_type,
+          stripe_customer_id: checkoutIntent.stripe_customer_id,
+          stripe_payment_method_id: paymentMethodId,
+          amount_cents: checkoutIntent.amount_cents,
+          cancellation_policy_text: checkoutIntent.cancellation_policy_text,
+          policy_agreed_at: policyAgreedAt,
+        }),
+      });
+    } catch {
+      console.error("Failed to record booking payment");
+    }
+  }
+
+  // ─── Stripe: Cancel/refund intent ───────────────────────
+
+  async function cancelIntent() {
+    if (!checkoutIntent) return;
+    try {
+      await fetch("/api/stripe/cancel-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          intent_id: checkoutIntent.intent_id,
+          intent_type: checkoutIntent.intent_type,
+        }),
+      });
+    } catch {
+      console.error("Failed to cancel intent");
+    }
+  }
+
+  // ─── Reset payment state ────────────────────────────────
+
+  function resetPaymentState() {
+    setCheckoutIntent(null);
+    setCheckoutLoading(false);
+    setCheckoutError("");
+    setPaymentValidated(false);
+    setPaymentValidationError("");
+    setConfirmedPaymentMethodId(null);
+    setCardBrand(null);
+    setCardLast4(null);
+    setPolicyAgreed(false);
+    setPolicyAgreedAt(null);
+    setBookingStep(1);
+    setBookingError("");
+  }
+
   // ─── Booking handlers ───────────────────────────────────
 
   function handleSelectSlot(slot: AvailableSlot) {
     setSelectedSlot(slot);
     setShowBookingPanel(true);
+    resetPaymentState();
   }
 
   function handleCancelSelection() {
     setSelectedSlot(null);
     setShowBookingPanel(false);
     setBookingNotes("");
+    resetPaymentState();
   }
 
   async function handleConfirmBooking() {
     if (!selectedSlot || !userProfileId) return;
 
-    if (requiresPayment) {
-      // TODO: Phase 5 — Stripe checkout integration
-      setToast({
-        message: "Payment required",
-        description:
-          "This facility requires payment. Stripe integration coming soon.",
-      });
-      return;
+    setBookingLoading(true);
+    setBookingError("");
+
+    // If payment is required, use the confirmed payment method from step 2
+    let paymentMethodId: string | undefined;
+    if (requiresPayment && checkoutIntent) {
+      if (!policyAgreedAt) {
+        setPolicyAgreed(true);
+        setPolicyAgreedAt(new Date().toISOString());
+      }
+
+      if (confirmedPaymentMethodId) {
+        paymentMethodId = confirmedPaymentMethodId;
+      } else {
+        // Fallback: confirm payment now
+        if (!checkoutFormRef.current) {
+          setBookingError("Payment form not ready. Please try again.");
+          setBookingLoading(false);
+          return;
+        }
+        const result = await checkoutFormRef.current.submit();
+        if (!result.success) {
+          setBookingError(result.error || "Payment failed. Please try again.");
+          setBookingLoading(false);
+          return;
+        }
+        paymentMethodId = result.paymentMethodId;
+      }
     }
 
-    setBookingLoading(true);
     try {
-      // Use the server-side API for booking — handles group consolidation
       const res = await fetch("/api/bookings/dynamic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -322,7 +484,26 @@ export function DynamicAvailabilityWidget(
       });
 
       const result = await res.json();
-      if (!res.ok) throw new Error(result.error || "Booking failed");
+
+      if (!res.ok) {
+        // Booking failed — cancel/refund payment if applicable
+        if (requiresPayment && checkoutIntent) {
+          await cancelIntent();
+          resetPaymentState();
+        }
+        const msg = result.error || "Booking failed";
+        setBookingError(
+          msg + (requiresPayment ? " Your payment has been cancelled." : "")
+        );
+        setBookingLoading(false);
+        fetchAvailability();
+        return;
+      }
+
+      // Record booking payment (fire-and-forget)
+      if (requiresPayment && checkoutIntent) {
+        recordBookingPayment(result.booking_id, paymentMethodId);
+      }
 
       // Reset state
       handleCancelSelection();
@@ -345,18 +526,21 @@ export function DynamicAvailabilityWidget(
 
       fetchAvailability();
     } catch (err) {
-      setToast({
-        message: "Booking failed",
-        description:
-          err instanceof Error ? err.message : "Please try again",
-      });
+      // Booking failed after payment — cancel/refund
+      if (requiresPayment && checkoutIntent) {
+        await cancelIntent();
+        resetPaymentState();
+      }
+      setBookingError(
+        (err instanceof Error ? err.message : "Please try again") +
+        (requiresPayment ? " Your payment has been refunded." : "")
+      );
     } finally {
       setBookingLoading(false);
     }
   }
 
   function handleAuthRequired() {
-    // Save pending selection to localStorage
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
@@ -390,6 +574,11 @@ export function DynamicAvailabilityWidget(
     : selectedBayId
     ? bays.find((b) => b.id === selectedBayId)?.name
     : null;
+
+  const totalSteps = requiresPayment ? 3 : 2;
+  const stepLabels = requiresPayment
+    ? ["Booking Details", "Payment Method", "Confirm Booking"]
+    : ["Booking Details", "Confirm Booking"];
 
   return (
     <div className="space-y-4">
@@ -590,6 +779,7 @@ export function DynamicAvailabilityWidget(
 
       {/* ─── Booking CTA Bar (Portal) ─── */}
       {selectedSlot &&
+        !showBookingPanel &&
         createPortal(
           <div className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
             <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
@@ -631,81 +821,442 @@ export function DynamicAvailabilityWidget(
           document.body
         )}
 
-      {/* ─── Inline Booking Panel ─── */}
+      {/* ─── Inline Booking Panel (Multi-Step Wizard) ─── */}
       {showBookingPanel && selectedSlot && isAuthenticated && (
         <div className="rounded-xl border bg-card p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Confirm Booking</h3>
-            <button
-              onClick={handleCancelSelection}
-              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent"
-            >
-              <X className="h-5 w-5" />
-            </button>
+          {/* Panel header with step indicator */}
+          <div>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">
+                  {bookingStep === 1
+                    ? "Booking Details"
+                    : bookingStep === 2 && requiresPayment
+                    ? "Payment Method"
+                    : "Confirm Booking"}
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {formatShortDate(selectedDate)} &middot;{" "}
+                  {formatTime(selectedSlot.start_time, timezone)} &ndash;{" "}
+                  {formatTime(selectedSlot.end_time, timezone)}
+                </p>
+              </div>
+              <button
+                onClick={handleCancelSelection}
+                className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Step indicator */}
+            <div className="mt-3 flex items-center gap-1">
+              {stepLabels.map((label, i) => {
+                const stepNum = i + 1;
+                const isCurrent = bookingStep === stepNum;
+                const isCompleted = bookingStep > stepNum;
+                const canNavigate =
+                  isCompleted && !(confirmedPaymentMethodId && stepNum === 2);
+                return (
+                  <div key={label} className="flex items-center gap-1">
+                    {i > 0 && (
+                      <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
+                    )}
+                    <button
+                      type="button"
+                      disabled={!canNavigate}
+                      onClick={() => {
+                        if (!canNavigate) return;
+                        if (
+                          stepNum === 1 &&
+                          requiresPayment &&
+                          confirmedPaymentMethodId
+                        ) {
+                          resetPaymentState();
+                        }
+                        setBookingStep(stepNum as 1 | 2 | 3);
+                      }}
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                        isCurrent
+                          ? "bg-primary text-primary-foreground"
+                          : isCompleted && canNavigate
+                          ? "bg-primary/10 text-primary cursor-pointer hover:bg-primary/20"
+                          : isCompleted
+                          ? "bg-primary/10 text-primary"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {isCompleted ? (
+                        <Check
+                          className="h-3 w-3 text-green-600"
+                          strokeWidth={3}
+                        />
+                      ) : (
+                        <span>{stepNum}</span>
+                      )}
+                      {label}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Summary */}
-          <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Date</span>
-              <span className="font-medium">{formatDateLabel(selectedDate)}</span>
+          {/* Error banner */}
+          {bookingError && (
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              {bookingError}
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Time</span>
-              <span className="font-medium">
-                {formatTime(selectedSlot.start_time, timezone)} &ndash;{" "}
-                {formatTime(selectedSlot.end_time, timezone)}
-              </span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Duration</span>
-              <span className="font-medium">
-                {formatDurationLong(selectedDuration)}
-              </span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Facility</span>
-              <span className="font-medium">{selectedSlot.bay_name}</span>
-            </div>
-            <div className="flex justify-between border-t pt-2 text-sm">
-              <span className="font-medium">Total</span>
-              <span className="text-lg font-bold">
-                ${(selectedSlot.price_cents / 100).toFixed(2)}
-              </span>
-            </div>
-          </div>
+          )}
 
-          {/* Notes */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">
-              Notes (optional)
-            </label>
-            <textarea
-              value={bookingNotes}
-              onChange={(e) => setBookingNotes(e.target.value)}
-              placeholder="Any special requests..."
-              rows={2}
-              className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
+          {/* ═══ Step 1: Booking Details ═══ */}
+          {bookingStep === 1 && (
+            <div className="space-y-4">
+              {/* Summary */}
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Date</span>
+                  <span className="font-medium">
+                    {formatDateLabel(selectedDate)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Time</span>
+                  <span className="font-medium">
+                    {formatTime(selectedSlot.start_time, timezone)} &ndash;{" "}
+                    {formatTime(selectedSlot.end_time, timezone)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Duration</span>
+                  <span className="font-medium">
+                    {formatDurationLong(selectedDuration)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Facility</span>
+                  <span className="font-medium">{selectedSlot.bay_name}</span>
+                </div>
+                <div className="flex justify-between border-t pt-2 text-sm">
+                  <span className="font-medium">Total</span>
+                  <span className="text-lg font-bold">
+                    ${(selectedSlot.price_cents / 100).toFixed(2)}
+                  </span>
+                </div>
+              </div>
 
-          {/* Confirm */}
-          <Button
-            onClick={handleConfirmBooking}
-            disabled={bookingLoading}
-            className="w-full"
-            size="lg"
-          >
-            {bookingLoading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : null}
-            {bookingLoading ? "Booking..." : "Confirm Booking"}
-          </Button>
+              {/* Notes */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Notes (optional)
+                </label>
+                <textarea
+                  value={bookingNotes}
+                  onChange={(e) => setBookingNotes(e.target.value)}
+                  placeholder="Any special requests..."
+                  rows={2}
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
 
-          {userEmail && (
-            <p className="text-center text-xs text-muted-foreground">
-              Booking as {userEmail}
-            </p>
+              {/* User info */}
+              <p className="text-sm text-muted-foreground">
+                Booking as {userFullName || userEmail}
+              </p>
+
+              {/* Continue button */}
+              <Button
+                className="w-full"
+                size="lg"
+                onClick={() => {
+                  setBookingError("");
+                  if (requiresPayment) {
+                    setBookingStep(2);
+                    setPaymentValidationError("");
+                    if (!checkoutIntent && !checkoutLoading) {
+                      createCheckoutIntent();
+                    }
+                  } else {
+                    // No payment — skip directly to confirm step
+                    setBookingStep(2);
+                  }
+                }}
+              >
+                {requiresPayment ? (
+                  <>
+                    Continue to Payment
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </>
+                ) : (
+                  <>
+                    Continue to Confirm
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+
+          {/* ═══ Step 2: Payment (only when requiresPayment) ═══ */}
+          {/* Stripe Elements must stay mounted across steps 2 & 3 so submit() works on confirm */}
+          {requiresPayment && (bookingStep === 2 || bookingStep === 3) && (
+            <div className={bookingStep !== 2 ? "hidden" : ""}>
+              {checkoutLoading ? (
+                <div className="flex items-center justify-center rounded-lg border border-dashed py-12">
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    Preparing payment...
+                  </span>
+                </div>
+              ) : checkoutError ? (
+                <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                  {checkoutError}
+                  <button
+                    className="ml-2 underline"
+                    onClick={createCheckoutIntent}
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : checkoutIntent ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-sm font-medium">
+                      {paymentMode === "charge_upfront"
+                        ? "Payment Details"
+                        : "Card on File"}
+                    </p>
+                  </div>
+
+                  <StripeCheckoutWrapper
+                    stripeAccountId={checkoutIntent.stripe_account_id}
+                    clientSecret={checkoutIntent.client_secret}
+                  >
+                    <CheckoutForm
+                      ref={checkoutFormRef}
+                      intentType={checkoutIntent.intent_type}
+                    />
+                  </StripeCheckoutWrapper>
+
+                  {paymentValidationError && (
+                    <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                      {paymentValidationError}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {/* Navigation buttons */}
+              <div className="mt-6 flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setBookingStep(1);
+                    setPaymentValidationError("");
+                  }}
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Back
+                </Button>
+                <Button
+                  className="flex-1"
+                  disabled={!checkoutIntent || checkoutLoading}
+                  onClick={async () => {
+                    setPaymentValidationError("");
+                    if (!checkoutFormRef.current) {
+                      setPaymentValidationError(
+                        "Payment form not ready. Please try again."
+                      );
+                      return;
+                    }
+                    // Confirm payment and extract card info
+                    const result =
+                      await checkoutFormRef.current.confirmAndGetCardInfo();
+                    if (!result.success) {
+                      setPaymentValidationError(
+                        result.error || "Please check your payment details."
+                      );
+                      return;
+                    }
+                    setPaymentValidated(true);
+                    if (result.paymentMethodId)
+                      setConfirmedPaymentMethodId(result.paymentMethodId);
+
+                    // Get card brand + last4
+                    let brand = result.cardBrand;
+                    let last4 = result.cardLast4;
+
+                    if (result.paymentMethodId && (!brand || !last4)) {
+                      try {
+                        const res = await fetch(
+                          `/api/stripe/card-details?pm=${result.paymentMethodId}`
+                        );
+                        if (res.ok) {
+                          const data = await res.json();
+                          brand = data.brand || brand;
+                          last4 = data.last4 || last4;
+                        }
+                      } catch {
+                        // Non-critical
+                      }
+                    }
+
+                    if (brand) setCardBrand(brand);
+                    if (last4) setCardLast4(last4);
+
+                    // Implicit policy agreement
+                    if (!policyAgreedAt) {
+                      setPolicyAgreed(true);
+                      setPolicyAgreedAt(new Date().toISOString());
+                    }
+                    setBookingStep(3);
+                  }}
+                >
+                  Continue to Confirm
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* ═══ Confirm Step (Step 2 no-payment / Step 3 with payment) ═══ */}
+          {((bookingStep === 2 && !requiresPayment) ||
+            (bookingStep === 3 && requiresPayment)) && (
+            <div>
+              {/* Summary card */}
+              <div className="mb-4 space-y-3 rounded-lg border p-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <CalendarCheck className="h-4 w-4 text-muted-foreground" />
+                  <span>
+                    {formatShortDate(selectedDate)}
+                    {" · "}
+                    {formatTime(selectedSlot.start_time, timezone)} &ndash;{" "}
+                    {formatTime(selectedSlot.end_time, timezone)}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 text-sm">
+                  <MapPin className="h-4 w-4 text-muted-foreground" />
+                  <span>{selectedSlot.bay_name}</span>
+                </div>
+
+                {requiresPayment && paymentValidated && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <CreditCard className="h-4 w-4 text-muted-foreground" />
+                    <span>
+                      {cardBrand && cardLast4
+                        ? `${cardBrand.charAt(0).toUpperCase() + cardBrand.slice(1)} •••• ${cardLast4}`
+                        : "Payment method confirmed"}
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between border-t pt-3 text-sm font-bold">
+                  <span>Total</span>
+                  <span>
+                    ${(selectedSlot.price_cents / 100).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Notes (if provided) */}
+              {bookingNotes && (
+                <div className="mb-4 rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">Note:</span>{" "}
+                  {bookingNotes}
+                </div>
+              )}
+
+              {/* Terms + cancellation policy */}
+              <p className="mb-2 text-center text-xs text-muted-foreground">
+                By booking you agree to the terms and{" "}
+                {checkoutIntent?.cancellation_policy_text ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmPolicyModalOpen(true)}
+                    className="underline underline-offset-2 transition-colors hover:text-foreground"
+                  >
+                    cancellation policy
+                  </button>
+                ) : (
+                  "cancellation policy"
+                )}
+              </p>
+
+              {/* Cancellation policy modal */}
+              {checkoutIntent?.cancellation_policy_text && (
+                <Dialog
+                  open={confirmPolicyModalOpen}
+                  onOpenChange={setConfirmPolicyModalOpen}
+                >
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                        Cancellation Policy
+                      </DialogTitle>
+                    </DialogHeader>
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/50">
+                      <p className="text-sm leading-relaxed text-blue-700 dark:text-blue-300">
+                        {checkoutIntent.cancellation_policy_text}
+                      </p>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              )}
+
+              {/* No-cancellation window warning */}
+              {isWithinCancellationWindow && (
+                <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/50">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+                    Booking is less than {cancellationWindowHours}h away and
+                    cannot be refunded or modified.
+                  </p>
+                </div>
+              )}
+
+              {/* Navigation + Confirm */}
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setBookingStep(1);
+                    if (requiresPayment) {
+                      resetPaymentState();
+                    }
+                  }}
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Back
+                </Button>
+                <Button
+                  className="flex-1"
+                  size="lg"
+                  disabled={bookingLoading}
+                  onClick={handleConfirmBooking}
+                >
+                  {bookingLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {requiresPayment && paymentMode === "charge_upfront"
+                        ? "Processing payment..."
+                        : requiresPayment
+                        ? "Saving card..."
+                        : "Booking..."}
+                    </>
+                  ) : requiresPayment && paymentMode === "charge_upfront" ? (
+                    `Confirm & Pay $${(selectedSlot.price_cents / 100).toFixed(2)}`
+                  ) : requiresPayment ? (
+                    "Confirm & Save Card"
+                  ) : (
+                    "Confirm Booking"
+                  )}
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -720,7 +1271,7 @@ export function DynamicAvailabilityWidget(
       )}
 
       {/* Spacer for CTA bar when a slot is selected */}
-      {selectedSlot && <div className="h-20" />}
+      {selectedSlot && !showBookingPanel && <div className="h-20" />}
     </div>
   );
 }

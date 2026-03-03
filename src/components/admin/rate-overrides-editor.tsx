@@ -118,6 +118,21 @@ export function RateOverridesEditor({
       return;
     }
 
+    // Check for overlapping overrides on the same bay + date
+    const overlapping = overrides.find(
+      (o) =>
+        o.bay_id === newOverride.bay_id &&
+        o.date === newOverride.date &&
+        newOverride.start_time < o.end_time &&
+        newOverride.end_time > o.start_time
+    );
+    if (overlapping) {
+      setError(
+        `Overlaps with existing override for ${getBayName(overlapping.bay_id)} on ${formatDate(overlapping.date)} (${formatTimeStr(overlapping.start_time)} – ${formatTimeStr(overlapping.end_time)})`
+      );
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setSuccess(null);

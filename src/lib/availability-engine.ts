@@ -304,13 +304,22 @@ export function getAvailableTimesForBay(params: {
     });
     if (overlapsBlockOut) continue;
 
+    // Build timestamps
+    const startTimestamp = minutesToTimestamp(date, startMin, timezone);
+    const endTimestamp = minutesToTimestamp(date, endMin, timezone);
+
+    // DST round-trip validation: skip slots where the conversion doesn't survive
+    // a round-trip (e.g., 2:00 AM during spring-forward doesn't actually exist)
+    if (timestampToMinutes(startTimestamp, timezone) !== startMin) continue;
+    if (timestampToMinutes(endTimestamp, timezone) !== endMin) continue;
+
     // Calculate price: resolve rate (override > tier > default) * (duration / 60)
     const hourlyRate = resolveHourlyRate(startMin, bay, rule, rateOverrides);
     const priceCents = Math.round(hourlyRate * (duration / 60));
 
     results.push({
-      start_time: minutesToTimestamp(date, startMin, timezone),
-      end_time: minutesToTimestamp(date, endMin, timezone),
+      start_time: startTimestamp,
+      end_time: endTimestamp,
       price_cents: priceCents,
       bay_id: bay.id,
       bay_name: bay.name,
