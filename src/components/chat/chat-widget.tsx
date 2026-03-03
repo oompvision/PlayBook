@@ -13,6 +13,9 @@ export type BookingAction = {
   date: string;
   bay_name: string;
   start_time: string;
+  end_time?: string;
+  duration?: number;
+  price_cents?: number;
   slot_ids?: string[];
 };
 

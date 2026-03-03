@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AuthModal } from "@/components/auth-modal";
+import { ChatWidget, type BookingAction } from "@/components/chat/chat-widget";
 import {
   CalendarIcon,
   CalendarCheck,
@@ -27,6 +28,7 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   X,
   LogIn,
   ArrowRight,
@@ -35,6 +37,7 @@ import {
   Check,
   ShieldCheck,
   AlertTriangle,
+  Sparkles,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -235,6 +238,10 @@ export function DynamicAvailabilityWidget(
 
   // Calendar popover
   const [calendarOpen, setCalendarOpen] = useState(false);
+
+  // Chat sidebar
+  const [chatExpanded, setChatExpanded] = useState(false);
+  const pendingBookingAction = useRef<BookingAction | null>(null);
 
   // Max date
   const maxDate = addDays(todayStr, bookableWindowDays);
@@ -553,6 +560,58 @@ export function DynamicAvailabilityWidget(
     );
   }
 
+  // ─── Chat booking action handler ─────────────────────
+
+  const handleBookingAction = useCallback(
+    (action: BookingAction) => {
+      // If date differs, change date and store the action to process after availability loads
+      if (action.date !== selectedDate) {
+        pendingBookingAction.current = action;
+        setSelectedDate(action.date);
+        if (action.duration) setSelectedDuration(action.duration);
+        return;
+      }
+
+      // Same date — try to find matching slot immediately
+      processChatBookingAction(action);
+    },
+    [selectedDate, availableSlots, timezone]
+  );
+
+  function processChatBookingAction(action: BookingAction) {
+    // Update duration if provided
+    if (action.duration && action.duration !== selectedDuration) {
+      pendingBookingAction.current = action;
+      setSelectedDuration(action.duration);
+      return;
+    }
+
+    // Find matching slot by start_time (formatted time comparison)
+    const normalizeTime = (t: string) =>
+      t.toLowerCase().replace(/\s+/g, " ").trim();
+    const requestedTime = normalizeTime(action.start_time);
+
+    const matchedSlot = availableSlots.find((s) => {
+      // Try formatted time match
+      const formatted = normalizeTime(formatTime(s.start_time, timezone));
+      if (formatted === requestedTime) return true;
+      // Try ISO timestamp match
+      if (s.start_time === action.start_time) return true;
+      return false;
+    });
+
+    if (matchedSlot) {
+      handleSelectSlot(matchedSlot);
+    }
+    pendingBookingAction.current = null;
+  }
+
+  // Process pending booking action after availability loads
+  useEffect(() => {
+    if (!pendingBookingAction.current || loadingSlots || availableSlots.length === 0) return;
+    processChatBookingAction(pendingBookingAction.current);
+  }, [loadingSlots, availableSlots]);
+
   // ─── Date navigation ───────────────────────────────────
 
   function goToPrevDay() {
@@ -575,13 +634,48 @@ export function DynamicAvailabilityWidget(
     ? bays.find((b) => b.id === selectedBayId)?.name
     : null;
 
-  const totalSteps = requiresPayment ? 3 : 2;
   const stepLabels = requiresPayment
     ? ["Booking Details", "Payment Method", "Confirm Booking"]
     : ["Booking Details", "Confirm Booking"];
 
   return (
-    <div className="space-y-4">
+    <div className="flex gap-4">
+      {/* ═══ Chat Sidebar (desktop only) ═══ */}
+      {facilitySlug && (
+        <div className="hidden w-80 shrink-0 lg:block">
+          <div className="sticky top-20 flex flex-col rounded-xl border bg-card shadow-sm">
+            {/* Chat toggle */}
+            <button
+              type="button"
+              onClick={() => setChatExpanded((prev) => !prev)}
+              className="flex w-full items-center justify-between rounded-t-xl border-b px-4 py-3 text-sm font-medium transition-colors hover:bg-accent"
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-muted-foreground" />
+                <span>Booking Assistant</span>
+              </div>
+              <ChevronDown
+                className={`h-4 w-4 text-muted-foreground transition-transform ${
+                  chatExpanded ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+            {chatExpanded && (
+              <div className="h-[28rem] px-2 pb-2">
+                <ChatWidget
+                  facilitySlug={facilitySlug}
+                  orgName={orgName}
+                  mode="sidebar"
+                  onBookingAction={handleBookingAction}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Main Content ═══ */}
+      <div className="min-w-0 flex-1 space-y-4">
       {/* Step 1: Facility/Group Picker (if needed) */}
       {hasMultipleOptions && (
         <div className="rounded-xl border bg-card p-4">
@@ -1272,6 +1366,7 @@ export function DynamicAvailabilityWidget(
 
       {/* Spacer for CTA bar when a slot is selected */}
       {selectedSlot && !showBookingPanel && <div className="h-20" />}
+      </div>{/* end Main Content */}
     </div>
   );
 }
