@@ -10,6 +10,8 @@ import {
   Plus,
   X,
   Loader2,
+  DollarSign,
+  Trash2,
 } from "lucide-react";
 
 const DAYS_OF_WEEK = [
@@ -37,6 +39,12 @@ type Bay = {
   hourly_rate_cents: number;
 };
 
+type RateTier = {
+  start_time: string;
+  end_time: string;
+  hourly_rate_cents: number;
+};
+
 type Rule = {
   id?: string;
   bay_id: string;
@@ -46,6 +54,7 @@ type Rule = {
   available_durations: number[];
   buffer_minutes: number;
   start_time_granularity: number;
+  rate_tiers?: RateTier[] | null;
 };
 
 type DbRule = Rule & {
@@ -96,6 +105,7 @@ export function DynamicRulesEditor({
           available_durations: [...r.available_durations],
           buffer_minutes: r.buffer_minutes,
           start_time_granularity: r.start_time_granularity,
+          rate_tiers: r.rate_tiers ? r.rate_tiers.map((t) => ({ ...t })) : null,
         };
       }
     }
@@ -132,6 +142,38 @@ export function DynamicRulesEditor({
     setSaved(false);
   }
 
+  function addRateTier(dayOfWeek: number) {
+    const key = `${selectedBayId}:${dayOfWeek}`;
+    const existing = rules.get(key);
+    if (!existing) return;
+    const tiers = existing.rate_tiers || [];
+    const lastEnd = tiers.length > 0 ? tiers[tiers.length - 1].end_time : existing.open_time;
+    const newTier: RateTier = {
+      start_time: lastEnd,
+      end_time: existing.close_time,
+      hourly_rate_cents: selectedBay?.hourly_rate_cents || 0,
+    };
+    updateRule(dayOfWeek, { rate_tiers: [...tiers, newTier] });
+  }
+
+  function updateRateTier(dayOfWeek: number, index: number, updates: Partial<RateTier>) {
+    const key = `${selectedBayId}:${dayOfWeek}`;
+    const existing = rules.get(key);
+    if (!existing || !existing.rate_tiers) return;
+    const tiers = existing.rate_tiers.map((t, i) =>
+      i === index ? { ...t, ...updates } : t
+    );
+    updateRule(dayOfWeek, { rate_tiers: tiers });
+  }
+
+  function removeRateTier(dayOfWeek: number, index: number) {
+    const key = `${selectedBayId}:${dayOfWeek}`;
+    const existing = rules.get(key);
+    if (!existing || !existing.rate_tiers) return;
+    const tiers = existing.rate_tiers.filter((_, i) => i !== index);
+    updateRule(dayOfWeek, { rate_tiers: tiers.length > 0 ? tiers : null });
+  }
+
   function toggleDuration(dayOfWeek: number, duration: number) {
     const key = `${selectedBayId}:${dayOfWeek}`;
     const existing = rules.get(key);
@@ -155,6 +197,9 @@ export function DynamicRulesEditor({
         ...firstEnabled.rule,
         day_of_week: day.value,
         available_durations: [...firstEnabled.rule.available_durations],
+        rate_tiers: firstEnabled.rule.rate_tiers
+          ? firstEnabled.rule.rate_tiers.map((t) => ({ ...t }))
+          : null,
       });
     }
     setRules(newRules);
@@ -177,6 +222,9 @@ export function DynamicRulesEditor({
             bay_id: selectedBayId,
             id: undefined,
             available_durations: [...sourceRule.available_durations],
+            rate_tiers: sourceRule.rate_tiers
+              ? sourceRule.rate_tiers.map((t) => ({ ...t }))
+              : null,
           });
         }
       }
@@ -220,6 +268,7 @@ export function DynamicRulesEditor({
           available_durations: r.available_durations,
           buffer_minutes: r.buffer_minutes,
           start_time_granularity: r.start_time_granularity,
+          rate_tiers: r.rate_tiers && r.rate_tiers.length > 0 ? r.rate_tiers : null,
         }));
 
         const { error: insertError } = await supabase
@@ -485,6 +534,107 @@ export function DynamicRulesEditor({
                                 );
                               })}
                             </div>
+                          </div>
+
+                          {/* Rate Tiers */}
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                                <DollarSign className="mr-1 inline h-3 w-3" />
+                                Rate Tiers{" "}
+                                <span className="font-normal text-gray-400 dark:text-gray-500">
+                                  (optional — overrides bay default rate)
+                                </span>
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => addRateTier(day.value)}
+                                className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                              >
+                                <Plus className="h-3 w-3" />
+                                Add tier
+                              </button>
+                            </div>
+
+                            {rule.rate_tiers && rule.rate_tiers.length > 0 ? (
+                              <div className="space-y-2">
+                                {rule.rate_tiers.map((tier, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/50 px-3 py-2 dark:border-white/[0.05] dark:bg-white/[0.02]"
+                                  >
+                                    <input
+                                      type="time"
+                                      value={tier.start_time}
+                                      onChange={(e) =>
+                                        updateRateTier(day.value, idx, {
+                                          start_time: e.target.value,
+                                        })
+                                      }
+                                      className="h-7 rounded border border-gray-300 bg-white px-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                                    />
+                                    <span className="text-xs text-gray-400">
+                                      to
+                                    </span>
+                                    <input
+                                      type="time"
+                                      value={tier.end_time}
+                                      onChange={(e) =>
+                                        updateRateTier(day.value, idx, {
+                                          end_time: e.target.value,
+                                        })
+                                      }
+                                      className="h-7 rounded border border-gray-300 bg-white px-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                                    />
+                                    <span className="text-xs text-gray-400">
+                                      @
+                                    </span>
+                                    <div className="relative">
+                                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+                                        $
+                                      </span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={(
+                                          tier.hourly_rate_cents / 100
+                                        ).toFixed(2)}
+                                        onChange={(e) =>
+                                          updateRateTier(day.value, idx, {
+                                            hourly_rate_cents: Math.round(
+                                              parseFloat(e.target.value || "0") *
+                                                100
+                                            ),
+                                          })
+                                        }
+                                        className="h-7 w-24 rounded border border-gray-300 bg-white pl-5 pr-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                                      />
+                                    </div>
+                                    <span className="text-xs text-gray-400">
+                                      /hr
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        removeRateTier(day.value, idx)
+                                      }
+                                      className="ml-auto rounded p-1 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-gray-400 dark:text-gray-500">
+                                Using bay default: $
+                                {(
+                                  (selectedBay?.hourly_rate_cents || 0) / 100
+                                ).toFixed(2)}
+                                /hr for all times
+                              </p>
+                            )}
                           </div>
                         </div>
                       )}

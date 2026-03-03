@@ -9,6 +9,12 @@
  * All times are handled in the facility's IANA timezone.
  */
 
+export type RateTier = {
+  start_time: string; // "HH:MM"
+  end_time: string;
+  hourly_rate_cents: number;
+};
+
 export type DynamicScheduleRule = {
   id: string;
   bay_id: string;
@@ -19,6 +25,15 @@ export type DynamicScheduleRule = {
   available_durations: number[];
   buffer_minutes: number;
   start_time_granularity: number; // 15, 30, or 60
+  rate_tiers?: RateTier[] | null;
+};
+
+export type RateOverride = {
+  bay_id: string;
+  date: string;
+  start_time: string; // "HH:MM" or "HH:MM:SS"
+  end_time: string;
+  hourly_rate_cents: number;
 };
 
 export type ExistingBooking = {
@@ -157,6 +172,45 @@ function minutesToTimestamp(
   return `${dateStr}T${timeStr}${sign}${offsetHours}:${offsetMins}`;
 }
 
+// ─── Pricing ─────────────────────────────────────────────────
+
+/**
+ * Resolve the hourly rate for a slot start time.
+ * Priority: rate overrides > rate tiers > bay default rate.
+ */
+function resolveHourlyRate(
+  startMinutes: number,
+  bay: BayInfo,
+  rule: DynamicScheduleRule,
+  rateOverrides?: RateOverride[]
+): number {
+  // 1. Check rate overrides (date-specific, highest priority)
+  if (rateOverrides && rateOverrides.length > 0) {
+    for (const o of rateOverrides) {
+      if (o.bay_id !== bay.id) continue;
+      const oStart = timeToMinutes(o.start_time);
+      const oEnd = timeToMinutes(o.end_time);
+      if (startMinutes >= oStart && startMinutes < oEnd) {
+        return o.hourly_rate_cents;
+      }
+    }
+  }
+
+  // 2. Check rate tiers on the rule
+  if (rule.rate_tiers && rule.rate_tiers.length > 0) {
+    for (const tier of rule.rate_tiers) {
+      const tStart = timeToMinutes(tier.start_time);
+      const tEnd = timeToMinutes(tier.end_time);
+      if (startMinutes >= tStart && startMinutes < tEnd) {
+        return tier.hourly_rate_cents;
+      }
+    }
+  }
+
+  // 3. Default bay rate
+  return bay.hourly_rate_cents;
+}
+
 // ─── Core Engine ────────────────────────────────────────────
 
 /**
@@ -171,6 +225,7 @@ export function getAvailableTimesForBay(params: {
   existingBookings: ExistingBooking[];
   blockOuts: BlockOut[];
   minBookingLeadMinutes?: number;
+  rateOverrides?: RateOverride[];
 }): AvailableTimeSlot[] {
   const {
     bay,
@@ -181,6 +236,7 @@ export function getAvailableTimesForBay(params: {
     existingBookings,
     blockOuts,
     minBookingLeadMinutes = 0,
+    rateOverrides,
   } = params;
 
   const openMinutes = timeToMinutes(rule.open_time);
@@ -248,8 +304,9 @@ export function getAvailableTimesForBay(params: {
     });
     if (overlapsBlockOut) continue;
 
-    // Calculate price: bay hourly rate * (duration / 60)
-    const priceCents = Math.round(bay.hourly_rate_cents * (duration / 60));
+    // Calculate price: resolve rate (override > tier > default) * (duration / 60)
+    const hourlyRate = resolveHourlyRate(startMin, bay, rule, rateOverrides);
+    const priceCents = Math.round(hourlyRate * (duration / 60));
 
     results.push({
       start_time: minutesToTimestamp(date, startMin, timezone),
@@ -276,6 +333,7 @@ export function getPooledAvailability(params: {
   bookingsMap: Map<string, ExistingBooking[]>; // bay_id → bookings
   blockOutsMap: Map<string, BlockOut[]>; // bay_id → block-outs
   minBookingLeadMinutes?: number;
+  rateOverrides?: RateOverride[];
 }): AvailableTimeSlot[] {
   const {
     bays,
@@ -286,6 +344,7 @@ export function getPooledAvailability(params: {
     bookingsMap,
     blockOutsMap,
     minBookingLeadMinutes,
+    rateOverrides,
   } = params;
 
   // Collect all available slots per bay
@@ -304,6 +363,7 @@ export function getPooledAvailability(params: {
       existingBookings: bookingsMap.get(bay.id) || [],
       blockOuts: blockOutsMap.get(bay.id) || [],
       minBookingLeadMinutes,
+      rateOverrides,
     });
     allSlots.push(...slots);
   }

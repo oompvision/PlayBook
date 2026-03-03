@@ -8,6 +8,7 @@ import {
   type BlockOut,
   type BayInfo,
   type AvailableTimeSlot,
+  type RateOverride,
 } from "@/lib/availability-engine";
 
 /**
@@ -131,8 +132,8 @@ export async function GET(request: NextRequest) {
   // Get day of week for the requested date (0=Sunday)
   const dayOfWeek = new Date(date + "T12:00:00").getDay();
 
-  // Fetch rules, bookings, and block-outs in parallel
-  const [rulesResult, baysResult, bookingsResult, blockOutsResult] =
+  // Fetch rules, bookings, block-outs, and rate overrides in parallel
+  const [rulesResult, baysResult, bookingsResult, blockOutsResult, rateOverridesResult] =
     await Promise.all([
       supabase
         .from("dynamic_schedule_rules")
@@ -155,12 +156,18 @@ export async function GET(request: NextRequest) {
         .select("bay_id, start_time, end_time")
         .in("bay_id", bayIds)
         .eq("date", date),
+      supabase
+        .from("dynamic_rate_overrides")
+        .select("bay_id, date, start_time, end_time, hourly_rate_cents")
+        .in("bay_id", bayIds)
+        .eq("date", date),
     ]);
 
   const rules = (rulesResult.data || []) as DynamicScheduleRule[];
   const bays = (baysResult.data || []) as BayInfo[];
   const bookings = bookingsResult.data || [];
   const blockOuts = blockOutsResult.data || [];
+  const rateOverrides = (rateOverridesResult.data || []) as RateOverride[];
 
   // Build maps
   const rulesMap = new Map<string, DynamicScheduleRule>();
@@ -195,6 +202,7 @@ export async function GET(request: NextRequest) {
       bookingsMap,
       blockOutsMap,
       minBookingLeadMinutes: org.min_booking_lead_minutes ?? 0,
+      rateOverrides,
     });
   } else if (bays.length === 1) {
     // Single bay
@@ -212,6 +220,7 @@ export async function GET(request: NextRequest) {
       existingBookings: bookingsMap.get(bay.id) || [],
       blockOuts: blockOutsMap.get(bay.id) || [],
       minBookingLeadMinutes: org.min_booking_lead_minutes ?? 0,
+      rateOverrides,
     });
   } else {
     slots = [];

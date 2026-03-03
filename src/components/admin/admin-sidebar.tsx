@@ -15,6 +15,8 @@ import {
   DollarSign,
   Settings,
   Layers,
+  Ban,
+  BadgeDollarSign,
 } from "lucide-react";
 
 const baseNavItems = [
@@ -30,6 +32,8 @@ const slotBasedNavItems = [
 const dynamicNavItems = [
   { label: "Schedule Rules", href: "/admin/schedule/rules", icon: CalendarCog },
   { label: "Facility Groups", href: "/admin/bays/groups", icon: Layers },
+  { label: "Block-Outs", href: "/admin/schedule/block-outs", icon: Ban },
+  { label: "Rate Overrides", href: "/admin/schedule/rate-overrides", icon: BadgeDollarSign },
 ];
 
 const commonNavItems = [
