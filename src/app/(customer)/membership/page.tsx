@@ -72,14 +72,16 @@ export default async function MembershipRoute({
   // Determine if user has active perks
   const now = new Date();
   const hasActivePerks = membership
-    ? (membership.status === "active" &&
-        (!membership.current_period_end ||
-          new Date(membership.current_period_end) > now)) ||
-      (membership.status === "admin_granted" &&
-        (!membership.expires_at || new Date(membership.expires_at) > now)) ||
-      (membership.status === "cancelled" &&
-        membership.current_period_end &&
-        new Date(membership.current_period_end) > now)
+    ? !!(
+        (membership.status === "active" &&
+          (!membership.current_period_end ||
+            new Date(membership.current_period_end) > now)) ||
+        (membership.status === "admin_granted" &&
+          (!membership.expires_at || new Date(membership.expires_at) > now)) ||
+        (membership.status === "cancelled" &&
+          membership.current_period_end &&
+          new Date(membership.current_period_end) > now)
+      )
     : false;
 
   return (
