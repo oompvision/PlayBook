@@ -120,13 +120,14 @@ export async function POST(request: NextRequest) {
       case "invoice.payment_succeeded": {
         const invoice = event.data.object as Stripe.Invoice;
 
-        // Only handle subscription invoices
-        if (!invoice.subscription) break;
+        // Only handle subscription invoices (API 2025-03-31+: subscription is under parent)
+        const subDetail = invoice.parent?.subscription_details;
+        if (!subDetail?.subscription) break;
 
         const subscriptionId =
-          typeof invoice.subscription === "string"
-            ? invoice.subscription
-            : invoice.subscription.id;
+          typeof subDetail.subscription === "string"
+            ? subDetail.subscription
+            : subDetail.subscription.id;
 
         // Get the period end from the invoice line items
         const lineItem = invoice.lines?.data?.[0];
@@ -151,12 +152,13 @@ export async function POST(request: NextRequest) {
       case "invoice.payment_failed": {
         const invoice = event.data.object as Stripe.Invoice;
 
-        if (!invoice.subscription) break;
+        const failedSubDetail = invoice.parent?.subscription_details;
+        if (!failedSubDetail?.subscription) break;
 
         const subscriptionId =
-          typeof invoice.subscription === "string"
-            ? invoice.subscription
-            : invoice.subscription.id;
+          typeof failedSubDetail.subscription === "string"
+            ? failedSubDetail.subscription
+            : failedSubDetail.subscription.id;
 
         await supabase
           .from("user_memberships")
