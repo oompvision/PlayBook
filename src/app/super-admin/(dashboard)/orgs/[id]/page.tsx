@@ -3,7 +3,6 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { requireSuperAdmin } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { headers } from "next/headers";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +14,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Mail, X, MapPin, Plus } from "lucide-react";
+import {
+  Mail,
+  X,
+  MapPin,
+  Plus,
+  CreditCard,
+  Calendar,
+  Users,
+  Trash2,
+} from "lucide-react";
 
 export default async function OrgDetailPage({
   params,
@@ -25,7 +33,13 @@ export default async function OrgDetailPage({
   searchParams: Promise<{ [key: string]: string | undefined }>;
 }) {
   const { id } = await params;
-  const { saved, invited, error: queryError, location_added, location_error } = await searchParams;
+  const {
+    saved,
+    invited,
+    error: queryError,
+    location_added,
+    location_error,
+  } = await searchParams;
   const supabase = await createClient();
 
   const { data: org } = await supabase
@@ -36,11 +50,18 @@ export default async function OrgDetailPage({
 
   if (!org) notFound();
 
-  // Get bays, admins, invitations, and locations for this org
-  const [baysResult, adminsResult, invitationsResult, locationsResult] = await Promise.all([
+  // Fetch all related data in parallel
+  const [
+    baysResult,
+    adminsResult,
+    invitationsResult,
+    locationsResult,
+    paymentResult,
+    customerCountResult,
+  ] = await Promise.all([
     supabase
       .from("bays")
-      .select("*")
+      .select("id, name, is_active, location_id")
       .eq("org_id", id)
       .order("sort_order"),
     supabase
@@ -57,29 +78,53 @@ export default async function OrgDetailPage({
       .from("locations")
       .select("*")
       .eq("org_id", id)
-      .order("created_at"),
+      .order("is_default", { ascending: false })
+      .order("name"),
+    supabase
+      .from("org_payment_settings")
+      .select("payment_mode, stripe_account_id, stripe_onboarding_complete")
+      .eq("org_id", id)
+      .maybeSingle(),
+    supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", id)
+      .eq("role", "customer"),
   ]);
 
   const bays = baysResult.data || [];
   const admins = adminsResult.data || [];
   const invitations = invitationsResult.data || [];
   const locations = locationsResult.data || [];
+  const paymentSettings = paymentResult.data;
+  const customerCount = customerCountResult.count ?? 0;
 
-  async function updateOrg(formData: FormData) {
+  // Group bays by location_id
+  const baysByLocation: Record<string, typeof bays> = {};
+  for (const bay of bays) {
+    const locId = bay.location_id || "_none";
+    if (!baysByLocation[locId]) baysByLocation[locId] = [];
+    baysByLocation[locId].push(bay);
+  }
+
+  // Derive payment status
+  const stripeConnected =
+    !!paymentSettings?.stripe_account_id &&
+    !!paymentSettings?.stripe_onboarding_complete;
+  const paymentMode = paymentSettings?.payment_mode ?? "none";
+
+  // Scheduling type label
+  const schedulingTypeLabel =
+    org.scheduling_type === "dynamic" ? "Dynamic" : "Slot-based";
+
+  // ── Server Actions ──
+
+  async function updateOrgName(formData: FormData) {
     "use server";
     const supabase = await createClient();
     const { error } = await supabase
       .from("organizations")
-      .update({
-        name: formData.get("name") as string,
-        description: (formData.get("description") as string) || null,
-        address: (formData.get("address") as string) || null,
-        phone: (formData.get("phone") as string) || null,
-        timezone: formData.get("timezone") as string,
-        default_slot_duration_minutes:
-          parseInt(formData.get("default_slot_duration_minutes") as string) ||
-          60,
-      })
+      .update({ name: formData.get("name") as string })
       .eq("id", id);
 
     if (error) {
@@ -147,7 +192,6 @@ export default async function OrgDetailPage({
       });
 
     if (authError) {
-      // Clean up invitation record on auth failure
       await supabase
         .from("admin_invitations")
         .delete()
@@ -159,8 +203,6 @@ export default async function OrgDetailPage({
       );
     }
 
-    // Update the new user's profile to admin role for this org
-    // Safety check: don't overwrite if they already belong to a different org
     if (authData?.user) {
       const { data: newProfile } = await serviceClient
         .from("profiles")
@@ -169,7 +211,6 @@ export default async function OrgDetailPage({
         .single();
 
       if (newProfile?.org_id && newProfile.org_id !== id) {
-        // User already belongs to a different org — abort
         await supabase
           .from("admin_invitations")
           .delete()
@@ -212,10 +253,13 @@ export default async function OrgDetailPage({
     await requireSuperAdmin();
     const supabase = await createClient();
     const name = (formData.get("location_name") as string)?.trim();
-    const address = (formData.get("location_address") as string)?.trim() || null;
+    const address =
+      (formData.get("location_address") as string)?.trim() || null;
 
     if (!name) {
-      redirect(`/super-admin/orgs/${id}?location_error=${encodeURIComponent("Location name is required")}`);
+      redirect(
+        `/super-admin/orgs/${id}?location_error=${encodeURIComponent("Location name is required")}`
+      );
     }
 
     const { error } = await supabase
@@ -223,10 +267,11 @@ export default async function OrgDetailPage({
       .insert({ org_id: id, name, address });
 
     if (error) {
-      redirect(`/super-admin/orgs/${id}?location_error=${encodeURIComponent(error.message)}`);
+      redirect(
+        `/super-admin/orgs/${id}?location_error=${encodeURIComponent(error.message)}`
+      );
     }
 
-    // locations_enabled is auto-updated by the DB trigger
     redirect(`/super-admin/orgs/${id}?location_added=true`);
   }
 
@@ -237,13 +282,27 @@ export default async function OrgDetailPage({
     const locationId = formData.get("location_id") as string;
     const newActive = formData.get("new_active") === "true";
 
+    // If deactivating, check for active bookings
+    if (!newActive) {
+      const { count } = await supabase
+        .from("bookings")
+        .select("id", { count: "exact", head: true })
+        .eq("location_id", locationId)
+        .eq("status", "confirmed");
+
+      if (count && count > 0) {
+        redirect(
+          `/super-admin/orgs/${id}?location_error=${encodeURIComponent(`Cannot deactivate: this location has ${count} active booking(s). Cancel them first.`)}`
+        );
+      }
+    }
+
     await supabase
       .from("locations")
       .update({ is_active: newActive })
       .eq("id", locationId)
       .eq("org_id", id);
 
-    // locations_enabled is auto-updated by the DB trigger
     redirect(`/super-admin/orgs/${id}`);
   }
 
@@ -253,14 +312,17 @@ export default async function OrgDetailPage({
     const supabase = await createClient();
     const locationId = formData.get("location_id") as string;
 
-    // Check for existing bookings
+    // Check for any bookings (active or historical)
     const { count } = await supabase
       .from("bookings")
       .select("id", { count: "exact", head: true })
-      .eq("location_id", locationId);
+      .eq("location_id", locationId)
+      .eq("status", "confirmed");
 
     if (count && count > 0) {
-      redirect(`/super-admin/orgs/${id}?location_error=${encodeURIComponent("Cannot delete a location that has existing bookings. Deactivate it instead.")}`);
+      redirect(
+        `/super-admin/orgs/${id}?location_error=${encodeURIComponent("Cannot delete a location that has active bookings. Deactivate it instead.")}`
+      );
     }
 
     const { error } = await supabase
@@ -270,338 +332,416 @@ export default async function OrgDetailPage({
       .eq("org_id", id);
 
     if (error) {
-      redirect(`/super-admin/orgs/${id}?location_error=${encodeURIComponent(error.message)}`);
+      redirect(
+        `/super-admin/orgs/${id}?location_error=${encodeURIComponent(error.message)}`
+      );
     }
 
     redirect(`/super-admin/orgs/${id}`);
   }
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-3xl space-y-8">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">{org.name}</h1>
           <p className="mt-1 text-muted-foreground">{org.slug}.ezbooker.app</p>
         </div>
-        <div className="flex gap-2">
-          <a href={`/api/admin/enter/${id}`}>
-            <Button variant="outline">Enter as Admin</Button>
-          </a>
-        </div>
+        <a href={`/api/admin/enter/${id}`}>
+          <Button variant="outline">Enter as Admin</Button>
+        </a>
       </div>
 
       {/* Banners */}
       {saved && (
-        <div className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
+        <div className="rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
           Organization updated successfully.
         </div>
       )}
       {invited && (
-        <div className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
-          Invitation sent successfully. The admin will receive an email with setup instructions.
+        <div className="rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
+          Invitation sent successfully. The admin will receive an email with
+          setup instructions.
         </div>
       )}
       {location_added && (
-        <div className="mt-4 rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
+        <div className="rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
           Location added successfully.
         </div>
       )}
       {(queryError || location_error) && (
-        <div className="mt-4 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
           {queryError || location_error}
         </div>
       )}
 
-      <div className="mt-8 grid gap-8 lg:grid-cols-3">
-        {/* Edit form */}
-        <div className="lg:col-span-2">
-          <form action={updateOrg}>
-            <Card>
-              <CardHeader>
-                <CardTitle>Facility Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Name</Label>
-                  <Input id="name" name="name" defaultValue={org.name} required />
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="timezone">Timezone</Label>
-                    <select
-                      id="timezone"
-                      name="timezone"
-                      defaultValue={org.timezone}
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    >
-                      <option value="America/New_York">Eastern (ET)</option>
-                      <option value="America/Chicago">Central (CT)</option>
-                      <option value="America/Denver">Mountain (MT)</option>
-                      <option value="America/Los_Angeles">Pacific (PT)</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="default_slot_duration_minutes">
-                      Slot Duration (min)
-                    </Label>
-                    <Input
-                      id="default_slot_duration_minutes"
-                      name="default_slot_duration_minutes"
-                      type="number"
-                      defaultValue={org.default_slot_duration_minutes}
-                      min={15}
-                      max={240}
-                      step={15}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <textarea
-                    id="description"
-                    name="description"
-                    rows={3}
-                    defaultValue={org.description || ""}
-                    className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="address">Address</Label>
-                  <Input
-                    id="address"
-                    name="address"
-                    defaultValue={org.address || ""}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input
-                    id="phone"
-                    name="phone"
-                    defaultValue={org.phone || ""}
-                  />
-                </div>
-                <Button type="submit">Save Changes</Button>
-              </CardContent>
-            </Card>
+      {/* ─── Organization Info ─── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Organization Info</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* Editable name */}
+          <form action={updateOrgName} className="flex items-end gap-3">
+            <div className="flex-1 space-y-1.5">
+              <Label htmlFor="name" className="text-xs font-medium text-muted-foreground">
+                Organization Name
+              </Label>
+              <Input id="name" name="name" defaultValue={org.name} required />
+            </div>
+            <Button type="submit" size="sm">
+              Save
+            </Button>
           </form>
-        </div>
 
-        {/* Sidebar info */}
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Facilities</CardTitle>
-              <CardDescription>{bays.length} resources</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {bays.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No facilities yet</p>
-              ) : (
-                <ul className="space-y-2">
-                  {bays.map((bay) => (
-                    <li
-                      key={bay.id}
-                      className="flex items-center justify-between text-sm"
-                    >
-                      <span>{bay.name}</span>
-                      <Badge variant={bay.is_active ? "default" : "secondary"}>
-                        {bay.is_active ? "Active" : "Inactive"}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Admins</CardTitle>
-              <CardDescription>{admins.length} admin users</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {admins.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No admins yet</p>
-              ) : (
-                <ul className="space-y-2">
-                  {admins.map((admin) => (
-                    <li key={admin.id} className="text-sm">
-                      <p className="font-medium">
-                        {admin.full_name || "Unnamed"}
-                      </p>
-                      <p className="text-muted-foreground">{admin.email}</p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {/* Invite form */}
-              <form action={inviteAdmin} className="border-t pt-4">
-                <Label htmlFor="invite-email" className="text-sm font-medium">
-                  Invite Admin
-                </Label>
-                <div className="mt-2 flex gap-2">
-                  <Input
-                    id="invite-email"
-                    name="email"
-                    type="email"
-                    placeholder="admin@example.com"
-                    required
-                    className="text-sm"
-                  />
-                  <Button type="submit" size="sm" className="shrink-0">
-                    <Mail className="mr-1.5 h-3.5 w-3.5" />
-                    Invite
-                  </Button>
-                </div>
-              </form>
-
-              {/* Pending/revoked invitations */}
-              {invitations.length > 0 && (
-                <div className="border-t pt-4">
-                  <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    Invitations
+          {/* Read-only summary rows */}
+          <div className="space-y-3 border-t pt-4">
+            {/* Locations summary */}
+            <div className="flex items-start gap-3">
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">
+                  Locations
+                  {org.locations_enabled && (
+                    <Badge variant="outline" className="ml-2 text-xs">
+                      Multi-location
+                    </Badge>
+                  )}
+                </p>
+                {locations.length === 0 ? (
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    No locations
                   </p>
-                  <ul className="space-y-2">
-                    {invitations.map((inv) => (
+                ) : (
+                  <ul className="mt-1 space-y-0.5">
+                    {locations.map((loc) => (
                       <li
-                        key={inv.id}
-                        className="flex items-center justify-between text-sm"
+                        key={loc.id}
+                        className="flex items-center gap-1.5 text-sm text-muted-foreground"
                       >
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-muted-foreground">
-                            {inv.email}
-                          </p>
-                        </div>
-                        <div className="ml-2 flex items-center gap-1.5">
+                        <span className="truncate">{loc.name}</span>
+                        {loc.is_default && (
                           <Badge
-                            variant={
-                              inv.status === "accepted"
-                                ? "default"
-                                : inv.status === "pending"
-                                  ? "outline"
-                                  : "secondary"
-                            }
+                            variant="outline"
+                            className="shrink-0 text-[10px] px-1.5 py-0"
                           >
-                            {inv.status}
+                            Default
                           </Badge>
-                          {inv.status === "pending" && (
-                            <form action={revokeInvite}>
-                              <input
-                                type="hidden"
-                                name="invitation_id"
-                                value={inv.id}
-                              />
-                              <button
-                                type="submit"
-                                className="rounded p-0.5 text-muted-foreground hover:text-destructive"
-                                title="Revoke invitation"
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </form>
-                          )}
-                        </div>
+                        )}
+                        <Badge
+                          variant={loc.is_active ? "default" : "secondary"}
+                          className="shrink-0 text-[10px] px-1.5 py-0"
+                        >
+                          {loc.is_active ? "Active" : "Inactive"}
+                        </Badge>
                       </li>
                     ))}
                   </ul>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Locations</CardTitle>
-              <CardDescription>
-                {locations.length} location{locations.length !== 1 ? "s" : ""}
-                {org.locations_enabled && (
-                  <Badge variant="outline" className="ml-2 text-xs">Multi-location</Badge>
                 )}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {locations.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No locations yet</p>
-              ) : (
-                <ul className="space-y-3">
-                  {locations.map((loc) => (
-                    <li key={loc.id} className="space-y-1">
-                      <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          <span className="truncate font-medium">{loc.name}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                          {loc.is_default && (
-                            <Badge variant="outline" className="text-xs">Default</Badge>
-                          )}
-                          <Badge variant={loc.is_active ? "default" : "secondary"}>
-                            {loc.is_active ? "Active" : "Inactive"}
-                          </Badge>
-                        </div>
-                      </div>
-                      {loc.address && (
-                        <p className="text-xs text-muted-foreground pl-5">{loc.address}</p>
-                      )}
-                      {!loc.is_default && (
-                        <div className="flex gap-1.5 pl-5">
-                          <form action={toggleLocation}>
-                            <input type="hidden" name="location_id" value={loc.id} />
-                            <input type="hidden" name="new_active" value={String(!loc.is_active)} />
-                            <button
-                              type="submit"
-                              className="text-xs text-muted-foreground hover:text-foreground underline"
-                            >
-                              {loc.is_active ? "Deactivate" : "Activate"}
-                            </button>
-                          </form>
-                          {!loc.is_active && (
-                            <form action={deleteLocation}>
-                              <input type="hidden" name="location_id" value={loc.id} />
-                              <button
-                                type="submit"
-                                className="text-xs text-destructive hover:text-destructive/80 underline"
-                              >
-                                Delete
-                              </button>
-                            </form>
-                          )}
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
+              </div>
+            </div>
 
-              {/* Add location form */}
-              <form action={addLocation} className="border-t pt-4">
-                <Label htmlFor="location_name" className="text-sm font-medium">
-                  Add Location
-                </Label>
-                <div className="mt-2 space-y-2">
-                  <Input
-                    id="location_name"
-                    name="location_name"
-                    placeholder="Location name"
-                    required
-                    className="text-sm"
-                  />
-                  <Input
-                    name="location_address"
-                    placeholder="Address (optional)"
-                    className="text-sm"
-                  />
-                  <Button type="submit" size="sm" className="w-full">
-                    <Plus className="mr-1.5 h-3.5 w-3.5" />
-                    Add Location
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
+            {/* Payment setup */}
+            <div className="flex items-center gap-3">
+              <CreditCard className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Payment</p>
+                <p className="text-sm text-muted-foreground">
+                  {stripeConnected ? (
+                    <>
+                      Stripe connected
+                      <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0">
+                        {paymentMode === "charge_upfront"
+                          ? "Charge Upfront"
+                          : paymentMode === "hold"
+                            ? "Hold"
+                            : paymentMode === "hold_charge_manual"
+                              ? "Hold + Manual Charge"
+                              : "None"}
+                      </Badge>
+                    </>
+                  ) : (
+                    "Stripe not connected"
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* Scheduling type */}
+            <div className="flex items-center gap-3">
+              <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Scheduling</p>
+                <p className="text-sm text-muted-foreground">
+                  {schedulingTypeLabel}
+                </p>
+              </div>
+            </div>
+
+            {/* Customer count */}
+            <div className="flex items-center gap-3">
+              <Users className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Customers</p>
+                <p className="text-sm text-muted-foreground">
+                  {customerCount} registered
+                </p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ─── Admins ─── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Admins</CardTitle>
+          <CardDescription>{admins.length} admin users</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {admins.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No admins yet</p>
+          ) : (
+            <ul className="space-y-2">
+              {admins.map((admin) => (
+                <li key={admin.id} className="text-sm">
+                  <p className="font-medium">
+                    {admin.full_name || "Unnamed"}
+                  </p>
+                  <p className="text-muted-foreground">{admin.email}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Invite form */}
+          <form action={inviteAdmin} className="border-t pt-4">
+            <Label htmlFor="invite-email" className="text-sm font-medium">
+              Invite Admin
+            </Label>
+            <div className="mt-2 flex gap-2">
+              <Input
+                id="invite-email"
+                name="email"
+                type="email"
+                placeholder="admin@example.com"
+                required
+                className="text-sm"
+              />
+              <Button type="submit" size="sm" className="shrink-0">
+                <Mail className="mr-1.5 h-3.5 w-3.5" />
+                Invite
+              </Button>
+            </div>
+          </form>
+
+          {/* Pending/revoked invitations */}
+          {invitations.length > 0 && (
+            <div className="border-t pt-4">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Invitations
+              </p>
+              <ul className="space-y-2">
+                {invitations.map((inv) => (
+                  <li
+                    key={inv.id}
+                    className="flex items-center justify-between text-sm"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-muted-foreground">
+                        {inv.email}
+                      </p>
+                    </div>
+                    <div className="ml-2 flex items-center gap-1.5">
+                      <Badge
+                        variant={
+                          inv.status === "accepted"
+                            ? "default"
+                            : inv.status === "pending"
+                              ? "outline"
+                              : "secondary"
+                        }
+                      >
+                        {inv.status}
+                      </Badge>
+                      {inv.status === "pending" && (
+                        <form action={revokeInvite}>
+                          <input
+                            type="hidden"
+                            name="invitation_id"
+                            value={inv.id}
+                          />
+                          <button
+                            type="submit"
+                            className="rounded p-0.5 text-muted-foreground hover:text-destructive"
+                            title="Revoke invitation"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ─── Locations Header + Add Button ─── */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold tracking-tight">Locations</h2>
       </div>
+
+      {/* Add Location Form (collapsible inline) */}
+      <Card>
+        <CardContent className="pt-6">
+          <form action={addLocation} className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[180px] space-y-1.5">
+              <Label htmlFor="location_name" className="text-xs font-medium text-muted-foreground">
+                Name
+              </Label>
+              <Input
+                id="location_name"
+                name="location_name"
+                placeholder="e.g. Downtown Branch"
+                required
+                className="text-sm"
+              />
+            </div>
+            <div className="flex-1 min-w-[180px] space-y-1.5">
+              <Label htmlFor="location_address" className="text-xs font-medium text-muted-foreground">
+                Address (optional)
+              </Label>
+              <Input
+                id="location_address"
+                name="location_address"
+                placeholder="123 Main St"
+                className="text-sm"
+              />
+            </div>
+            <Button type="submit" size="sm" className="shrink-0">
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              Add Location
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* ─── Per-Location Sections ─── */}
+      {locations.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center">
+            <MapPin className="mx-auto h-8 w-8 text-muted-foreground/40" />
+            <p className="mt-2 text-sm text-muted-foreground">
+              No locations yet. Add one above.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        locations.map((loc) => {
+          const locationBays = baysByLocation[loc.id] || [];
+          return (
+            <Card key={loc.id}>
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div className="min-w-0 flex-1">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{loc.name}</span>
+                      {loc.is_default && (
+                        <Badge variant="outline" className="shrink-0 text-xs">
+                          Default
+                        </Badge>
+                      )}
+                      <Badge
+                        variant={loc.is_active ? "default" : "secondary"}
+                        className="shrink-0"
+                      >
+                        {loc.is_active ? "Active" : "Inactive"}
+                      </Badge>
+                    </CardTitle>
+                    {loc.address && (
+                      <CardDescription className="mt-1 pl-6">
+                        {loc.address}
+                      </CardDescription>
+                    )}
+                  </div>
+                  {/* Location actions */}
+                  {!loc.is_default && (
+                    <div className="ml-3 flex items-center gap-2 shrink-0">
+                      <form action={toggleLocation}>
+                        <input
+                          type="hidden"
+                          name="location_id"
+                          value={loc.id}
+                        />
+                        <input
+                          type="hidden"
+                          name="new_active"
+                          value={String(!loc.is_active)}
+                        />
+                        <Button
+                          type="submit"
+                          variant="outline"
+                          size="sm"
+                          className="text-xs"
+                        >
+                          {loc.is_active ? "Deactivate" : "Activate"}
+                        </Button>
+                      </form>
+                      <form action={deleteLocation}>
+                        <input
+                          type="hidden"
+                          name="location_id"
+                          value={loc.id}
+                        />
+                        <Button
+                          type="submit"
+                          variant="outline"
+                          size="sm"
+                          className="text-xs text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </form>
+                    </div>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Facilities ({locationBays.length})
+                </p>
+                {locationBays.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No facilities at this location yet.
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {locationBays.map((bay) => (
+                      <li
+                        key={bay.id}
+                        className="flex items-center justify-between text-sm"
+                      >
+                        <span>{bay.name}</span>
+                        <Badge
+                          variant={bay.is_active ? "default" : "secondary"}
+                          className="text-xs"
+                        >
+                          {bay.is_active ? "Active" : "Inactive"}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })
+      )}
     </div>
   );
 }
