@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useSidebar } from "@/context/sidebar-context";
 import {
   LayoutDashboard,
@@ -51,11 +51,19 @@ export function AdminSidebar({
   schedulingType?: string;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { isMobileOpen, toggleMobileSidebar } = useSidebar();
+
+  const locationId = searchParams.get("location");
 
   const isActive = (href: string) => {
     if (href === "/admin") return pathname === "/admin";
     return pathname.startsWith(href);
+  };
+
+  const withLocation = (href: string) => {
+    if (!locationId) return href;
+    return `${href}?location=${locationId}`;
   };
 
   return (
@@ -89,7 +97,7 @@ export function AdminSidebar({
             return (
               <li key={item.href}>
                 <Link
-                  href={item.href}
+                  href={withLocation(item.href)}
                   onClick={() => isMobileOpen && toggleMobileSidebar()}
                   className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                     active
