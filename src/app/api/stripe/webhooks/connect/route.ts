@@ -70,10 +70,11 @@ export async function POST(request: NextRequest) {
           break;
         }
 
-        // Retrieve subscription to get metadata and period info
+        // Retrieve subscription with items to get metadata and period info
+        // In Stripe API 2025-03-31+, current_period_end moved from subscription to items
         const subscription = await stripe.subscriptions.retrieve(
           session.subscription as string,
-          {},
+          { expand: ["items.data"] },
           { stripeAccount: event.account! } as Stripe.RequestOptions
         );
 
@@ -87,6 +88,13 @@ export async function POST(request: NextRequest) {
           break;
         }
 
+        // Get period end from first subscription item
+        const firstItem = subscription.items?.data?.[0];
+        const periodEndTs = firstItem?.current_period_end;
+        const periodEndIso = periodEndTs
+          ? new Date(periodEndTs * 1000).toISOString()
+          : null;
+
         // Upsert membership (handles re-subscribe after cancellation)
         await supabase.from("user_memberships").upsert(
           {
@@ -97,9 +105,7 @@ export async function POST(request: NextRequest) {
             source: "stripe",
             stripe_subscription_id: subscription.id,
             stripe_customer_id: session.customer as string,
-            current_period_end: new Date(
-              subscription.current_period_end * 1000
-            ).toISOString(),
+            current_period_end: periodEndIso,
             cancelled_at: null,
           },
           { onConflict: "org_id,user_id" }
@@ -183,12 +189,17 @@ export async function POST(request: NextRequest) {
       case "customer.subscription.updated": {
         const subscription = event.data.object as Stripe.Subscription;
 
+        // Get period end from first subscription item (API 2025-03-31+)
+        const subItem = subscription.items?.data?.[0];
+        const subPeriodEnd = subItem?.current_period_end
+          ? new Date(subItem.current_period_end * 1000).toISOString()
+          : null;
+
         // Update period end and detect cancel_at_period_end changes
-        const updateData: Record<string, unknown> = {
-          current_period_end: new Date(
-            subscription.current_period_end * 1000
-          ).toISOString(),
-        };
+        const updateData: Record<string, unknown> = {};
+        if (subPeriodEnd) {
+          updateData.current_period_end = subPeriodEnd;
+        }
 
         // If subscription is set to cancel at period end but still active,
         // keep status as 'active' — perks remain until period end
