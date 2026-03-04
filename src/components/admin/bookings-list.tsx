@@ -77,6 +77,7 @@ type Booking = {
   guest_phone: string | null;
   modified_from: string | null;
   modified_from_info?: ModifiedFromInfo | null;
+  locationName?: string | null;
 };
 
 type TabContext =
@@ -517,6 +518,7 @@ export function AdminBookingsList({
         notes: found.notes,
         created_at: found.created_at,
         bayName: bayMap[found.bay_id] ?? "Unknown",
+        locationName: found.locationName,
         canCancel: found.status === "confirmed",
         canModify: found.status === "confirmed",
         modifiedFrom: found.modified_from_info || null,
@@ -554,6 +556,7 @@ export function AdminBookingsList({
       notes: booking.notes,
       created_at: booking.created_at,
       bayName: bayMap[booking.bay_id] ?? "Unknown",
+      locationName: booking.locationName,
       canCancel: booking.status === "confirmed",
       canModify: booking.status === "confirmed",
       modifiedFrom: booking.modified_from_info || null,

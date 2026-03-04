@@ -31,6 +31,7 @@ type Booking = {
   created_at: string;
   modified_from: string | null;
   modified_from_info?: ModifiedFromInfo | null;
+  locationName?: string | null;
 };
 
 type Props = {
@@ -176,6 +177,7 @@ export function MyBookingsList({
         notes: found.notes,
         created_at: found.created_at,
         bayName: bayMap[found.bay_id] || "Facility",
+        locationName: found.locationName,
         canCancel: isUpcoming,
         canModify: isUpcoming,
         modifiedFrom: found.modified_from_info || null,
@@ -209,6 +211,7 @@ export function MyBookingsList({
       notes: booking.notes,
       created_at: booking.created_at,
       bayName: bayMap[booking.bay_id] || "Facility",
+      locationName: booking.locationName,
       canCancel,
       canModify: canCancel, // Same conditions as cancel: upcoming + confirmed
       modifiedFrom: booking.modified_from_info || null,
@@ -275,7 +278,8 @@ export function MyBookingsList({
                       )}
                     </div>
                     <p className="mt-0.5 text-sm text-muted-foreground">
-                      {timeStr} · {bayMap[booking.bay_id] || "Facility"} · $
+                      {timeStr} · {bayMap[booking.bay_id] || "Facility"}
+                      {booking.locationName ? ` · ${booking.locationName}` : ""} · $
                       {(booking.total_price_cents / 100).toFixed(2)}
                     </p>
                     <p className="mt-0.5 font-mono text-xs text-muted-foreground">
@@ -343,7 +347,8 @@ export function MyBookingsList({
                         </Badge>
                       </div>
                       <p className="mt-0.5 text-sm text-muted-foreground">
-                        {timeStr} · {bayMap[booking.bay_id] || "Facility"} · $
+                        {timeStr} · {bayMap[booking.bay_id] || "Facility"}
+                        {booking.locationName ? ` · ${booking.locationName}` : ""} · $
                         {(booking.total_price_cents / 100).toFixed(2)}
                       </p>
                       <p className="mt-0.5 font-mono text-xs text-muted-foreground">

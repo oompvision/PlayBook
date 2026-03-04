@@ -49,6 +49,7 @@ export type BookingDetailData = {
   notes: string | null;
   created_at: string;
   bayName: string;
+  locationName?: string | null;
   canCancel?: boolean;
   canModify?: boolean;
   modifiedFrom?: ModifiedFromInfo | null;
@@ -1087,7 +1088,12 @@ export function BookingDetailsModal({
             </div>
             <div className="flex items-center gap-2 text-sm">
               <MapPin className="h-4 w-4 text-muted-foreground" />
-              <span>{booking.bayName}</span>
+              <span>
+                {booking.bayName}
+                {booking.locationName && (
+                  <span className="text-muted-foreground"> · {booking.locationName}</span>
+                )}
+              </span>
             </div>
           </div>
 
