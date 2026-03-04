@@ -23,7 +23,7 @@ export default async function CustomerLayout({
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, logo_url")
+    .select("id, name, slug, logo_url, membership_tiers_enabled")
     .eq("slug", slug)
     .single();
 
@@ -46,6 +46,13 @@ export default async function CustomerLayout({
                     My Bookings
                   </Button>
                 </Link>
+                {org.membership_tiers_enabled && (
+                  <Link href="/membership">
+                    <Button variant="ghost" size="sm">
+                      Membership
+                    </Button>
+                  </Link>
+                )}
                 <NotificationBell
                   userId={auth.user.id}
                   viewAllHref="/notifications"
@@ -53,6 +60,7 @@ export default async function CustomerLayout({
                 <CustomerAvatarMenu
                   userName={auth.profile.full_name}
                   userEmail={auth.profile.email}
+                  membershipEnabled={org.membership_tiers_enabled ?? false}
                 />
               </>
             ) : (
