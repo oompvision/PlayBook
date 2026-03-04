@@ -263,7 +263,7 @@ async function executeAvailableSlotsSlotBased(
 
   // Validate date is within the bookable window
   const today = getTodayInTimezone(org.timezone);
-  const windowDays = org.bookable_window_days || 14;
+  const windowDays = org.bookable_window_days || 30;
   const maxDate = new Date(today + "T12:00:00");
   maxDate.setDate(maxDate.getDate() + windowDays);
   const maxDateStr = maxDate.toISOString().split("T")[0];
@@ -1078,7 +1078,7 @@ export async function POST(request: Request) {
 
   const today = getTodayInTimezone(org.timezone);
   const isDynamic = (org.scheduling_type ?? "slot_based") === "dynamic";
-  const windowDays = org.bookable_window_days || (isDynamic ? 30 : 14);
+  const windowDays = org.bookable_window_days || 30;
 
   // Fetch facility groups + durations for dynamic scheduling
   let facilityGroupInfo = "";

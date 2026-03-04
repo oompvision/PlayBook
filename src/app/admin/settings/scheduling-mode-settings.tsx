@@ -13,7 +13,7 @@ export function SchedulingModeSettings({
   initialBookableWindowDays: number;
 }) {
   const [mode, setMode] = useState<SchedulingMode>(initialMode);
-  const [bookableWindowDays, setBookableWindowDays] = useState(
+  const [bookableWindowDays] = useState(
     initialBookableWindowDays
   );
   const [saving, setSaving] = useState(false);
@@ -22,8 +22,7 @@ export function SchedulingModeSettings({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const hasChanges =
-    mode !== initialMode || bookableWindowDays !== initialBookableWindowDays;
+  const hasChanges = mode !== initialMode;
 
   function handleModeChange(newMode: SchedulingMode) {
     if (newMode === mode) return;
@@ -128,30 +127,6 @@ export function SchedulingModeSettings({
             </p>
           </button>
         </div>
-
-        {/* Bookable Window (shown for dynamic mode) */}
-        {mode === "dynamic" && (
-          <div className="border-t border-gray-200 pt-6 dark:border-white/[0.05]">
-            <div className="max-w-xs space-y-1.5">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                Bookable Window (days)
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="365"
-                value={bookableWindowDays}
-                onChange={(e) =>
-                  setBookableWindowDays(parseInt(e.target.value) || 30)
-                }
-                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-              />
-              <p className="text-xs text-gray-400 dark:text-gray-500">
-                How many days into the future customers can book. Default is 30.
-              </p>
-            </div>
-          </div>
-        )}
 
         {/* Save Button */}
         {hasChanges && (
