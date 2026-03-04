@@ -73,7 +73,8 @@ export async function POST(request: NextRequest) {
         // Retrieve subscription to get metadata and period info
         const subscription = await stripe.subscriptions.retrieve(
           session.subscription as string,
-          { stripeAccount: event.account! }
+          {},
+          { stripeAccount: event.account! } as Stripe.RequestOptions
         );
 
         const { org_id, user_id, tier_id } = subscription.metadata;
