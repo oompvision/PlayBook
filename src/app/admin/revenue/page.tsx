@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { redirect } from "next/navigation";
 import { getTodayInTimezone } from "@/lib/utils";
+import { resolveLocationId } from "@/lib/location";
 import {
   DollarSign,
   TrendingUp,
@@ -22,30 +23,40 @@ async function getOrg() {
   return data;
 }
 
-export default async function RevenueSummaryPage() {
+export default async function RevenueSummaryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | undefined }>;
+}) {
+  const params = await searchParams;
   const org = await getOrg();
   if (!org) redirect("/");
 
   const supabase = await createClient();
   const today = getTodayInTimezone(org.timezone);
+  const locationId = await resolveLocationId(org.id, params.location);
 
   // Get the first day of current month
   const monthStart = today.slice(0, 7) + "-01";
 
   // Fetch all confirmed bookings for metrics
-  const { data: allBookings } = await supabase
+  const allBookingsQuery = supabase
     .from("bookings")
     .select("id, date, total_price_cents, status, bay_id")
     .eq("org_id", org.id)
     .eq("status", "confirmed");
+  if (locationId) allBookingsQuery.eq("location_id", locationId);
+  const { data: allBookings } = await allBookingsQuery;
 
   // Fetch bays for facility breakdown
-  const { data: bays } = await supabase
+  const baysQuery = supabase
     .from("bays")
     .select("id, name")
     .eq("org_id", org.id)
     .order("sort_order")
     .order("created_at");
+  if (locationId) baysQuery.eq("location_id", locationId);
+  const { data: bays } = await baysQuery;
 
   const bayMap: Record<string, string> = {};
   if (bays) {

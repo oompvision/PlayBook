@@ -18,8 +18,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { slot_ids } = (await request.json()) as {
+    const { slot_ids, location_id } = (await request.json()) as {
       slot_ids: string[];
+      location_id?: string | null;
     };
 
     if (!slot_ids || slot_ids.length === 0) {
@@ -51,6 +52,17 @@ export async function POST(request: NextRequest) {
         { error: "Facility not found" },
         { status: 404 }
       );
+    }
+
+    // 2b. Resolve location name (if provided)
+    let locationName: string | null = null;
+    if (location_id) {
+      const { data: loc } = await supabase
+        .from("locations")
+        .select("name")
+        .eq("id", location_id)
+        .single();
+      locationName = loc?.name ?? null;
     }
 
     // 3. Get payment settings
@@ -158,7 +170,12 @@ export async function POST(request: NextRequest) {
             org_id: org.id,
             profile_id: auth.profile.id,
             slot_ids: JSON.stringify(slot_ids),
+            ...(location_id ? { location_id } : {}),
+            ...(locationName ? { location_name: locationName } : {}),
           },
+          ...(locationName
+            ? { statement_descriptor_suffix: locationName.slice(0, 22) }
+            : {}),
         },
         { stripeAccount: stripeAccountId }
       );
@@ -183,6 +200,8 @@ export async function POST(request: NextRequest) {
             profile_id: auth.profile.id,
             slot_ids: JSON.stringify(slot_ids),
             amount_cents: String(totalCents),
+            ...(location_id ? { location_id } : {}),
+            ...(locationName ? { location_name: locationName } : {}),
           },
         },
         { stripeAccount: stripeAccountId }

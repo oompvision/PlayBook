@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toTimestamp, formatTimeInZone, getTodayInTimezone } from "@/lib/utils";
+import { resolveLocationId } from "@/lib/location";
 import {
   ChevronLeft,
   ChevronRight,
@@ -66,6 +67,7 @@ export default async function DayEditorPage({
     bay?: string;
     error?: string;
     saved?: string;
+    location?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -73,33 +75,29 @@ export default async function DayEditorPage({
   if (!org) redirect("/");
 
   const supabase = await createClient();
+  const locationId = await resolveLocationId(org.id, params.location);
   const today = getTodayInTimezone(org.timezone);
   const date = params.date || today;
 
   // Get bays and templates
+  const baysQuery = supabase.from("bays").select("id, name, is_active, sort_order, hourly_rate_cents").eq("org_id", org.id).eq("is_active", true);
+  if (locationId) baysQuery.eq("location_id", locationId);
+
+  const templatesQuery = supabase.from("schedule_templates").select("id, name").eq("org_id", org.id);
+  if (locationId) templatesQuery.eq("location_id", locationId);
+
   const [baysResult, templatesResult] = await Promise.all([
-    supabase
-      .from("bays")
-      .select("id, name, is_active, sort_order, hourly_rate_cents")
-      .eq("org_id", org.id)
-      .eq("is_active", true)
-      .order("sort_order"),
-    supabase
-      .from("schedule_templates")
-      .select("id, name")
-      .eq("org_id", org.id)
-      .order("name"),
+    baysQuery.order("sort_order"),
+    templatesQuery.order("name"),
   ]);
 
   const bays = baysResult.data || [];
   const templates = templatesResult.data || [];
 
   // Get schedules + slots for this date
-  const { data: schedules } = await supabase
-    .from("bay_schedules")
-    .select("*, schedule_templates(name), bay_schedule_slots(*)")
-    .eq("org_id", org.id)
-    .eq("date", date);
+  const schedulesQuery = supabase.from("bay_schedules").select("*, schedule_templates(name), bay_schedule_slots(*)").eq("org_id", org.id).eq("date", date);
+  if (locationId) schedulesQuery.eq("location_id", locationId);
+  const { data: schedules } = await schedulesQuery;
 
   // Build lookup: bay_id → schedule with slots
   const scheduleByBay = new Map<string, (typeof schedules extends (infer T)[] | null ? T : never)>();

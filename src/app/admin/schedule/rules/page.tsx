@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { redirect } from "next/navigation";
+import { resolveLocationId } from "@/lib/location";
 import { DynamicRulesEditor } from "@/components/admin/dynamic-rules-editor";
 
 async function getOrg() {
@@ -15,23 +16,35 @@ async function getOrg() {
   return data;
 }
 
-export default async function DynamicScheduleRulesPage() {
+export default async function DynamicScheduleRulesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | undefined }>;
+}) {
+  const params = await searchParams;
   const org = await getOrg();
   if (!org) redirect("/");
 
   const supabase = await createClient();
+  const locationId = await resolveLocationId(org.id, params.location);
+
+  const baysQuery = supabase
+    .from("bays")
+    .select("id, name, resource_type, hourly_rate_cents")
+    .eq("org_id", org.id)
+    .eq("is_active", true)
+    .order("sort_order");
+  if (locationId) baysQuery.eq("location_id", locationId);
+
+  const rulesQuery = supabase
+    .from("dynamic_schedule_rules")
+    .select("*")
+    .eq("org_id", org.id);
+  if (locationId) rulesQuery.eq("location_id", locationId);
 
   const [{ data: bays }, { data: rules }] = await Promise.all([
-    supabase
-      .from("bays")
-      .select("id, name, resource_type, hourly_rate_cents")
-      .eq("org_id", org.id)
-      .eq("is_active", true)
-      .order("sort_order"),
-    supabase
-      .from("dynamic_schedule_rules")
-      .select("*")
-      .eq("org_id", org.id),
+    baysQuery,
+    rulesQuery,
   ]);
 
   return (

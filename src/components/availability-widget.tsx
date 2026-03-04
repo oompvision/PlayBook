@@ -50,6 +50,7 @@ import {
   BookingDetailsModal,
   type BookingDetailData,
 } from "@/components/booking-details-modal";
+import { LocationSwitcher } from "@/components/location-switcher";
 
 type Bay = {
   id: string;
@@ -119,6 +120,12 @@ type AvailabilityWidgetProps = {
   paymentMode?: string;
   /** Cancellation window in hours (default 24) */
   cancellationWindowHours?: number;
+  /** Active location ID for multi-location orgs */
+  locationId?: string | null;
+  /** Available locations for the location switcher */
+  locations?: Array<{ id: string; name: string; is_default: boolean; address: string | null }>;
+  /** Whether multi-location is enabled for this org */
+  locationsEnabled?: boolean;
 };
 
 type ToastData = {
@@ -235,6 +242,9 @@ export function AvailabilityWidget({
   modifyRedirectBase,
   paymentMode = "none",
   cancellationWindowHours = 24,
+  locationId,
+  locations = [],
+  locationsEnabled = false,
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const isModify = mode === "modify";
@@ -803,7 +813,7 @@ export function AvailabilityWidget({
       const res = await fetch("/api/stripe/create-checkout-intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slot_ids: slotIdsArray }),
+        body: JSON.stringify({ slot_ids: slotIdsArray, location_id: locationId || null }),
       });
 
       if (!res.ok) {
@@ -933,6 +943,7 @@ export function AvailabilityWidget({
       p_date: selectedDate,
       p_slot_ids: slotIdsArray,
       p_notes: notes || null,
+      p_location_id: locationId || null,
     });
 
     if (error) {
@@ -1401,6 +1412,15 @@ export function AvailabilityWidget({
 
       {/* ===== Main content ===== */}
       <div className="min-w-0 flex-1 overflow-hidden rounded-xl border bg-card shadow-sm">
+        {/* Location Switcher (multi-location orgs only) */}
+        {locationsEnabled && locations.length > 1 && locationId && (
+          <div className="flex items-center gap-2 border-b px-5 py-2.5">
+            <LocationSwitcher
+              locations={locations}
+              activeLocationId={locationId}
+            />
+          </div>
+        )}
         {/* Date Navigation Header */}
         <div className="flex items-center justify-between border-b px-5 py-3">
           <div className="flex items-center gap-2">

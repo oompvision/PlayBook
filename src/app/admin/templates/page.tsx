@@ -10,6 +10,7 @@ import {
   Zap,
 } from "lucide-react";
 import { TemplateSlotEditor } from "@/components/admin/template-slot-editor";
+import { resolveLocationId } from "@/lib/location";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -17,7 +18,7 @@ async function getOrg() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("organizations")
-    .select("id, name, slug, default_slot_duration_minutes, scheduling_type")
+    .select("id, name, slug, default_slot_duration_minutes, scheduling_type, locations_enabled")
     .eq("slug", slug)
     .single();
   return data;
@@ -26,11 +27,15 @@ async function getOrg() {
 export default async function TemplatesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string; error?: string; saved?: string }>;
+  searchParams: Promise<{ edit?: string; error?: string; saved?: string; location?: string }>;
 }) {
   const params = await searchParams;
   const org = await getOrg();
   if (!org) redirect("/");
+
+  const locationId = org.locations_enabled
+    ? await resolveLocationId(org.id, params.location)
+    : null;
 
   if (org.scheduling_type === "dynamic") {
     return (
@@ -57,18 +62,24 @@ export default async function TemplatesPage({
 
   const supabase = await createClient();
 
+  let templatesQuery = supabase
+    .from("schedule_templates")
+    .select("*, template_slots(*)")
+    .eq("org_id", org.id)
+    .order("created_at");
+  if (locationId) templatesQuery = templatesQuery.eq("location_id", locationId);
+
+  let baysQuery = supabase
+    .from("bays")
+    .select("id, name, hourly_rate_cents")
+    .eq("org_id", org.id)
+    .eq("is_active", true)
+    .order("sort_order");
+  if (locationId) baysQuery = baysQuery.eq("location_id", locationId);
+
   const [{ data: templates }, { data: bays }] = await Promise.all([
-    supabase
-      .from("schedule_templates")
-      .select("*, template_slots(*)")
-      .eq("org_id", org.id)
-      .order("created_at"),
-    supabase
-      .from("bays")
-      .select("id, name, hourly_rate_cents")
-      .eq("org_id", org.id)
-      .eq("is_active", true)
-      .order("sort_order"),
+    templatesQuery,
+    baysQuery,
   ]);
 
   async function createTemplate(formData: FormData) {
@@ -79,10 +90,11 @@ export default async function TemplatesPage({
 
     const name = formData.get("name") as string;
     const description = (formData.get("description") as string) || null;
+    const locId = (formData.get("location_id") as string) || null;
 
     const { data: template, error } = await supabase
       .from("schedule_templates")
-      .insert({ org_id: org.id, name, description })
+      .insert({ org_id: org.id, name, description, ...(locId ? { location_id: locId } : {}) })
       .select("id")
       .single();
 
@@ -290,6 +302,9 @@ export default async function TemplatesPage({
             </div>
             <div className="p-4">
               <form action={createTemplate} className="space-y-3">
+                {locationId && (
+                  <input type="hidden" name="location_id" value={locationId} />
+                )}
                 <input
                   name="name"
                   placeholder="e.g. Weekday Hours"

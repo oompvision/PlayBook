@@ -27,6 +27,7 @@ import {
   BookingDetailsModal,
   type BookingDetailData,
 } from "@/components/booking-details-modal";
+import { LocationSwitcher } from "@/components/location-switcher";
 import {
   CalendarIcon,
   CalendarCheck,
@@ -118,6 +119,9 @@ type DynamicAvailabilityWidgetProps = {
   userProfileId?: string;
   paymentMode?: string;
   cancellationWindowHours?: number;
+  locationId?: string | null;
+  locations?: Array<{ id: string; name: string; is_default: boolean; address: string | null }>;
+  locationsEnabled?: boolean;
 };
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -204,6 +208,9 @@ export function DynamicAvailabilityWidget(
     userProfileId,
     paymentMode = "none",
     cancellationWindowHours = 24,
+    locationId,
+    locations = [],
+    locationsEnabled = false,
   } = props;
 
   const router = useRouter();
@@ -432,7 +439,7 @@ export function DynamicAvailabilityWidget(
       const res = await fetch("/api/stripe/create-checkout-intent-dynamic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ price_cents: selectedSlot.price_cents }),
+        body: JSON.stringify({ price_cents: selectedSlot.price_cents, location_id: locationId || null }),
       });
 
       if (!res.ok) {
@@ -692,6 +699,7 @@ export function DynamicAvailabilityWidget(
           end_time: selectedSlot.end_time,
           price_cents: selectedSlot.price_cents,
           notes: bookingNotes || null,
+          location_id: locationId || undefined,
         }),
       });
 
@@ -957,6 +965,15 @@ export function DynamicAvailabilityWidget(
 
       {/* ═══ Main Content ═══ */}
       <div className="min-w-0 flex-1 space-y-4">
+      {/* Location Switcher (multi-location orgs only) */}
+      {locationsEnabled && locations.length > 1 && locationId && (
+        <div className="flex items-center gap-2 rounded-xl border bg-card px-4 py-2.5">
+          <LocationSwitcher
+            locations={locations}
+            activeLocationId={locationId}
+          />
+        </div>
+      )}
       {/* Step 1: Facility/Group Picker (if needed) */}
       {hasMultipleOptions && (
         <div className="rounded-xl border bg-card p-4">

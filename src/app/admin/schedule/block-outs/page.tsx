@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { redirect } from "next/navigation";
+import { resolveLocationId } from "@/lib/location";
 import { BlockOutsEditor } from "@/components/admin/block-outs-editor";
 
 async function getOrg() {
@@ -15,24 +16,36 @@ async function getOrg() {
   return data;
 }
 
-export default async function BlockOutsPage() {
+export default async function BlockOutsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | undefined }>;
+}) {
+  const params = await searchParams;
   const org = await getOrg();
   if (!org) redirect("/");
 
   const supabase = await createClient();
+  const locationId = await resolveLocationId(org.id, params.location);
+
+  const baysQuery = supabase
+    .from("bays")
+    .select("id, name, resource_type")
+    .eq("org_id", org.id)
+    .eq("is_active", true)
+    .order("sort_order");
+  if (locationId) baysQuery.eq("location_id", locationId);
+
+  const blockOutsQuery = supabase
+    .from("schedule_block_outs")
+    .select("*")
+    .eq("org_id", org.id)
+    .order("date", { ascending: true });
+  if (locationId) blockOutsQuery.eq("location_id", locationId);
 
   const [{ data: bays }, { data: blockOuts }] = await Promise.all([
-    supabase
-      .from("bays")
-      .select("id, name, resource_type")
-      .eq("org_id", org.id)
-      .eq("is_active", true)
-      .order("sort_order"),
-    supabase
-      .from("schedule_block_outs")
-      .select("*")
-      .eq("org_id", org.id)
-      .order("date", { ascending: true }),
+    baysQuery,
+    blockOutsQuery,
   ]);
 
   return (

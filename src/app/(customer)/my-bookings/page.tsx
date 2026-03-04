@@ -14,7 +14,7 @@ async function getOrg() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("organizations")
-    .select("id, name, slug, timezone, logo_url")
+    .select("id, name, slug, timezone, logo_url, locations_enabled")
     .eq("slug", slug)
     .single();
   return data;
@@ -55,7 +55,7 @@ export default async function MyBookingsPage({
   const { data: bookings } = await supabase
     .from("bookings")
     .select(
-      "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, bay_id, created_at, modified_from"
+      "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, bay_id, created_at, modified_from, location_id, locations:location_id(name)"
     )
     .eq("org_id", org.id)
     .eq("customer_id", auth.profile.id)
@@ -95,11 +95,15 @@ export default async function MyBookingsPage({
     }
   }
 
-  // Attach modified_from_info to each booking
+  // Attach modified_from_info and location name to each booking
   const enrichedBookings = bookings?.map((b) => {
     const info = b.modified_from ? modifiedFromInfoMap[b.modified_from] ?? null : null;
+    const locationName = org.locations_enabled
+      ? (b.locations as unknown as { name: string } | null)?.name ?? null
+      : null;
     return {
       ...b,
+      locationName,
       modified_from_info: info ? {
         startTime: info.start_time,
         endTime: info.end_time,

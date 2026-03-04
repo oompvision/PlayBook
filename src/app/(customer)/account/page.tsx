@@ -13,13 +13,20 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Check } from "lucide-react";
+import { Check, MapPin } from "lucide-react";
 
 type ProfileData = {
   id: string;
   full_name: string | null;
   email: string;
   phone: string | null;
+  org_id: string | null;
+};
+
+type LocationData = {
+  id: string;
+  name: string;
+  is_default: boolean;
 };
 
 export default function AccountPage() {
@@ -36,6 +43,14 @@ export default function AccountPage() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
 
+  // Location preference state
+  const [locations, setLocations] = useState<LocationData[]>([]);
+  const [locationsEnabled, setLocationsEnabled] = useState(false);
+  const [defaultLocationId, setDefaultLocationId] = useState("");
+  const [savedLocationId, setSavedLocationId] = useState("");
+  const [locationSaving, setLocationSaving] = useState(false);
+  const [locationSuccess, setLocationSuccess] = useState(false);
+
   useEffect(() => {
     async function loadProfile() {
       const {
@@ -49,7 +64,7 @@ export default function AccountPage() {
 
       const { data } = await supabase
         .from("profiles")
-        .select("id, full_name, email, phone")
+        .select("id, full_name, email, phone, org_id")
         .eq("id", user.id)
         .single();
 
@@ -57,6 +72,49 @@ export default function AccountPage() {
         setProfile(data);
         setFullName(data.full_name || "");
         setPhone(data.phone || "");
+
+        // Fetch location data if user has an org
+        if (data.org_id) {
+          const { data: org } = await supabase
+            .from("organizations")
+            .select("locations_enabled")
+            .eq("id", data.org_id)
+            .single();
+
+          if (org?.locations_enabled) {
+            setLocationsEnabled(true);
+
+            const { data: locs } = await supabase
+              .from("locations")
+              .select("id, name, is_default")
+              .eq("org_id", data.org_id)
+              .eq("is_active", true)
+              .order("is_default", { ascending: false })
+              .order("name");
+
+            setLocations(locs || []);
+
+            // Fetch user's current preference
+            const { data: pref } = await supabase
+              .from("user_location_preferences")
+              .select("default_location_id")
+              .eq("user_id", user.id)
+              .eq("org_id", data.org_id)
+              .single();
+
+            if (pref) {
+              setDefaultLocationId(pref.default_location_id);
+              setSavedLocationId(pref.default_location_id);
+            } else {
+              // Default to org's default location
+              const orgDefault = (locs || []).find((l) => l.is_default);
+              if (orgDefault) {
+                setDefaultLocationId(orgDefault.id);
+                setSavedLocationId(orgDefault.id);
+              }
+            }
+          }
+        }
       }
       setLoading(false);
     }
@@ -89,6 +147,36 @@ export default function AccountPage() {
     setSuccess(true);
     setSaving(false);
     setTimeout(() => setSuccess(false), 3000);
+  }
+
+  async function handleSaveLocation() {
+    if (!profile?.org_id || !defaultLocationId) return;
+    setLocationSaving(true);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return;
+
+    const { error: upsertError } = await supabase
+      .from("user_location_preferences")
+      .upsert(
+        {
+          user_id: user.id,
+          org_id: profile.org_id,
+          default_location_id: defaultLocationId,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,org_id" }
+      );
+
+    if (!upsertError) {
+      setSavedLocationId(defaultLocationId);
+      setLocationSuccess(true);
+      setTimeout(() => setLocationSuccess(false), 3000);
+    }
+    setLocationSaving(false);
   }
 
   if (loading) {
@@ -182,6 +270,51 @@ export default function AccountPage() {
             </CardContent>
           </form>
         </Card>
+
+        {/* Default Location (multi-location orgs only) */}
+        {locationsEnabled && locations.length > 1 && (
+          <Card className="mt-4">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-muted-foreground" />
+                <CardTitle className="text-lg">Default Location</CardTitle>
+              </div>
+              <CardDescription>
+                Choose your preferred location for bookings
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {locationSuccess && (
+                <div className="flex items-center gap-2 rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
+                  <Check className="h-4 w-4" />
+                  Default location updated
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="default-location">Location</Label>
+                <select
+                  id="default-location"
+                  value={defaultLocationId}
+                  onChange={(e) => setDefaultLocationId(e.target.value)}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  {locations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.name}{loc.is_default ? " (Default)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                onClick={handleSaveLocation}
+                className="w-full"
+                disabled={locationSaving || defaultLocationId === savedLocationId}
+              >
+                {locationSaving ? "Saving..." : "Update Default Location"}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

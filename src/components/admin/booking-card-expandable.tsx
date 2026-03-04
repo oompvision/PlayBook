@@ -19,6 +19,7 @@ interface BookingCardExpandableProps {
   customerEmail: string;
   isGuest?: boolean;
   bayName: string;
+  locationName?: string | null;
   timeStr: string;
   dateStr: string;
   cancelAction: (formData: FormData) => Promise<void>;
@@ -30,6 +31,7 @@ export function BookingCardExpandable({
   customerEmail,
   isGuest,
   bayName,
+  locationName,
   timeStr,
   dateStr,
   cancelAction,
@@ -67,6 +69,7 @@ export function BookingCardExpandable({
           </div>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             {dateStr} · {timeStr} · {bayName}
+            {locationName ? ` · ${locationName}` : ""}
           </p>
         </div>
         <div className="ml-3 flex items-center gap-2">
@@ -109,6 +112,12 @@ export function BookingCardExpandable({
               <span className="text-gray-500 dark:text-gray-400">Facility</span>
               <span className="text-gray-800 dark:text-white/90">{bayName}</span>
             </div>
+            {locationName && (
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Location</span>
+                <span className="text-gray-800 dark:text-white/90">{locationName}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-gray-500 dark:text-gray-400">Date</span>
               <span className="text-gray-800 dark:text-white/90">{dateStr}</span>

@@ -39,9 +39,11 @@ function getInitials(name: string | null, email: string | null): string {
 type Props = {
   entries: CustomerEntry[];
   orgId: string;
+  locationsEnabled?: boolean;
+  locationNameMap?: Record<string, string>;
 };
 
-export function CustomerList({ entries, orgId }: Props) {
+export function CustomerList({ entries, orgId, locationsEnabled, locationNameMap }: Props) {
   const [selectedCustomer, setSelectedCustomer] =
     useState<CustomerEntry | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -68,6 +70,11 @@ export function CustomerList({ entries, orgId }: Props) {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
                   Bookings
                 </th>
+                {locationsEnabled && (
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Default Location
+                  </th>
+                )}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
                   Since
                 </th>
@@ -129,6 +136,15 @@ export function CustomerList({ entries, orgId }: Props) {
                       </span>
                     )}
                   </td>
+                  {locationsEnabled && (
+                    <td className="px-6 py-4">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {(!entry.isGuest && locationNameMap?.[entry.id]) || (
+                          <span className="text-gray-400 dark:text-gray-500">—</span>
+                        )}
+                      </span>
+                    </td>
+                  )}
                   <td className="px-6 py-4">
                     <span className="text-sm text-gray-500 dark:text-gray-400">
                       {new Date(entry.date + "T12:00:00").toLocaleDateString("en-US", {
@@ -178,6 +194,9 @@ export function CustomerList({ entries, orgId }: Props) {
                 <p className="truncate text-xs text-gray-500 dark:text-gray-400">
                   {entry.email || "No email"}
                   {entry.phone ? ` · ${entry.phone}` : ""}
+                  {locationsEnabled && !entry.isGuest && locationNameMap?.[entry.id]
+                    ? ` · ${locationNameMap[entry.id]}`
+                    : ""}
                 </p>
               </div>
               <div className="shrink-0 text-right text-xs text-gray-400 dark:text-gray-500">
