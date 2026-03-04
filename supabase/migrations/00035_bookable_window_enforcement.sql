@@ -24,8 +24,6 @@ declare
   v_confirmation_code text;
   v_booking_id uuid;
   v_results json[] := '{}';
-  v_ordered_slots record[];
-  v_i integer;
   v_org record;
   v_today date;
   v_max_date date;
