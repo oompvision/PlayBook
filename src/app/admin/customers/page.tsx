@@ -11,7 +11,7 @@ async function getOrg() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("organizations")
-    .select("id, name, slug")
+    .select("id, name, slug, locations_enabled")
     .eq("slug", slug)
     .single();
   return data;
@@ -89,6 +89,22 @@ export default async function CustomerListPage({
         count: 1,
         firstBooked: gb.created_at,
       });
+    }
+  }
+
+  // ---- Location preferences (for Default Location column) ----
+  let locationNameMap: Record<string, string> = {}; // userId -> location name
+  if (org.locations_enabled) {
+    const { data: prefs } = await supabase
+      .from("user_location_preferences")
+      .select("user_id, default_location_id, locations:default_location_id(name)")
+      .eq("org_id", org.id);
+
+    if (prefs) {
+      for (const p of prefs) {
+        const locName = (p.locations as unknown as { name: string } | null)?.name;
+        if (locName) locationNameMap[p.user_id] = locName;
+      }
     }
   }
 
@@ -199,7 +215,12 @@ export default async function CustomerListPage({
             )}
           </div>
         ) : (
-          <CustomerList entries={allEntries} orgId={org.id} />
+          <CustomerList
+            entries={allEntries}
+            orgId={org.id}
+            locationsEnabled={org.locations_enabled ?? false}
+            locationNameMap={locationNameMap}
+          />
         )}
       </div>
     </div>

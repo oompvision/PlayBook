@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { resolveLocationId } from "@/lib/location";
 import { Button } from "@/components/ui/button";
 import {
   Box,
@@ -28,19 +29,23 @@ async function getOrg() {
 export default async function BayManagementPage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string; error?: string; saved?: string }>;
+  searchParams: Promise<{ edit?: string; error?: string; saved?: string; location?: string }>;
 }) {
   const params = await searchParams;
   const org = await getOrg();
   if (!org) redirect("/");
 
   const supabase = await createClient();
-  const { data: bays } = await supabase
+  const locationId = await resolveLocationId(org.id, params.location);
+
+  const baysQuery = supabase
     .from("bays")
     .select("*")
     .eq("org_id", org.id)
     .order("sort_order")
     .order("created_at");
+  if (locationId) baysQuery.eq("location_id", locationId);
+  const { data: bays } = await baysQuery;
 
   const editingId = params.edit;
 
@@ -54,6 +59,7 @@ export default async function BayManagementPage({
     const hourlyRate = parseFloat(formData.get("hourly_rate") as string) || 0;
     const resourceType = (formData.get("resource_type") as string) || null;
     const description = (formData.get("description") as string) || null;
+    const locationIdValue = (formData.get("location_id") as string) || null;
 
     const { data: maxBay } = await supabase
       .from("bays")
@@ -65,14 +71,17 @@ export default async function BayManagementPage({
 
     const nextOrder = (maxBay?.sort_order ?? -1) + 1;
 
-    const { error } = await supabase.from("bays").insert({
+    const insertData: Record<string, unknown> = {
       org_id: org.id,
       name,
       hourly_rate_cents: Math.round(hourlyRate * 100),
       resource_type: resourceType,
       description,
       sort_order: nextOrder,
-    });
+    };
+    if (locationIdValue) insertData.location_id = locationIdValue;
+
+    const { error } = await supabase.from("bays").insert(insertData);
 
     if (error) {
       redirect(`/admin/bays?error=${encodeURIComponent(error.message)}`);
@@ -464,6 +473,7 @@ export default async function BayManagementPage({
           </div>
           <div className="p-6">
             <form action={createBay} className="space-y-4">
+              <input type="hidden" name="location_id" value={locationId || ""} />
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-gray-500 dark:text-gray-400">

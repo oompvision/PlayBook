@@ -6,6 +6,7 @@ import { createNotification, notifyOrgAdmins } from "@/lib/notifications";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getTodayInTimezone, formatTimeInZone } from "@/lib/utils";
+import { resolveLocationId } from "@/lib/location";
 import { DailySchedule } from "@/components/daily-schedule";
 import { AdminBookingsList } from "@/components/admin/bookings-list";
 import {
@@ -55,6 +56,7 @@ export default async function BookingsListPage({
     modified?: string;
     old?: string;
     new?: string;
+    location?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -72,6 +74,7 @@ export default async function BookingsListPage({
   await requireAdmin(org.id);
 
   const supabase = await createClient();
+  const locationId = await resolveLocationId(org.id, params.location);
   const activeView = params.view === "daily" ? "daily" : "list";
 
   // Fetch payment settings for cancellation/refund info
@@ -89,13 +92,13 @@ export default async function BookingsListPage({
       : "none";
 
   // Load bays for facility filter + daily view columns
-  const { data: bays } = await supabase
+  const baysQuery = supabase
     .from("bays")
     .select("id, name")
     .eq("org_id", org.id)
-    .eq("is_active", true)
-    .order("sort_order")
-    .order("created_at");
+    .eq("is_active", true);
+  if (locationId) baysQuery.eq("location_id", locationId);
+  const { data: bays } = await baysQuery.order("sort_order").order("created_at");
 
   const today = getTodayInTimezone(org.timezone);
   const thirtyDaysAgo = getDateDaysAgo(today, 30);
@@ -131,8 +134,9 @@ export default async function BookingsListPage({
     .select(
       "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, created_at, updated_at, customer_id, bay_id, is_guest, guest_name, guest_email, guest_phone, modified_from"
     )
-    .eq("org_id", org.id)
-    .order("date", { ascending: false })
+    .eq("org_id", org.id);
+  if (locationId) query = query.eq("location_id", locationId);
+  query = query.order("date", { ascending: false })
     .order("start_time", { ascending: false });
 
   if (activeView === "list") {

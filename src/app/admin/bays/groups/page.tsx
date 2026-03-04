@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { redirect } from "next/navigation";
+import { resolveLocationId } from "@/lib/location";
 import { FacilityGroupsEditor } from "@/components/admin/facility-groups-editor";
 
 async function getOrg() {
@@ -15,32 +16,47 @@ async function getOrg() {
   return data;
 }
 
-export default async function FacilityGroupsPage() {
+export default async function FacilityGroupsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | undefined }>;
+}) {
+  const params = await searchParams;
   const org = await getOrg();
   if (!org) redirect("/");
 
   const supabase = await createClient();
+  const locationId = await resolveLocationId(org.id, params.location);
+
+  const baysQuery = supabase
+    .from("bays")
+    .select("id, name, resource_type, hourly_rate_cents")
+    .eq("org_id", org.id)
+    .eq("is_active", true)
+    .order("sort_order");
+  if (locationId) baysQuery.eq("location_id", locationId);
+
+  const groupsQuery = supabase
+    .from("facility_groups")
+    .select("id, name, description")
+    .eq("org_id", org.id)
+    .order("created_at");
+  if (locationId) groupsQuery.eq("location_id", locationId);
+
+  const rulesQuery = supabase
+    .from("dynamic_schedule_rules")
+    .select("bay_id, day_of_week, open_time, close_time, buffer_minutes, start_time_granularity, available_durations")
+    .eq("org_id", org.id);
+  if (locationId) rulesQuery.eq("location_id", locationId);
 
   const [{ data: bays }, { data: groups }, { data: members }, { data: rules }] =
     await Promise.all([
-      supabase
-        .from("bays")
-        .select("id, name, resource_type, hourly_rate_cents")
-        .eq("org_id", org.id)
-        .eq("is_active", true)
-        .order("sort_order"),
-      supabase
-        .from("facility_groups")
-        .select("id, name, description")
-        .eq("org_id", org.id)
-        .order("created_at"),
+      baysQuery,
+      groupsQuery,
       supabase
         .from("facility_group_members")
         .select("id, group_id, bay_id"),
-      supabase
-        .from("dynamic_schedule_rules")
-        .select("bay_id, day_of_week, open_time, close_time, buffer_minutes, start_time_granularity, available_durations")
-        .eq("org_id", org.id),
+      rulesQuery,
     ]);
 
   return (

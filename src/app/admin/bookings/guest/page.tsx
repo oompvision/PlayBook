@@ -5,28 +5,41 @@ import { redirect } from "next/navigation";
 import { getTodayInTimezone } from "@/lib/utils";
 import { AvailabilityWidget } from "@/components/availability-widget";
 import { ArrowLeft } from "lucide-react";
+import { resolveLocationId } from "@/lib/location";
 
-export default async function GuestBookingPage() {
+export default async function GuestBookingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ location?: string }>;
+}) {
+  const params = await searchParams;
   const slug = await getFacilitySlug();
   if (!slug) redirect("/");
 
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, timezone, min_booking_lead_minutes")
+    .select("id, name, slug, timezone, min_booking_lead_minutes, locations_enabled")
     .eq("slug", slug)
     .single();
 
   if (!org) redirect("/");
   await requireAdmin(org.id);
 
-  const { data: bays } = await supabase
+  const locationId = org.locations_enabled
+    ? await resolveLocationId(org.id, params.location)
+    : null;
+
+  let baysQuery = supabase
     .from("bays")
     .select("id, name, resource_type")
     .eq("org_id", org.id)
     .eq("is_active", true)
     .order("sort_order")
     .order("created_at");
+  if (locationId) baysQuery = baysQuery.eq("location_id", locationId);
+
+  const { data: bays } = await baysQuery;
 
   const timezone = org.timezone ?? "America/New_York";
   const todayStr = getTodayInTimezone(timezone);
@@ -61,6 +74,7 @@ export default async function GuestBookingPage() {
           minBookingLeadMinutes={0}
           isAuthenticated={true}
           mode="admin-guest"
+          locationId={locationId ?? undefined}
         />
       ) : (
         <div className="rounded-xl border border-gray-200 bg-white px-5 py-16 text-center text-sm text-gray-500 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-400">

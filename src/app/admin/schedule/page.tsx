@@ -3,6 +3,7 @@ import { getFacilitySlug } from "@/lib/facility";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getTodayInTimezone, toTimestamp } from "@/lib/utils";
+import { resolveLocationId } from "@/lib/location";
 import { ScheduleCalendar } from "@/components/admin/schedule-calendar";
 import { addMonths, endOfMonth, format } from "date-fns";
 
@@ -18,7 +19,12 @@ async function getOrg() {
   return data;
 }
 
-export default async function ScheduleManagerPage() {
+export default async function ScheduleManagerPage({
+  searchParams: searchParamsPromise,
+}: {
+  searchParams: Promise<{ [key: string]: string | undefined }>;
+}) {
+  const params = await searchParamsPromise;
   const org = await getOrg();
   if (!org) redirect("/");
 
@@ -45,6 +51,7 @@ export default async function ScheduleManagerPage() {
   }
 
   const supabase = await createClient();
+  const locationId = await resolveLocationId(org.id, params.location);
   const today = getTodayInTimezone(org.timezone);
 
   // Date range: today through end of 12th month from now
@@ -53,24 +60,19 @@ export default async function ScheduleManagerPage() {
   const endDateStr = format(endDate, "yyyy-MM-dd");
 
   // Fetch bays, schedules (for coverage), and templates in parallel
+  const baysQuery = supabase.from("bays").select("id, name, hourly_rate_cents").eq("org_id", org.id).eq("is_active", true);
+  if (locationId) baysQuery.eq("location_id", locationId);
+
+  const schedulesQuery = supabase.from("bay_schedules").select("date, bay_id").eq("org_id", org.id).gte("date", today).lte("date", endDateStr);
+  if (locationId) schedulesQuery.eq("location_id", locationId);
+
+  const templatesQuery = supabase.from("schedule_templates").select("id, name, template_slots(id)").eq("org_id", org.id);
+  if (locationId) templatesQuery.eq("location_id", locationId);
+
   const [baysResult, schedulesResult, templatesResult] = await Promise.all([
-    supabase
-      .from("bays")
-      .select("id, name, hourly_rate_cents")
-      .eq("org_id", org.id)
-      .eq("is_active", true)
-      .order("sort_order"),
-    supabase
-      .from("bay_schedules")
-      .select("date, bay_id")
-      .eq("org_id", org.id)
-      .gte("date", today)
-      .lte("date", endDateStr),
-    supabase
-      .from("schedule_templates")
-      .select("id, name, template_slots(id)")
-      .eq("org_id", org.id)
-      .order("created_at"),
+    baysQuery.order("sort_order"),
+    schedulesQuery,
+    templatesQuery.order("created_at"),
   ]);
 
   const bays = baysResult.data || [];

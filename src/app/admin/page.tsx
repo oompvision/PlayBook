@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { redirect } from "next/navigation";
 import { formatTimeInZone, getTodayInTimezone } from "@/lib/utils";
+import { resolveLocationId } from "@/lib/location";
 import {
   CalendarCheck,
   DollarSign,
@@ -22,30 +23,40 @@ async function getOrg() {
   return data;
 }
 
-export default async function AdminDashboardPage() {
+export default async function AdminDashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | undefined }>;
+}) {
+  const params = await searchParams;
   const org = await getOrg();
   if (!org) redirect("/");
 
   const supabase = await createClient();
   const today = getTodayInTimezone(org.timezone);
+  const locationId = await resolveLocationId(org.id, params.location);
 
   // Fetch today's bookings
-  const { data: todayBookings } = await supabase
+  const todayBookingsQuery = supabase
     .from("bookings")
     .select("id, total_price_cents, status")
     .eq("org_id", org.id)
     .eq("date", today)
     .eq("status", "confirmed");
+  if (locationId) todayBookingsQuery.eq("location_id", locationId);
+  const { data: todayBookings } = await todayBookingsQuery;
 
   // Fetch upcoming bookings (today and future)
-  const { data: upcomingBookings } = await supabase
+  const upcomingBookingsQuery = supabase
     .from("bookings")
     .select("id")
     .eq("org_id", org.id)
     .eq("status", "confirmed")
     .gte("date", today);
+  if (locationId) upcomingBookingsQuery.eq("location_id", locationId);
+  const { data: upcomingBookings } = await upcomingBookingsQuery;
 
-  // Fetch total customers
+  // Fetch total customers (NO location filter - org-wide)
   const { data: customers } = await supabase
     .from("profiles")
     .select("id")
@@ -53,7 +64,7 @@ export default async function AdminDashboardPage() {
     .eq("role", "customer");
 
   // Fetch recent bookings for the table
-  const { data: recentBookings } = await supabase
+  const recentBookingsQuery = supabase
     .from("bookings")
     .select(
       "id, date, start_time, end_time, total_price_cents, status, confirmation_code, customer_id, bay_id"
@@ -61,6 +72,8 @@ export default async function AdminDashboardPage() {
     .eq("org_id", org.id)
     .order("created_at", { ascending: false })
     .limit(8);
+  if (locationId) recentBookingsQuery.eq("location_id", locationId);
+  const { data: recentBookings } = await recentBookingsQuery;
 
   // Look up customer names and bay names for recent bookings
   const customerIds = [
@@ -82,10 +95,12 @@ export default async function AdminDashboardPage() {
     }
   }
 
-  const { data: bays } = await supabase
+  const baysQuery = supabase
     .from("bays")
     .select("id, name")
     .eq("org_id", org.id);
+  if (locationId) baysQuery.eq("location_id", locationId);
+  const { data: bays } = await baysQuery;
   const bayMap: Record<string, string> = {};
   if (bays) {
     for (const b of bays) {
