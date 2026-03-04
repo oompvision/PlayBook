@@ -217,6 +217,7 @@ type OrgContext = {
   min_booking_lead_minutes: number;
   scheduling_type: string;
   bookable_window_days: number;
+  effective_window_days: number;
 };
 
 async function executeFacilityInfo(org: OrgContext) {
@@ -261,9 +262,9 @@ async function executeAvailableSlotsSlotBased(
 ) {
   const supabase = await createClient();
 
-  // Validate date is within the bookable window
+  // Validate date is within the bookable window (membership-aware)
   const today = getTodayInTimezone(org.timezone);
-  const windowDays = org.bookable_window_days || 30;
+  const windowDays = org.effective_window_days;
   const maxDate = new Date(today + "T12:00:00");
   maxDate.setDate(maxDate.getDate() + windowDays);
   const maxDateStr = maxDate.toISOString().split("T")[0];
@@ -390,7 +391,7 @@ async function executeAvailableSlotsDynamic(
   const supabase = await createClient();
 
   const today = getTodayInTimezone(org.timezone);
-  const windowDays = org.bookable_window_days || 30;
+  const windowDays = org.effective_window_days;
   const maxDate = new Date(today + "T12:00:00");
   maxDate.setDate(maxDate.getDate() + windowDays);
   const maxDateStr = maxDate.toISOString().split("T")[0];
@@ -1030,7 +1031,7 @@ export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, timezone, description, address, phone, min_booking_lead_minutes, scheduling_type, bookable_window_days")
+    .select("id, name, slug, timezone, description, address, phone, min_booking_lead_minutes, scheduling_type, bookable_window_days, membership_tiers_enabled")
     .eq("slug", facilitySlug)
     .single();
 
@@ -1042,6 +1043,22 @@ export async function POST(request: Request) {
   const auth = await getAuthUser();
   const customerId = auth?.profile?.id ?? null;
   const customerName = auth?.profile?.full_name ?? null;
+
+  // Resolve membership-aware bookable window
+  let effectiveWindowDays = org.bookable_window_days || 30;
+  if (org.membership_tiers_enabled) {
+    const service = createServiceClient();
+    const { data: windowData } = await service.rpc(
+      "get_effective_bookable_window",
+      { p_org_id: org.id, p_user_id: auth?.user?.id ?? null }
+    );
+    if (windowData != null) {
+      effectiveWindowDays = windowData;
+    }
+  }
+
+  // Attach effective window to org context
+  const orgContext: OrgContext = { ...org, effective_window_days: effectiveWindowDays };
 
   // Fetch payment settings for this org
   const service = createServiceClient();
@@ -1076,9 +1093,9 @@ export async function POST(request: Request) {
           .join("\n")
       : "No facilities configured yet.";
 
-  const today = getTodayInTimezone(org.timezone);
-  const isDynamic = (org.scheduling_type ?? "slot_based") === "dynamic";
-  const windowDays = org.bookable_window_days || 30;
+  const today = getTodayInTimezone(orgContext.timezone);
+  const isDynamic = (orgContext.scheduling_type ?? "slot_based") === "dynamic";
+  const windowDays = effectiveWindowDays;
 
   // Fetch facility groups + durations for dynamic scheduling
   let facilityGroupInfo = "";
@@ -1286,24 +1303,24 @@ Quick reply buttons:
 
         switch (call.name) {
           case "get_facility_info":
-            result = await executeFacilityInfo(org as OrgContext);
+            result = await executeFacilityInfo(orgContext);
             break;
           case "get_available_slots":
             result = await executeAvailableSlots(
-              org as OrgContext,
+              orgContext,
               call.args as { date: string; duration?: number; bay_name?: string; resource_type?: string }
             );
             break;
           case "get_my_bookings":
             result = await executeGetMyBookings(
-              org as OrgContext,
+              orgContext,
               customerId,
               call.args as { status_filter?: string }
             );
             break;
           case "create_booking":
             result = await executeCreateBooking(
-              org as OrgContext,
+              orgContext,
               customerId,
               call.args as {
                 slot_ids?: string[];
@@ -1319,7 +1336,7 @@ Quick reply buttons:
             break;
           case "cancel_booking":
             result = await executeCancelBooking(
-              org as OrgContext,
+              orgContext,
               customerId,
               call.args as { confirmation_code: string }
             );
