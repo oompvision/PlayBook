@@ -126,6 +126,8 @@ type AvailabilityWidgetProps = {
   locations?: Array<{ id: string; name: string; is_default: boolean; address: string | null }>;
   /** Whether multi-location is enabled for this org */
   locationsEnabled?: boolean;
+  /** How many days into the future customers can book (default 30) */
+  bookableWindowDays?: number;
 };
 
 type ToastData = {
@@ -245,9 +247,13 @@ export function AvailabilityWidget({
   locationId,
   locations = [],
   locationsEnabled = false,
+  bookableWindowDays = 30,
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const isModify = mode === "modify";
+
+  // Compute the max bookable date from today + bookable window
+  const maxBookableDateStr = addDays(todayStr, bookableWindowDays);
 
   // Fire-and-forget notification to server (non-blocking)
   function fireNotification(
@@ -454,6 +460,13 @@ export function AvailabilityWidget({
       }
       restoredFromStorage.current = false;
 
+      // Enforce bookable window — don't fetch slots beyond the max date
+      if (date > maxBookableDateStr) {
+        setTimeGroups([]);
+        setLoading(false);
+        return;
+      }
+
       const supabase = createClient();
 
       // Compute day boundaries in the facility timezone
@@ -552,7 +565,7 @@ export function AvailabilityWidget({
       setTimeGroups(groups);
       setLoading(false);
     },
-    [orgId, timezone, todayStr, minBookingLeadMinutes, bays]
+    [orgId, timezone, todayStr, minBookingLeadMinutes, bays, maxBookableDateStr]
   );
 
   useEffect(() => {
@@ -644,6 +657,7 @@ export function AvailabilityWidget({
   function handleDateChange(delta: number) {
     const newDate = addDays(selectedDate, delta);
     if (newDate < todayStr) return;
+    if (newDate > maxBookableDateStr) return;
     setSelectedDate(newDate);
     setAutoAdvancedFrom(null);
   }
@@ -655,6 +669,7 @@ export function AvailabilityWidget({
     const d = String(date.getDate()).padStart(2, "0");
     const newDate = `${y}-${m}-${d}`;
     if (newDate < todayStr) return;
+    if (newDate > maxBookableDateStr) return;
     setSelectedDate(newDate);
     setCalendarOpen(false);
     setAutoAdvancedFrom(null);
@@ -1464,8 +1479,12 @@ export function AvailabilityWidget({
                 mode="single"
                 selected={new Date(selectedDate + "T12:00:00")}
                 onSelect={handleCalendarSelect}
-                disabled={{ before: new Date(todayStr + "T12:00:00") }}
+                disabled={{
+                  before: new Date(todayStr + "T12:00:00"),
+                  after: new Date(maxBookableDateStr + "T12:00:00"),
+                }}
                 startMonth={new Date(todayStr + "T12:00:00")}
+                endMonth={new Date(maxBookableDateStr + "T12:00:00")}
                 initialFocus
               />
             </PopoverContent>

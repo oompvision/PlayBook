@@ -71,6 +71,10 @@ export default async function FacilitySettingsPage({
       parseInt(formData.get("default_slot_duration_minutes") as string) || 60;
     const minBookingLeadMinutes =
       parseInt(formData.get("min_booking_lead_minutes") as string) ?? 15;
+    const bookableWindowDays = Math.min(
+      365,
+      Math.max(1, parseInt(formData.get("bookable_window_days") as string) || 30)
+    );
 
     const { error } = await supabase
       .from("organizations")
@@ -82,6 +86,7 @@ export default async function FacilitySettingsPage({
         timezone,
         default_slot_duration_minutes: defaultDuration,
         min_booking_lead_minutes: minBookingLeadMinutes,
+        bookable_window_days: bookableWindowDays,
       })
       .eq("id", org.id);
 
@@ -265,6 +270,23 @@ export default async function FacilitySettingsPage({
                     Time slots starting within this many minutes from now will
                     not be shown to customers. Set to 0 to show all slots until
                     their start time.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Bookable Window (days)
+                  </label>
+                  <input
+                    name="bookable_window_days"
+                    type="number"
+                    min="1"
+                    max="365"
+                    defaultValue={org.bookable_window_days ?? 30}
+                    className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                  />
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    How many days into the future customers can book. Admins can
+                    still build schedules beyond this window.
                   </p>
                 </div>
               </div>
