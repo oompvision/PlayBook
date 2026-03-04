@@ -12,7 +12,7 @@ async function getOrg() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("organizations")
-    .select("id, name, slug, timezone")
+    .select("id, name, slug, timezone, scheduling_type")
     .eq("slug", slug)
     .single();
   return data;
@@ -21,6 +21,28 @@ async function getOrg() {
 export default async function ScheduleManagerPage() {
   const org = await getOrg();
   if (!org) redirect("/");
+
+  if (org.scheduling_type === "dynamic") {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
+            Schedule
+          </h1>
+        </div>
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400">
+          Your facility uses Dynamic Scheduling. Available times are calculated
+          automatically from your schedule rules.{" "}
+          <a
+            href="/admin/schedule/rules"
+            className="font-medium underline underline-offset-2"
+          >
+            Manage Schedule Rules
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   const supabase = await createClient();
   const today = getTodayInTimezone(org.timezone);

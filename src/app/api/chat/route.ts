@@ -4,6 +4,15 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { toTimestamp, getTodayInTimezone, formatTimeInZone } from "@/lib/utils";
 import { getAuthUser } from "@/lib/auth";
 import { createNotification, notifyOrgAdmins } from "@/lib/notifications";
+import {
+  getAvailableTimesForBay,
+  getPooledAvailability,
+  type DynamicScheduleRule,
+  type ExistingBooking,
+  type BlockOut,
+  type BayInfo,
+  type RateOverride,
+} from "@/lib/availability-engine";
 
 function getGenAI() {
   return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
@@ -26,13 +35,18 @@ const toolDeclarations: FunctionDeclaration[] = [
   {
     name: "get_available_slots",
     description:
-      "Look up available time slots for a specific date. Returns slots grouped by facility with times and prices. Always call this to answer availability questions — never guess.",
+      "Look up available time slots for a specific date. Returns slots grouped by facility with times and prices. Always call this to answer availability questions — never guess. For dynamic scheduling facilities, you must also provide a duration in minutes.",
     parameters: {
       type: Type.OBJECT,
       properties: {
         date: {
           type: Type.STRING,
           description: "The date to check in YYYY-MM-DD format.",
+        },
+        duration: {
+          type: Type.NUMBER,
+          description:
+            "Booking duration in minutes (e.g. 60 for 1 hour, 90 for 1.5 hours). Required for dynamic scheduling facilities. Common options: 30, 60, 90, 120.",
         },
         bay_name: {
           type: Type.STRING,
@@ -66,7 +80,7 @@ const toolDeclarations: FunctionDeclaration[] = [
   {
     name: "create_booking",
     description:
-      "Create a booking for the customer. Provide EITHER slot_ids from a previous get_available_slots call OR the date, bay_name, and start_time so the system can find the correct slot. IMPORTANT: Always confirm the booking details with the customer BEFORE calling this tool.",
+      "Create a booking for the customer. For slot-based scheduling: provide EITHER slot_ids from a previous get_available_slots call OR the date, bay_name, and start_time. For dynamic scheduling: provide date, bay_name, start_time, and end_time (ISO timestamps from get_available_slots). IMPORTANT: Always confirm the booking details with the customer BEFORE calling this tool.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -74,22 +88,32 @@ const toolDeclarations: FunctionDeclaration[] = [
           type: Type.ARRAY,
           items: { type: Type.STRING },
           description:
-            "Array of slot IDs to book. These come from a prior get_available_slots response. If you don't have valid slot_ids, provide date + bay_name + start_time instead.",
+            "Array of slot IDs to book (slot-based scheduling only). These come from a prior get_available_slots response.",
         },
         date: {
           type: Type.STRING,
           description:
-            "The booking date in YYYY-MM-DD format. Used when slot_ids are not available.",
+            "The booking date in YYYY-MM-DD format.",
         },
         bay_name: {
           type: Type.STRING,
           description:
-            'The facility name (e.g., "Facility 1"). Used when slot_ids are not available.',
+            'The facility name (e.g., "Facility 1").',
         },
         start_time: {
           type: Type.STRING,
           description:
-            'The desired start time in 12-hour format (e.g., "6:00 PM"). Used when slot_ids are not available.',
+            'The desired start time — either 12-hour format (e.g., "6:00 PM") for slot-based, or ISO timestamp for dynamic scheduling.',
+        },
+        end_time: {
+          type: Type.STRING,
+          description:
+            "The end time as ISO timestamp (dynamic scheduling only). From the get_available_slots response.",
+        },
+        price_cents: {
+          type: Type.NUMBER,
+          description:
+            "The price in cents (dynamic scheduling only). From the get_available_slots response.",
         },
         notes: {
           type: Type.STRING,
@@ -151,11 +175,26 @@ const toolDeclarations: FunctionDeclaration[] = [
           description:
             'The start time in 12-hour format (e.g., "3:00 PM").',
         },
+        end_time: {
+          type: Type.STRING,
+          description:
+            "The end time as ISO timestamp (dynamic scheduling only).",
+        },
+        duration: {
+          type: Type.NUMBER,
+          description:
+            "Booking duration in minutes (dynamic scheduling only).",
+        },
+        price_cents: {
+          type: Type.NUMBER,
+          description:
+            "The price in cents (dynamic scheduling only).",
+        },
         slot_ids: {
           type: Type.ARRAY,
           items: { type: Type.STRING },
           description:
-            "Optional array of slot IDs from a prior get_available_slots response.",
+            "Optional array of slot IDs from a prior get_available_slots response (slot-based only).",
         },
       },
       required: ["date", "bay_name", "start_time"],
@@ -176,6 +215,8 @@ type OrgContext = {
   address: string | null;
   phone: string | null;
   min_booking_lead_minutes: number;
+  scheduling_type: string;
+  bookable_window_days: number;
 };
 
 async function executeFacilityInfo(org: OrgContext) {
@@ -205,14 +246,26 @@ async function executeFacilityInfo(org: OrgContext) {
 
 async function executeAvailableSlots(
   org: OrgContext,
+  args: { date: string; duration?: number; bay_name?: string; resource_type?: string }
+) {
+  // Route to the appropriate handler based on scheduling type
+  if (org.scheduling_type === "dynamic") {
+    return executeAvailableSlotsDynamic(org, args);
+  }
+  return executeAvailableSlotsSlotBased(org, args);
+}
+
+async function executeAvailableSlotsSlotBased(
+  org: OrgContext,
   args: { date: string; bay_name?: string; resource_type?: string }
 ) {
   const supabase = await createClient();
 
   // Validate date is within the bookable window
   const today = getTodayInTimezone(org.timezone);
+  const windowDays = org.bookable_window_days || 14;
   const maxDate = new Date(today + "T12:00:00");
-  maxDate.setDate(maxDate.getDate() + 14);
+  maxDate.setDate(maxDate.getDate() + windowDays);
   const maxDateStr = maxDate.toISOString().split("T")[0];
 
   if (args.date < today) {
@@ -220,7 +273,7 @@ async function executeAvailableSlots(
   }
   if (args.date > maxDateStr) {
     return {
-      error: `We can only show availability up to 14 days ahead (through ${maxDateStr}).`,
+      error: `We can only show availability up to ${windowDays} days ahead (through ${maxDateStr}).`,
       slots: [],
     };
   }
@@ -330,6 +383,186 @@ async function executeAvailableSlots(
   return { date: args.date, availability: grouped };
 }
 
+async function executeAvailableSlotsDynamic(
+  org: OrgContext,
+  args: { date: string; duration?: number; bay_name?: string; resource_type?: string }
+) {
+  const supabase = await createClient();
+
+  const today = getTodayInTimezone(org.timezone);
+  const windowDays = org.bookable_window_days || 30;
+  const maxDate = new Date(today + "T12:00:00");
+  maxDate.setDate(maxDate.getDate() + windowDays);
+  const maxDateStr = maxDate.toISOString().split("T")[0];
+
+  if (args.date < today) {
+    return { error: "That date is in the past.", slots: [] };
+  }
+  if (args.date > maxDateStr) {
+    return {
+      error: `We can only show availability up to ${windowDays} days ahead (through ${maxDateStr}).`,
+      slots: [],
+    };
+  }
+
+  // Get active bays
+  let bayQuery = supabase
+    .from("bays")
+    .select("id, name, resource_type, hourly_rate_cents")
+    .eq("org_id", org.id)
+    .eq("is_active", true);
+
+  if (args.resource_type) {
+    bayQuery = bayQuery.ilike("resource_type", `%${args.resource_type}%`);
+  }
+
+  const { data: allBays } = await bayQuery.order("sort_order").order("created_at");
+
+  if (!allBays || allBays.length === 0) {
+    return { error: "No matching facilities found.", slots: [] };
+  }
+
+  // Filter by bay_name if provided
+  const filteredBays = args.bay_name
+    ? allBays.filter((b) =>
+        b.name.toLowerCase().includes(args.bay_name!.toLowerCase())
+      )
+    : allBays;
+
+  if (filteredBays.length === 0) {
+    return { error: `No facilities matching "${args.bay_name}" found.`, slots: [] };
+  }
+
+  const bayIds = filteredBays.map((b) => b.id);
+  const dayOfWeek = new Date(args.date + "T12:00:00").getDay();
+
+  // Fetch rules, bookings, block-outs, rate overrides in parallel
+  const [rulesResult, bookingsResult, blockOutsResult, rateOverridesResult] =
+    await Promise.all([
+      supabase
+        .from("dynamic_schedule_rules")
+        .select("*")
+        .in("bay_id", bayIds)
+        .eq("day_of_week", dayOfWeek),
+      supabase
+        .from("bookings")
+        .select("bay_id, start_time, end_time")
+        .in("bay_id", bayIds)
+        .eq("date", args.date)
+        .eq("status", "confirmed"),
+      supabase
+        .from("schedule_block_outs")
+        .select("bay_id, start_time, end_time")
+        .in("bay_id", bayIds)
+        .eq("date", args.date),
+      supabase
+        .from("dynamic_rate_overrides")
+        .select("bay_id, date, start_time, end_time, hourly_rate_cents")
+        .in("bay_id", bayIds)
+        .eq("date", args.date),
+    ]);
+
+  const rules = (rulesResult.data || []) as DynamicScheduleRule[];
+  const bookings = bookingsResult.data || [];
+  const blockOuts = blockOutsResult.data || [];
+  const rateOverrides = (rateOverridesResult.data || []) as RateOverride[];
+
+  // Determine duration — use provided or default from first rule
+  const availableDurations = rules.length > 0 ? rules[0].available_durations : [60];
+  let duration = args.duration || availableDurations[0] || 60;
+
+  // Validate duration is in the allowed list
+  if (!availableDurations.includes(duration)) {
+    // Pick the closest allowed duration
+    duration = availableDurations.reduce((prev, curr) =>
+      Math.abs(curr - duration) < Math.abs(prev - duration) ? curr : prev
+    );
+  }
+
+  // Build maps
+  const baysData: BayInfo[] = filteredBays.map((b) => ({
+    id: b.id,
+    name: b.name,
+    hourly_rate_cents: b.hourly_rate_cents,
+  }));
+
+  const rulesMap = new Map<string, DynamicScheduleRule>();
+  for (const r of rules) rulesMap.set(r.bay_id, r);
+
+  const bookingsMap = new Map<string, ExistingBooking[]>();
+  for (const b of bookings) {
+    const list = bookingsMap.get(b.bay_id) || [];
+    list.push({ start_time: b.start_time, end_time: b.end_time });
+    bookingsMap.set(b.bay_id, list);
+  }
+
+  const blockOutsMap = new Map<string, BlockOut[]>();
+  for (const bo of blockOuts) {
+    const list = blockOutsMap.get(bo.bay_id) || [];
+    list.push({ start_time: bo.start_time, end_time: bo.end_time });
+    blockOutsMap.set(bo.bay_id, list);
+  }
+
+  // Get pooled availability (deduped across bays)
+  const slots = baysData.length > 1
+    ? getPooledAvailability({
+        bays: baysData,
+        rulesMap,
+        date: args.date,
+        duration,
+        timezone: org.timezone,
+        bookingsMap,
+        blockOutsMap,
+        minBookingLeadMinutes: org.min_booking_lead_minutes ?? 0,
+        rateOverrides,
+      })
+    : baysData.length === 1 && rulesMap.has(baysData[0].id)
+    ? getAvailableTimesForBay({
+        bay: baysData[0],
+        rule: rulesMap.get(baysData[0].id)!,
+        date: args.date,
+        duration,
+        timezone: org.timezone,
+        existingBookings: bookingsMap.get(baysData[0].id) || [],
+        blockOuts: blockOutsMap.get(baysData[0].id) || [],
+        minBookingLeadMinutes: org.min_booking_lead_minutes ?? 0,
+        rateOverrides,
+      })
+    : [];
+
+  if (slots.length === 0) {
+    return {
+      message: `No available times on ${args.date} for a ${duration}-minute booking.`,
+      slots: [],
+      available_durations: availableDurations,
+    };
+  }
+
+  // Format for Gemini — include ISO timestamps for create_booking
+  const formatted = slots.map((s) => ({
+    time: `${formatTimeInZone(s.start_time, org.timezone)} - ${formatTimeInZone(s.end_time, org.timezone)}`,
+    price: `$${(s.price_cents / 100).toFixed(2)}`,
+    price_cents: s.price_cents,
+    start_time: s.start_time,
+    end_time: s.end_time,
+    bay_name: s.bay_name,
+  }));
+
+  // Group by bay for display
+  const grouped: Record<string, typeof formatted> = {};
+  for (const s of formatted) {
+    if (!grouped[s.bay_name]) grouped[s.bay_name] = [];
+    grouped[s.bay_name].push(s);
+  }
+
+  return {
+    date: args.date,
+    duration_minutes: duration,
+    available_durations: availableDurations,
+    availability: grouped,
+  };
+}
+
 async function executeGetMyBookings(
   org: OrgContext,
   customerId: string | null,
@@ -390,6 +623,8 @@ async function executeCreateBooking(
     date?: string;
     bay_name?: string;
     start_time?: string;
+    end_time?: string;
+    price_cents?: number;
     notes?: string;
   },
   paymentContext: { requiresPayment: boolean; paymentMode: string; cancellationPolicyText: string | null }
@@ -406,6 +641,126 @@ async function executeCreateBooking(
     };
   }
 
+  // Route to the appropriate handler based on scheduling type
+  if (org.scheduling_type === "dynamic") {
+    return executeCreateBookingDynamic(org, customerId, args, paymentContext);
+  }
+  return executeCreateBookingSlotBased(org, customerId, args, paymentContext);
+}
+
+async function executeCreateBookingDynamic(
+  org: OrgContext,
+  customerId: string,
+  args: {
+    date?: string;
+    bay_name?: string;
+    start_time?: string;
+    end_time?: string;
+    price_cents?: number;
+    notes?: string;
+  },
+  paymentContext: { cancellationPolicyText: string | null }
+) {
+  if (!args.date || !args.bay_name || !args.start_time || !args.end_time) {
+    return {
+      error: "For dynamic scheduling, provide date, bay_name, start_time (ISO timestamp), and end_time (ISO timestamp) from the get_available_slots response.",
+    };
+  }
+
+  const supabase = await createClient();
+
+  // Find the bay by name
+  const { data: bays } = await supabase
+    .from("bays")
+    .select("id, name")
+    .eq("org_id", org.id)
+    .eq("is_active", true);
+
+  const matchedBay = bays?.find((b) =>
+    b.name.toLowerCase().includes(args.bay_name!.toLowerCase())
+  );
+
+  if (!matchedBay) {
+    return { error: `No facility matching "${args.bay_name}" found.` };
+  }
+
+  // Check if this bay is in a facility group (for consolidation)
+  const { data: membership } = await supabase
+    .from("facility_group_members")
+    .select("group_id")
+    .eq("bay_id", matchedBay.id)
+    .single();
+
+  const priceCents = args.price_cents || 0;
+
+  // Use the dynamic booking RPC
+  const { data, error } = await supabase.rpc("create_dynamic_booking", {
+    p_org_id: org.id,
+    p_customer_id: customerId,
+    p_bay_id: matchedBay.id,
+    p_date: args.date,
+    p_start_time: args.start_time,
+    p_end_time: args.end_time,
+    p_price_cents: priceCents,
+    p_notes: args.notes || null,
+  });
+
+  if (error) {
+    return { error: `Booking failed: ${error.message}` };
+  }
+
+  const confirmationCode = data?.confirmation_code || "Unknown";
+  const totalPrice = `$${(priceCents / 100).toFixed(2)}`;
+  const startFormatted = formatTimeInZone(args.start_time, org.timezone);
+  const endFormatted = formatTimeInZone(args.end_time, org.timezone);
+
+  // Fire booking notifications (non-blocking)
+  createNotification({
+    orgId: org.id,
+    recipientId: customerId,
+    recipientType: "customer",
+    type: "booking_confirmed",
+    title: "Booking Confirmed",
+    message: `${startFormatted} – ${endFormatted}, ${confirmationCode}. Total: ${totalPrice}`,
+    link: `/my-bookings?booking=${confirmationCode}`,
+    orgName: org.name,
+  }).catch(() => {});
+
+  notifyOrgAdmins(org.id, org.name, {
+    type: "booking_confirmed",
+    title: `New Booking: ${confirmationCode}`,
+    message: `Chat booking: ${startFormatted} – ${endFormatted} (${totalPrice})`,
+    link: `/admin/bookings?booking=${confirmationCode}`,
+  }).catch(() => {});
+
+  return {
+    success: true,
+    bookings: [
+      {
+        confirmation_code: confirmationCode,
+        total_price: totalPrice,
+        start_time: startFormatted,
+        end_time: endFormatted,
+        bay_name: matchedBay.name,
+      },
+    ],
+    message: `Booking confirmed! Your confirmation code is: ${confirmationCode}`,
+    policy_notice: paymentContext.cancellationPolicyText || null,
+  };
+}
+
+async function executeCreateBookingSlotBased(
+  org: OrgContext,
+  customerId: string,
+  args: {
+    slot_ids?: string[] | string;
+    date?: string;
+    bay_name?: string;
+    start_time?: string;
+    notes?: string;
+  },
+  paymentContext: { cancellationPolicyText: string | null }
+) {
   const supabase = await createClient();
 
   // Normalize slot_ids — Gemini may pass a single string instead of an array
@@ -675,7 +1030,7 @@ export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, timezone, description, address, phone, min_booking_lead_minutes")
+    .select("id, name, slug, timezone, description, address, phone, min_booking_lead_minutes, scheduling_type, bookable_window_days")
     .eq("slug", facilitySlug)
     .single();
 
@@ -722,10 +1077,59 @@ export async function POST(request: Request) {
       : "No facilities configured yet.";
 
   const today = getTodayInTimezone(org.timezone);
+  const isDynamic = (org.scheduling_type ?? "slot_based") === "dynamic";
+  const windowDays = org.bookable_window_days || (isDynamic ? 30 : 14);
+
+  // Fetch facility groups + durations for dynamic scheduling
+  let facilityGroupInfo = "";
+  let durationInfo = "";
+  if (isDynamic && bays && bays.length > 0) {
+    const bayIds = bays.map(() => ""); // We need the bay IDs, but bayList only has names
+    // Fetch groups and rules
+    const [groupsResult, membersResult, rulesResult] = await Promise.all([
+      supabase
+        .from("facility_groups")
+        .select("id, name, description")
+        .eq("org_id", org.id),
+      supabase
+        .from("facility_group_members")
+        .select("group_id, bay_id"),
+      supabase
+        .from("dynamic_schedule_rules")
+        .select("available_durations")
+        .eq("org_id", org.id)
+        .limit(1),
+    ]);
+
+    const groups = groupsResult.data || [];
+    const members = membersResult.data || [];
+    const durations = rulesResult.data?.[0]?.available_durations || [60];
+
+    if (groups.length > 0) {
+      const groupDescs = groups.map((g) => {
+        const memberCount = members.filter((m) => m.group_id === g.id).length;
+        return `- ${g.name}${g.description ? ` (${g.description})` : ""} — ${memberCount} facilities`;
+      }).join("\n");
+      facilityGroupInfo = `\nFacility groups (interchangeable bays — the system picks the best one automatically):\n${groupDescs}\n`;
+    }
+
+    durationInfo = `Available booking durations: ${durations.map((d: number) => {
+      if (d < 60) return `${d} min`;
+      if (d % 60 === 0) return `${d / 60} hour${d > 60 ? "s" : ""}`;
+      return `${Math.floor(d / 60)}h ${d % 60}m`;
+    }).join(", ")}`;
+  }
 
   const authStatus = customerId
     ? `The customer is signed in${customerName ? ` as ${customerName}` : ""}. They can book slots, view their bookings, and cancel bookings.`
     : "The customer is NOT signed in. They can browse availability but must sign in before booking, viewing bookings, or cancelling. Direct them to sign in at /auth/login if they want to perform these actions.";
+
+  const schedulingTypeInfo = isDynamic
+    ? `Scheduling type: DYNAMIC — customers choose a date, duration, and start time. Availability is computed in real-time from operating hours, existing bookings, and block-outs. When checking availability, you MUST include a duration parameter (in minutes).
+${facilityGroupInfo}${durationInfo ? `${durationInfo}\n` : ""}
+When making a booking, pass date, bay_name, start_time (ISO timestamp), end_time (ISO timestamp), and price_cents — all available in the get_available_slots response.`
+    : `Scheduling type: SLOT-BASED — admins publish fixed time slots. Customers pick from pre-defined slots.
+When making a booking, provide slot_ids from get_available_slots, or date + bay_name + start_time (12-hour format).`;
 
   const systemInstruction = `You are a friendly and helpful booking assistant for ${org.name}. You help customers find available time slots, make bookings, manage their bookings, and answer questions about the facility.
 
@@ -738,32 +1142,34 @@ Timezone: ${org.timezone}
 Available facilities:
 ${bayList}
 
+${schedulingTypeInfo}
+
 Today's date is ${today}.
-Customers can book up to 14 days ahead.
+Customers can book up to ${windowDays} days ahead.
 
 Authentication: ${authStatus}
 
 Guidelines:
-- Always use the get_available_slots tool to look up real-time availability. Never guess or make up availability.
+- Always use the get_available_slots tool to look up real-time availability. Never guess or make up availability.${isDynamic ? "\n- For get_available_slots, ALWAYS include a duration parameter. If the customer doesn't specify a duration, ask them or default to the first available duration option." : ""}
 - Use get_facility_info when the customer asks general questions about the facility or its offerings.
 - Format times in 12-hour format (e.g., "9:00 AM").
 - Format prices as dollars (e.g., "$45.00").
 - Be concise and helpful. Use short paragraphs, not walls of text.
-- If the customer asks about a date more than 14 days away, let them know you can only show the next 14 days.
-- When listing available slots, organize them clearly by facility name and time.
+- If the customer asks about a date more than ${windowDays} days away, let them know the booking window.
+- When listing available slots, organize them clearly by facility name and time.${isDynamic ? "\n- When showing dynamic availability, mention the duration being shown and that other durations are available if the customer wants to change it." : ""}
 
 Booking guidelines:
 - BEFORE calling create_booking, you MUST summarize the booking details (facility, date, time, price) and ask the customer to confirm. Only call the tool after they explicitly agree.
 - BEFORE calling cancel_booking, you MUST confirm the cancellation with the customer. Tell them which booking will be cancelled and that the action cannot be undone.
 - When a booking is created, share the confirmation code with the customer.
 - Use get_my_bookings to look up a customer's existing bookings when they ask.
-- For create_booking, you can provide EITHER slot_ids (from get_available_slots) OR date + bay_name + start_time. When confirming a booking the customer already discussed, prefer passing date, bay_name, and start_time directly — this is simpler and more reliable.
+${isDynamic ? `- For create_booking (dynamic): pass date, bay_name, start_time (ISO timestamp), end_time (ISO timestamp), and price_cents — all from the get_available_slots response. Do NOT use slot_ids for dynamic scheduling.` : `- For create_booking, you can provide EITHER slot_ids (from get_available_slots) OR date + bay_name + start_time. When confirming a booking the customer already discussed, prefer passing date, bay_name, and start_time directly — this is simpler and more reliable.`}
 ${requiresPayment ? `
 Payment policy:
 - This facility requires payment to complete a booking (mode: ${paymentMode}).
 - You CANNOT complete bookings directly in chat. Do NOT use create_booking — it will not work.
 - Instead, use the start_checkout tool to open the booking form with the correct slots pre-selected.
-- Flow: help the customer find the right time slots → confirm the details (date, bay, time, price) → when they agree, call start_checkout with the date, bay_name, and start_time. This will automatically open the booking form for them with payment entry.
+- Flow: help the customer find the right time slots → confirm the details (date, bay, time, price) → when they agree, call start_checkout with the date, bay_name, and start_time${isDynamic ? ", end_time, duration, and price_cents" : ""}. This will automatically open the booking form for them with payment entry.
 - After calling start_checkout, tell the customer something like "I've opened the booking form for you — just add your payment details and confirm!"
 ` : `
 Payment policy:
@@ -774,7 +1180,7 @@ Payment policy:
 Quick reply buttons:
 - ALWAYS call suggest_quick_replies to offer clickable buttons when the customer needs to make a choice.
 - When to use quick replies:
-  - After showing availability → offer facility names or times to pick from.
+  - After showing availability → offer facility names or times to pick from.${isDynamic ? "\n  - When asking about duration → offer available duration options (e.g., \"30 min\", \"1 hour\", \"90 min\")." : ""}
   - When asking for booking confirmation → "Confirm booking" and "No, cancel".
   - When asking for cancellation confirmation → "Yes, cancel it" and "No, keep it".
   - After a successful booking → "Show my bookings" and "Book another slot".
@@ -792,7 +1198,7 @@ Quick reply buttons:
   try {
     let finalText = "";
     let quickReplies: string[] = [];
-    let bookingAction: { date: string; bay_name: string; start_time: string; slot_ids?: string[] } | null = null;
+    let bookingAction: { date: string; bay_name: string; start_time: string; end_time?: string; duration?: number; price_cents?: number; slot_ids?: string[] } | null = null;
 
     // Tool call loop — up to 5 rounds to prevent infinite loops
     for (let i = 0; i < 5; i++) {
@@ -842,6 +1248,9 @@ Quick reply buttons:
             date: String(args.date ?? ""),
             bay_name: String(args.bay_name ?? ""),
             start_time: String(args.start_time ?? ""),
+            end_time: args.end_time ? String(args.end_time) : undefined,
+            duration: typeof args.duration === "number" ? args.duration : undefined,
+            price_cents: typeof args.price_cents === "number" ? args.price_cents : undefined,
             slot_ids: Array.isArray(args.slot_ids) ? args.slot_ids.map(String) : undefined,
           };
         }
@@ -882,7 +1291,7 @@ Quick reply buttons:
           case "get_available_slots":
             result = await executeAvailableSlots(
               org as OrgContext,
-              call.args as { date: string; bay_name?: string; resource_type?: string }
+              call.args as { date: string; duration?: number; bay_name?: string; resource_type?: string }
             );
             break;
           case "get_my_bookings":
@@ -901,6 +1310,8 @@ Quick reply buttons:
                 date?: string;
                 bay_name?: string;
                 start_time?: string;
+                end_time?: string;
+                price_cents?: number;
                 notes?: string;
               },
               paymentContext

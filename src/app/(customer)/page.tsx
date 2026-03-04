@@ -7,12 +7,9 @@ import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { SignOutButton } from "@/components/sign-out-button";
-import { OrgHeader } from "@/components/org-header";
-import { AuthModal } from "@/components/auth-modal";
 import { AvailabilityWidget } from "@/components/availability-widget";
+import { DynamicAvailabilityWidget } from "@/components/dynamic-availability-widget";
 import { AdminLoginForm } from "@/components/admin-login-form";
-import { UserCircle } from "lucide-react";
-import { NotificationBell } from "@/components/notifications/notification-bell";
 
 export default async function FacilityHomePage() {
   const slug = await getFacilitySlug();
@@ -82,7 +79,7 @@ export default async function FacilityHomePage() {
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, logo_url, cover_photo_url, timezone, min_booking_lead_minutes")
+    .select("id, name, slug, logo_url, cover_photo_url, timezone, min_booking_lead_minutes, scheduling_type, bookable_window_days")
     .eq("slug", slug)
     .single();
 
@@ -91,6 +88,8 @@ export default async function FacilityHomePage() {
   const logoUrl = org?.logo_url ?? null;
   const timezone = org?.timezone ?? "America/New_York";
   const minBookingLeadMinutes = org?.min_booking_lead_minutes ?? 15;
+  const schedulingType = org?.scheduling_type ?? "slot_based";
+  const bookableWindowDays = org?.bookable_window_days ?? 30;
 
   // Fetch active bays for the desktop availability widget
   const { data: bays } = org
@@ -133,42 +132,63 @@ export default async function FacilityHomePage() {
 
   const todayStr = getTodayInTimezone(timezone);
 
-  return (
-    <div className="flex min-h-screen flex-col">
-      {/* =========== DESKTOP LAYOUT =========== */}
-      <div className="hidden lg:flex lg:min-h-screen lg:flex-col">
-        {/* Top Navigation Bar */}
-        <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-            <OrgHeader name={orgName} logoUrl={logoUrl} />
-            <div className="flex items-center gap-3">
-              {auth ? (
-                <>
-                  <Link href="/my-bookings">
-                    <Button variant="ghost" size="sm">
-                      My Bookings
-                    </Button>
-                  </Link>
-                  <span className="text-sm text-muted-foreground">
-                    {auth.profile.email}
-                  </span>
-                  <NotificationBell userId={auth.user.id} viewAllHref="/notifications" />
-                  <Link
-                    href="/account"
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20"
-                    title="My Account"
-                  >
-                    <UserCircle className="h-5 w-5" />
-                  </Link>
-                  <SignOutButton variant="outline" size="sm" />
-                </>
-              ) : (
-                <AuthModal />
-              )}
-            </div>
-          </div>
-        </header>
+  // Fetch facility groups + members for dynamic scheduling
+  let facilityGroups: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    bays: Array<{ id: string; name: string; resource_type: string | null }>;
+  }> = [];
+  let standaloneBays: Array<{ id: string; name: string; resource_type: string | null }> = [];
+  let defaultDurations: number[] = [60];
 
+  if (org && schedulingType === "dynamic" && bays && bays.length > 0) {
+    const [groupsResult, membersResult, rulesResult] = await Promise.all([
+      supabase
+        .from("facility_groups")
+        .select("id, name, description")
+        .eq("org_id", org.id),
+      supabase
+        .from("facility_group_members")
+        .select("group_id, bay_id")
+        .in("bay_id", bays.map((b) => b.id)),
+      supabase
+        .from("dynamic_schedule_rules")
+        .select("available_durations")
+        .eq("org_id", org.id)
+        .limit(1),
+    ]);
+
+    const groups = groupsResult.data || [];
+    const members = membersResult.data || [];
+
+    // Map bays to their groups
+    const bayGroupMap = new Map<string, string>();
+    for (const m of members) {
+      bayGroupMap.set(m.bay_id, m.group_id);
+    }
+
+    // Build facility groups with their bays
+    facilityGroups = groups.map((g) => ({
+      ...g,
+      bays: bays.filter((b) => bayGroupMap.get(b.id) === g.id),
+    })).filter((g) => g.bays.length > 0);
+
+    // Standalone bays = not in any group
+    standaloneBays = bays.filter((b) => !bayGroupMap.has(b.id));
+
+    // Get default durations from first rule
+    if (rulesResult.data?.[0]?.available_durations) {
+      defaultDurations = rulesResult.data[0].available_durations;
+    }
+  }
+
+  const isDynamic = schedulingType === "dynamic";
+
+  return (
+    <div className="flex flex-1 flex-col">
+      {/* =========== DESKTOP LAYOUT =========== */}
+      <div className="hidden lg:flex lg:flex-1 lg:flex-col">
         {/* Hero Section */}
         {coverPhotoUrl ? (
           <div className="relative h-48 w-full">
@@ -209,21 +229,43 @@ export default async function FacilityHomePage() {
         <div className="flex-1 py-6">
           <div className="mx-auto max-w-6xl px-6">
             {org && bays && bays.length > 0 ? (
-              <AvailabilityWidget
-                orgId={org.id}
-                orgName={orgName}
-                timezone={timezone}
-                bays={bays}
-                todayStr={todayStr}
-                minBookingLeadMinutes={minBookingLeadMinutes}
-                facilitySlug={slug}
-                isAuthenticated={!!auth}
-                userEmail={auth?.profile.email}
-                userFullName={auth?.profile.full_name}
-                userProfileId={auth?.profile.id}
-                paymentMode={paymentMode}
-                cancellationWindowHours={cancellationWindowHours}
-              />
+              isDynamic ? (
+                <DynamicAvailabilityWidget
+                  orgId={org.id}
+                  orgName={orgName}
+                  timezone={timezone}
+                  bays={bays}
+                  facilityGroups={facilityGroups}
+                  standaloneBays={standaloneBays}
+                  defaultDurations={defaultDurations}
+                  todayStr={todayStr}
+                  minBookingLeadMinutes={minBookingLeadMinutes}
+                  bookableWindowDays={bookableWindowDays}
+                  facilitySlug={slug}
+                  isAuthenticated={!!auth}
+                  userEmail={auth?.profile.email}
+                  userFullName={auth?.profile.full_name}
+                  userProfileId={auth?.profile.id}
+                  paymentMode={paymentMode}
+                  cancellationWindowHours={cancellationWindowHours}
+                />
+              ) : (
+                <AvailabilityWidget
+                  orgId={org.id}
+                  orgName={orgName}
+                  timezone={timezone}
+                  bays={bays}
+                  todayStr={todayStr}
+                  minBookingLeadMinutes={minBookingLeadMinutes}
+                  facilitySlug={slug}
+                  isAuthenticated={!!auth}
+                  userEmail={auth?.profile.email}
+                  userFullName={auth?.profile.full_name}
+                  userProfileId={auth?.profile.id}
+                  paymentMode={paymentMode}
+                  cancellationWindowHours={cancellationWindowHours}
+                />
+              )
             ) : (
               <div className="rounded-xl border bg-card p-12 text-center">
                 <p className="text-muted-foreground">
@@ -236,7 +278,7 @@ export default async function FacilityHomePage() {
       </div>
 
       {/* =========== MOBILE LAYOUT =========== */}
-      <div className="flex min-h-screen flex-col lg:hidden">
+      <div className="flex flex-1 flex-col lg:hidden">
         {/* Cover photo hero */}
         {coverPhotoUrl && (
           <div className="relative h-64 w-full sm:h-80">
@@ -296,50 +338,39 @@ export default async function FacilityHomePage() {
             </div>
           )}
 
-          {/* Navigation / auth row */}
-          <div className="mb-6 flex items-center justify-between">
-            <div className="flex gap-3">
-              {auth ? (
-                <Link href="/my-bookings">
-                  <Button variant="outline" size="sm">
-                    My Bookings
-                  </Button>
-                </Link>
-              ) : (
-                <AuthModal />
-              )}
-            </div>
-            {auth && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {auth.profile.email}
-                </span>
-                <Link
-                  href="/account"
-                  className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20"
-                  title="My Account"
-                >
-                  <UserCircle className="h-4 w-4" />
-                </Link>
-                <SignOutButton variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground" />
-              </div>
-            )}
-          </div>
-
           {/* Mobile availability widget with embedded chat */}
           {org && bays && bays.length > 0 ? (
-            <AvailabilityWidget
-              orgId={org.id}
-              orgName={orgName}
-              timezone={timezone}
-              bays={bays}
-              todayStr={todayStr}
-              minBookingLeadMinutes={minBookingLeadMinutes}
-              facilitySlug={slug}
-              isAuthenticated={!!auth}
-              paymentMode={paymentMode}
-              cancellationWindowHours={cancellationWindowHours}
-            />
+            isDynamic ? (
+              <DynamicAvailabilityWidget
+                orgId={org.id}
+                orgName={orgName}
+                timezone={timezone}
+                bays={bays}
+                facilityGroups={facilityGroups}
+                standaloneBays={standaloneBays}
+                defaultDurations={defaultDurations}
+                todayStr={todayStr}
+                minBookingLeadMinutes={minBookingLeadMinutes}
+                bookableWindowDays={bookableWindowDays}
+                facilitySlug={slug}
+                isAuthenticated={!!auth}
+                paymentMode={paymentMode}
+                cancellationWindowHours={cancellationWindowHours}
+              />
+            ) : (
+              <AvailabilityWidget
+                orgId={org.id}
+                orgName={orgName}
+                timezone={timezone}
+                bays={bays}
+                todayStr={todayStr}
+                minBookingLeadMinutes={minBookingLeadMinutes}
+                facilitySlug={slug}
+                isAuthenticated={!!auth}
+                paymentMode={paymentMode}
+                cancellationWindowHours={cancellationWindowHours}
+              />
+            )
           ) : (
             <div className="rounded-xl border bg-card p-8 text-center">
               <p className="text-muted-foreground">

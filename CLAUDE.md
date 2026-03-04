@@ -4,6 +4,7 @@
 
 - There is no `gh` CLI available in this environment. Do not attempt to use it.
 - When creating pull requests or merge links, always provide the user with a direct GitHub URL instead (e.g., `https://github.com/oompvision/PlayBook/pull/new/<branch-name>`).
+- **CRITICAL — Database migrations**: The user does NOT have CLI access to run Supabase migrations. Whenever you create or modify a `.sql` migration file, you MUST also paste the full SQL query directly in the chat so the user can copy it into the Supabase SQL Editor. Do this EVERY time, no exceptions.
 
 ## Project Overview
 
@@ -189,7 +190,7 @@ src/
 
 ## Deployment
 
-- **Database migrations**: The user does not have direct CLI access to run Supabase migrations. When a new SQL migration is added, always provide the full SQL query in the chat so the user can run it manually in the Supabase SQL Editor.
+- See the CRITICAL database migrations note in the Environment section above.
 
 ## Stripe
 

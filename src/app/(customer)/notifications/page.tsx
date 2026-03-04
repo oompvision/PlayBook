@@ -1,11 +1,7 @@
-import { getAuthUser, ensureCustomerOrg } from "@/lib/auth";
+import { ensureCustomerOrg } from "@/lib/auth";
 import { getFacilitySlug } from "@/lib/facility";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { OrgHeader } from "@/components/org-header";
-import { SignOutButton } from "@/components/sign-out-button";
 import { CustomerNotificationsList } from "./notifications-list";
 
 export default async function CustomerNotificationsPage({
@@ -44,22 +40,9 @@ export default async function CustomerNotificationsPage({
   const { data: notifications } = await query;
 
   return (
-    <div className="min-h-screen p-8">
+    <div className="flex-1 p-8">
       <div className="mx-auto max-w-2xl">
-        <div className="flex items-center justify-between">
-          <OrgHeader name={org.name} logoUrl={org.logo_url} />
-          <div className="flex items-center gap-2">
-            <Link href="/">
-              <Button>Book a Session</Button>
-            </Link>
-            <Link href="/my-bookings">
-              <Button variant="outline">My Bookings</Button>
-            </Link>
-            <SignOutButton variant="outline" size="sm" />
-          </div>
-        </div>
-
-        <div className="mt-4">
+        <div>
           <h1 className="text-3xl font-bold tracking-tight">Notifications</h1>
           <p className="mt-2 text-muted-foreground">
             View your booking updates, reminders, and more.
