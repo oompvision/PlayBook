@@ -91,6 +91,8 @@ export default async function TemplatesPage({
     const name = formData.get("name") as string;
     const description = (formData.get("description") as string) || null;
     const locId = (formData.get("location_id") as string) || null;
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `&location=${loc}` : "";
 
     const { data: template, error } = await supabase
       .from("schedule_templates")
@@ -99,9 +101,9 @@ export default async function TemplatesPage({
       .single();
 
     if (error) {
-      redirect(`/admin/templates?error=${encodeURIComponent(error.message)}`);
+      redirect(`/admin/templates?error=${encodeURIComponent(error.message)}${locParam}`);
     }
-    redirect(`/admin/templates?edit=${template.id}&saved=true`);
+    redirect(`/admin/templates?edit=${template.id}&saved=true${locParam}`);
   }
 
   async function updateTemplate(formData: FormData) {
@@ -110,6 +112,8 @@ export default async function TemplatesPage({
     const id = formData.get("id") as string;
     const name = formData.get("name") as string;
     const description = (formData.get("description") as string) || null;
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `&location=${loc}` : "";
 
     const { error } = await supabase
       .from("schedule_templates")
@@ -118,20 +122,22 @@ export default async function TemplatesPage({
 
     if (error) {
       redirect(
-        `/admin/templates?edit=${id}&error=${encodeURIComponent(error.message)}`
+        `/admin/templates?edit=${id}&error=${encodeURIComponent(error.message)}${locParam}`
       );
     }
     revalidatePath("/admin/templates");
-    redirect(`/admin/templates?edit=${id}&saved=true`);
+    redirect(`/admin/templates?edit=${id}&saved=true${locParam}`);
   }
 
   async function deleteTemplate(formData: FormData) {
     "use server";
     const supabase = await createClient();
     const id = formData.get("id") as string;
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `?location=${loc}` : "";
     await supabase.from("schedule_templates").delete().eq("id", id);
     revalidatePath("/admin/templates");
-    redirect("/admin/templates");
+    redirect(`/admin/templates${locParam}`);
   }
 
   async function generateSlots(formData: FormData) {
@@ -140,6 +146,8 @@ export default async function TemplatesPage({
     if (!org) return;
     const supabase = await createClient();
     const templateId = formData.get("template_id") as string;
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `&location=${loc}` : "";
     const openTime = formData.get("open_time") as string;
     const closeTime = formData.get("close_time") as string;
     const durationMin =
@@ -181,13 +189,13 @@ export default async function TemplatesPage({
       const { error } = await supabase.from("template_slots").insert(slots);
       if (error) {
         redirect(
-          `/admin/templates?edit=${templateId}&error=${encodeURIComponent(error.message)}`
+          `/admin/templates?edit=${templateId}&error=${encodeURIComponent(error.message)}${locParam}`
         );
       }
     }
 
     revalidatePath("/admin/templates");
-    redirect(`/admin/templates?edit=${templateId}&saved=true`);
+    redirect(`/admin/templates?edit=${templateId}&saved=true${locParam}`);
   }
 
   const editingTemplate = params.edit
@@ -254,7 +262,7 @@ export default async function TemplatesPage({
           {templates?.map((t) => (
             <a
               key={t.id}
-              href={`/admin/templates?edit=${t.id}`}
+              href={`/admin/templates?edit=${t.id}${locationId ? `&location=${locationId}` : ""}`}
               className={`block rounded-xl border p-4 transition-colors ${
                 editingTemplate?.id === t.id
                   ? "border-blue-300 bg-blue-50/50 ring-1 ring-blue-100 dark:border-blue-700 dark:bg-blue-950/20 dark:ring-blue-900"
@@ -304,6 +312,9 @@ export default async function TemplatesPage({
               <form action={createTemplate} className="space-y-3">
                 {locationId && (
                   <input type="hidden" name="location_id" value={locationId} />
+                )}
+                {locationId && (
+                  <input type="hidden" name="location" value={locationId} />
                 )}
                 <input
                   name="name"
@@ -359,6 +370,9 @@ export default async function TemplatesPage({
                       name="id"
                       value={editingTemplate.id}
                     />
+                    {locationId && (
+                      <input type="hidden" name="location" value={locationId} />
+                    )}
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-1.5">
                         <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -397,6 +411,9 @@ export default async function TemplatesPage({
                       name="id"
                       value={editingTemplate.id}
                     />
+                    {locationId && (
+                      <input type="hidden" name="location" value={locationId} />
+                    )}
                     <button
                       type="submit"
                       className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 dark:border-gray-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
@@ -429,6 +446,9 @@ export default async function TemplatesPage({
                       name="template_id"
                       value={editingTemplate.id}
                     />
+                    {locationId && (
+                      <input type="hidden" name="location" value={locationId} />
+                    )}
                     <div className="grid gap-4 sm:grid-cols-3">
                       <div className="space-y-1.5">
                         <label className="text-xs font-medium text-gray-500 dark:text-gray-400">

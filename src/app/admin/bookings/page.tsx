@@ -295,6 +295,8 @@ export default async function BookingsListPage({
     const org = await getOrg();
     if (!org) return;
     const supabase = await createClient();
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `&location=${loc}` : "";
     const bookingId = formData.get("booking_id") as string;
 
     // Get booking details before cancelling (for notification)
@@ -313,7 +315,7 @@ export default async function BookingsListPage({
 
     if (error) {
       redirect(
-        `/admin/bookings?error=${encodeURIComponent(error.message)}`
+        `/admin/bookings?error=${encodeURIComponent(error.message)}${locParam}`
       );
     }
 
@@ -366,7 +368,7 @@ export default async function BookingsListPage({
     }
 
     revalidatePath("/admin/bookings");
-    redirect("/admin/bookings?cancelled=true");
+    redirect(`/admin/bookings?cancelled=true${locParam}`);
   }
 
   // Tab href helper — preserves search query, sets tab defaults
@@ -589,6 +591,7 @@ export default async function BookingsListPage({
             tabContext={tabContext}
             showCanceledAt={activeTab === "canceled"}
             initialFromDate={effectiveFrom}
+            locationId={locationId}
           />
         </>
       ) : (

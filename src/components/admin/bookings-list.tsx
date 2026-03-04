@@ -103,6 +103,7 @@ type Props = {
   tabContext: TabContext;
   showCanceledAt?: boolean;
   initialFromDate?: string;
+  locationId?: string | null;
 };
 
 function getCustomerDisplay(
@@ -222,6 +223,7 @@ export function AdminBookingsList({
   tabContext,
   showCanceledAt = false,
   initialFromDate = "",
+  locationId,
 }: Props) {
   const [selectedBooking, setSelectedBooking] =
     useState<BookingDetailData | null>(null);
@@ -1060,7 +1062,7 @@ export function AdminBookingsList({
         timezone={timezone}
         open={modalOpen}
         onOpenChange={handleOpenChange}
-        cancelAction={cancelAction}
+        cancelAction={locationId ? async (fd: FormData) => { fd.set("location", locationId); return cancelAction(fd); } : cancelAction}
         notice={filterNotice}
         cancellationWindowHours={cancellationWindowHours}
         paymentMode={paymentMode}

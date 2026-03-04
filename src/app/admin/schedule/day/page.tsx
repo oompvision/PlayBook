@@ -131,6 +131,8 @@ export default async function DayEditorPage({
     const templateId = formData.get("template_id") as string;
     const bayId = formData.get("bay_id") as string;
     const date = formData.get("date") as string;
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `&location=${loc}` : "";
 
     const { data: templateSlots } = await supabase
       .from("template_slots")
@@ -139,7 +141,7 @@ export default async function DayEditorPage({
 
     if (!templateSlots || templateSlots.length === 0) {
       redirect(
-        `/admin/schedule/day?date=${date}&bay=${bayId}&error=${encodeURIComponent("Template has no slots")}`
+        `/admin/schedule/day?date=${date}&bay=${bayId}&error=${encodeURIComponent("Template has no slots")}${locParam}`
       );
     }
 
@@ -155,7 +157,7 @@ export default async function DayEditorPage({
 
     if (schedError || !schedule) {
       redirect(
-        `/admin/schedule/day?date=${date}&bay=${bayId}&error=${encodeURIComponent(schedError?.message || "Failed to create schedule")}`
+        `/admin/schedule/day?date=${date}&bay=${bayId}&error=${encodeURIComponent(schedError?.message || "Failed to create schedule")}${locParam}`
       );
     }
 
@@ -195,7 +197,7 @@ export default async function DayEditorPage({
     await supabase.from("bay_schedule_slots").insert(concreteSlots);
 
     revalidatePath("/admin/schedule/day");
-    redirect(`/admin/schedule/day?date=${date}&bay=${bayId}&saved=true`);
+    redirect(`/admin/schedule/day?date=${date}&bay=${bayId}&saved=true${locParam}`);
   }
 
   async function addSlot(formData: FormData) {
@@ -209,6 +211,8 @@ export default async function DayEditorPage({
     const startTime = formData.get("start_time") as string;
     const endTime = formData.get("end_time") as string;
     const price = parseFloat(formData.get("price") as string) || 0;
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `&location=${loc}` : "";
 
     // Ensure bay_schedule exists
     let { data: schedule } = await supabase
@@ -229,7 +233,7 @@ export default async function DayEditorPage({
 
     if (!schedule) {
       redirect(
-        `/admin/schedule/day?date=${date}&bay=${bayId}&error=${encodeURIComponent("Failed to create schedule")}`
+        `/admin/schedule/day?date=${date}&bay=${bayId}&error=${encodeURIComponent("Failed to create schedule")}${locParam}`
       );
     }
 
@@ -244,12 +248,12 @@ export default async function DayEditorPage({
 
     if (error) {
       redirect(
-        `/admin/schedule/day?date=${date}&bay=${bayId}&error=${encodeURIComponent(error.message)}`
+        `/admin/schedule/day?date=${date}&bay=${bayId}&error=${encodeURIComponent(error.message)}${locParam}`
       );
     }
 
     revalidatePath("/admin/schedule/day");
-    redirect(`/admin/schedule/day?date=${date}&bay=${bayId}`);
+    redirect(`/admin/schedule/day?date=${date}&bay=${bayId}${locParam}`);
   }
 
   async function removeSlot(formData: FormData) {
@@ -258,11 +262,13 @@ export default async function DayEditorPage({
     const slotId = formData.get("slot_id") as string;
     const bayId = formData.get("bay_id") as string;
     const date = formData.get("date") as string;
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `&location=${loc}` : "";
 
     await supabase.from("bay_schedule_slots").delete().eq("id", slotId);
 
     revalidatePath("/admin/schedule/day");
-    redirect(`/admin/schedule/day?date=${date}&bay=${bayId}`);
+    redirect(`/admin/schedule/day?date=${date}&bay=${bayId}${locParam}`);
   }
 
   async function updateSlot(formData: FormData) {
@@ -273,6 +279,8 @@ export default async function DayEditorPage({
     const date = formData.get("date") as string;
     const price = parseFloat(formData.get("price") as string) || 0;
     const status = formData.get("status") as string;
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `&location=${loc}` : "";
 
     const { error } = await supabase
       .from("bay_schedule_slots")
@@ -281,12 +289,12 @@ export default async function DayEditorPage({
 
     if (error) {
       redirect(
-        `/admin/schedule/day?date=${date}&bay=${bayId}&error=${encodeURIComponent(error.message)}`
+        `/admin/schedule/day?date=${date}&bay=${bayId}&error=${encodeURIComponent(error.message)}${locParam}`
       );
     }
 
     revalidatePath("/admin/schedule/day");
-    redirect(`/admin/schedule/day?date=${date}&bay=${bayId}&saved=true`);
+    redirect(`/admin/schedule/day?date=${date}&bay=${bayId}&saved=true${locParam}`);
   }
 
   async function clearDaySchedule(formData: FormData) {
@@ -295,11 +303,13 @@ export default async function DayEditorPage({
     const scheduleId = formData.get("schedule_id") as string;
     const bayId = formData.get("bay_id") as string;
     const date = formData.get("date") as string;
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `&location=${loc}` : "";
 
     await supabase.from("bay_schedules").delete().eq("id", scheduleId);
 
     revalidatePath("/admin/schedule/day");
-    redirect(`/admin/schedule/day?date=${date}&bay=${bayId}`);
+    redirect(`/admin/schedule/day?date=${date}&bay=${bayId}${locParam}`);
   }
 
   return (
@@ -307,7 +317,7 @@ export default async function DayEditorPage({
       {/* Breadcrumb + header */}
       <div>
         <Link
-          href={`/admin/schedule?date=${date}`}
+          href={`/admin/schedule?date=${date}${locationId ? `&location=${locationId}` : ""}`}
           className="inline-flex items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-gray-700"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -386,7 +396,7 @@ export default async function DayEditorPage({
       {/* Day navigation */}
       <div className="flex items-center justify-between">
         <a
-          href={`/admin/schedule/day?date=${prevDate.toISOString().split("T")[0]}${focusedBayId ? `&bay=${focusedBayId}` : ""}`}
+          href={`/admin/schedule/day?date=${prevDate.toISOString().split("T")[0]}${focusedBayId ? `&bay=${focusedBayId}` : ""}${locationId ? `&location=${locationId}` : ""}`}
         >
           <Button variant="outline" size="sm" className="gap-1.5 rounded-lg border-gray-200">
             <ChevronLeft className="h-4 w-4" />
@@ -403,12 +413,15 @@ export default async function DayEditorPage({
           {focusedBayId && (
             <input type="hidden" name="bay" value={focusedBayId} />
           )}
+          {locationId && (
+            <input type="hidden" name="location" value={locationId} />
+          )}
           <Button type="submit" variant="outline" size="sm" className="rounded-lg border-gray-200">
             Go
           </Button>
         </form>
         <a
-          href={`/admin/schedule/day?date=${nextDate.toISOString().split("T")[0]}${focusedBayId ? `&bay=${focusedBayId}` : ""}`}
+          href={`/admin/schedule/day?date=${nextDate.toISOString().split("T")[0]}${focusedBayId ? `&bay=${focusedBayId}` : ""}${locationId ? `&location=${locationId}` : ""}`}
         >
           <Button variant="outline" size="sm" className="gap-1.5 rounded-lg border-gray-200">
             {formatShortDate(nextDate.toISOString().split("T")[0])}
@@ -464,6 +477,7 @@ export default async function DayEditorPage({
                       >
                         <input type="hidden" name="bay_id" value={bay.id} />
                         <input type="hidden" name="date" value={date} />
+                        {locationId && <input type="hidden" name="location" value={locationId} />}
                         <select
                           name="template_id"
                           required
@@ -486,6 +500,7 @@ export default async function DayEditorPage({
                         <input type="hidden" name="schedule_id" value={schedule.id} />
                         <input type="hidden" name="bay_id" value={bay.id} />
                         <input type="hidden" name="date" value={date} />
+                        {locationId && <input type="hidden" name="location" value={locationId} />}
                         <Button
                           type="submit"
                           variant="outline"
@@ -558,6 +573,7 @@ export default async function DayEditorPage({
                                       <input type="hidden" name="slot_id" value={slot.id} />
                                       <input type="hidden" name="bay_id" value={bay.id} />
                                       <input type="hidden" name="date" value={date} />
+                                      {locationId && <input type="hidden" name="location" value={locationId} />}
                                       <Input
                                         name="price"
                                         type="number"
@@ -588,6 +604,7 @@ export default async function DayEditorPage({
                                         <input type="hidden" name="slot_id" value={slot.id} />
                                         <input type="hidden" name="bay_id" value={bay.id} />
                                         <input type="hidden" name="date" value={date} />
+                                        {locationId && <input type="hidden" name="location" value={locationId} />}
                                         <Button
                                           type="submit"
                                           variant="outline"
@@ -616,6 +633,7 @@ export default async function DayEditorPage({
                     >
                       <input type="hidden" name="bay_id" value={bay.id} />
                       <input type="hidden" name="date" value={date} />
+                      {locationId && <input type="hidden" name="location" value={locationId} />}
                       <div className="space-y-1">
                         <Label className="text-xs text-gray-600">Start</Label>
                         <Input

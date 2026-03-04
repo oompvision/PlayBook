@@ -54,6 +54,8 @@ export default async function BayManagementPage({
     const org = await getOrg();
     if (!org) return;
     const supabase = await createClient();
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `&location=${loc}` : "";
 
     const name = formData.get("name") as string;
     const hourlyRate = parseFloat(formData.get("hourly_rate") as string) || 0;
@@ -84,15 +86,17 @@ export default async function BayManagementPage({
     const { error } = await supabase.from("bays").insert(insertData);
 
     if (error) {
-      redirect(`/admin/bays?error=${encodeURIComponent(error.message)}`);
+      redirect(`/admin/bays?error=${encodeURIComponent(error.message)}${locParam}`);
     }
     revalidatePath("/admin/bays");
-    redirect("/admin/bays?saved=true");
+    redirect(`/admin/bays?saved=true${locParam}`);
   }
 
   async function updateBay(formData: FormData) {
     "use server";
     const supabase = await createClient();
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `&location=${loc}` : "";
     const id = formData.get("id") as string;
     const name = formData.get("name") as string;
     const hourlyRate = parseFloat(formData.get("hourly_rate") as string) || 0;
@@ -111,11 +115,11 @@ export default async function BayManagementPage({
 
     if (error) {
       redirect(
-        `/admin/bays?edit=${id}&error=${encodeURIComponent(error.message)}`
+        `/admin/bays?edit=${id}&error=${encodeURIComponent(error.message)}${locParam}`
       );
     }
     revalidatePath("/admin/bays");
-    redirect("/admin/bays?saved=true");
+    redirect(`/admin/bays?saved=true${locParam}`);
   }
 
   async function toggleBay(formData: FormData) {
@@ -131,10 +135,12 @@ export default async function BayManagementPage({
   async function deleteBay(formData: FormData) {
     "use server";
     const supabase = await createClient();
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `?location=${loc}` : "";
     const id = formData.get("id") as string;
     await supabase.from("bays").delete().eq("id", id);
     revalidatePath("/admin/bays");
-    redirect("/admin/bays");
+    redirect(`/admin/bays${locParam}`);
   }
 
   const activeBays = bays?.filter((b) => b.is_active).length ?? 0;
@@ -191,6 +197,7 @@ export default async function BayManagementPage({
                 <div className="p-6">
                   <form action={updateBay} className="space-y-4">
                     <input type="hidden" name="id" value={bay.id} />
+                    {locationId && <input type="hidden" name="location" value={locationId} />}
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-1.5">
                         <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -246,7 +253,7 @@ export default async function BayManagementPage({
                       >
                         Save Changes
                       </button>
-                      <a href="/admin/bays">
+                      <a href={`/admin/bays${locationId ? `?location=${locationId}` : ""}`}>
                         <button
                           type="button"
                           className="inline-flex h-10 items-center rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -350,6 +357,7 @@ export default async function BayManagementPage({
                           <div className="flex items-center justify-end gap-2">
                             <form action={toggleBay}>
                               <input type="hidden" name="id" value={bay.id} />
+                              {locationId && <input type="hidden" name="location" value={locationId} />}
                               <input
                                 type="hidden"
                                 name="is_active"
@@ -369,13 +377,14 @@ export default async function BayManagementPage({
                                 )}
                               </button>
                             </form>
-                            <a href={`/admin/bays?edit=${bay.id}`}>
+                            <a href={`/admin/bays?edit=${bay.id}${locationId ? `&location=${locationId}` : ""}`}>
                               <button className="rounded-lg border border-gray-300 bg-white p-2 text-gray-500 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:bg-gray-800">
                                 <Pencil className="h-4 w-4" />
                               </button>
                             </a>
                             <form action={deleteBay}>
                               <input type="hidden" name="id" value={bay.id} />
+                              {locationId && <input type="hidden" name="location" value={locationId} />}
                               <button
                                 type="submit"
                                 className="rounded-lg border border-gray-300 bg-white p-2 text-red-500 shadow-sm transition-colors hover:bg-red-50 dark:border-gray-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
@@ -474,6 +483,7 @@ export default async function BayManagementPage({
           <div className="p-6">
             <form action={createBay} className="space-y-4">
               <input type="hidden" name="location_id" value={locationId || ""} />
+              {locationId && <input type="hidden" name="location" value={locationId} />}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
