@@ -3,7 +3,7 @@ import { getAuthUser, ensureCustomerOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getTodayInTimezone } from "@/lib/utils";
-import { resolveLocationId, getOrgLocations } from "@/lib/location";
+import { resolveLocationId, getOrgLocations, isPreferredLocationDeactivated } from "@/lib/location";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -106,6 +106,12 @@ export default async function FacilityHomePage({
   const locations = org && locationsEnabled
     ? await getOrgLocations(org.id)
     : [];
+
+  // Check if user's preferred location was deactivated
+  const showLocationDeactivatedBanner =
+    org && locationsEnabled && auth
+      ? await isPreferredLocationDeactivated(org.id, auth.user.id)
+      : false;
 
   // Fetch active bays for the desktop availability widget (filtered by location)
   let baysQuery = org
@@ -254,6 +260,20 @@ export default async function FacilityHomePage({
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
                 Browse availability and book your session
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Deactivated location banner */}
+        {showLocationDeactivatedBanner && (
+          <div className="border-b bg-amber-50 dark:bg-amber-900/20">
+            <div className="mx-auto max-w-6xl px-6 py-3">
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                Your default location has been deactivated.{" "}
+                <Link href="/account" className="font-medium underline">
+                  Choose a new default location
+                </Link>
               </p>
             </div>
           </div>
