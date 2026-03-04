@@ -7,6 +7,7 @@ import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminBackdrop } from "@/components/admin/admin-backdrop";
 import { resolveLocationId, getOrgLocations } from "@/lib/location";
+import { LocationUrlSync } from "@/components/admin/location-url-sync";
 
 export default async function AdminLayout({
   children,
@@ -70,6 +71,9 @@ export default async function AdminLayout({
             locations={locations}
             activeLocationId={activeLocationId}
           />
+          {org.locations_enabled && activeLocationId && (
+            <LocationUrlSync activeLocationId={activeLocationId} />
+          )}
           <main className="p-4 md:p-6">{children}</main>
         </div>
       </div>

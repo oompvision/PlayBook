@@ -26,7 +26,10 @@ export function LocationSwitcher({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const activeLocation = locations.find((l) => l.id === activeLocationId);
+  // Read location from URL first — layout props go stale on client navigations
+  const urlLocationId = searchParams.get("location");
+  const effectiveLocationId = urlLocationId || activeLocationId;
+  const activeLocation = locations.find((l) => l.id === effectiveLocationId);
 
   function handleSwitch(locationId: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -53,7 +56,7 @@ export function LocationSwitcher({
             key={loc.id}
             onClick={() => handleSwitch(loc.id)}
             className={
-              loc.id === activeLocationId
+              loc.id === effectiveLocationId
                 ? "bg-gray-100 font-medium"
                 : "cursor-pointer"
             }

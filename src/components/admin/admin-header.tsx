@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useSidebar } from "@/context/sidebar-context";
 import { createClient } from "@/lib/supabase/client";
@@ -55,6 +55,13 @@ export function AdminHeader({
   const { isMobileOpen, toggleMobileSidebar } = useSidebar();
   const searchRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const locationId = searchParams.get("location");
+  const withLocation = (href: string) => {
+    if (!locationId) return href;
+    return `${href}?location=${locationId}`;
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -124,7 +131,7 @@ export function AdminHeader({
       <div className="flex items-center gap-2">
         {/* Notifications */}
         {userId && (
-          <NotificationBell userId={userId} viewAllHref="/admin/notifications" />
+          <NotificationBell userId={userId} viewAllHref={withLocation("/admin/notifications")} />
         )}
 
         {/* User dropdown */}
@@ -146,19 +153,19 @@ export function AdminHeader({
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link href="/admin/profile" className="cursor-pointer">
+              <Link href={withLocation("/admin/profile")} className="cursor-pointer">
                 <User className="mr-2 h-4 w-4" />
                 Profile
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href="/admin/notifications" className="cursor-pointer">
+              <Link href={withLocation("/admin/notifications")} className="cursor-pointer">
                 <BellRing className="mr-2 h-4 w-4" />
                 Notifications
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href="/admin/help" className="cursor-pointer">
+              <Link href={withLocation("/admin/help")} className="cursor-pointer">
                 <HelpCircle className="mr-2 h-4 w-4" />
                 Help
               </Link>
