@@ -391,6 +391,7 @@ export default async function FacilityHomePage({
                   bays={bays}
                   todayStr={todayStr}
                   minBookingLeadMinutes={minBookingLeadMinutes}
+                  bookableWindowDays={membershipContext.effectiveWindowDays}
                   facilitySlug={slug}
                   isAuthenticated={!!auth}
                   userEmail={auth?.profile.email}
@@ -507,6 +508,7 @@ export default async function FacilityHomePage({
                 bays={bays}
                 todayStr={todayStr}
                 minBookingLeadMinutes={minBookingLeadMinutes}
+                bookableWindowDays={membershipContext.effectiveWindowDays}
                 facilitySlug={slug}
                 isAuthenticated={!!auth}
                 paymentMode={paymentMode}
