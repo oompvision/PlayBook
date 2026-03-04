@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { redirect } from "next/navigation";
 import { MembershipPage } from "@/components/membership-page";
+import { stripe } from "@/lib/stripe";
 
 export default async function MembershipRoute({
   searchParams: searchParamsPromise,
@@ -43,6 +44,67 @@ export default async function MembershipRoute({
 
   // Check auth status
   const auth = await getAuthUser();
+
+  // If returning from Stripe checkout with session_id, verify and upsert membership
+  // immediately so the user sees their status without waiting for the async webhook.
+  if (auth && searchParams.success === "true" && searchParams.session_id) {
+    const serviceClient = createServiceClient();
+    try {
+      // Get the connected Stripe account for this org
+      const { data: paymentSettings } = await serviceClient
+        .from("org_payment_settings")
+        .select("stripe_account_id")
+        .eq("org_id", org.id)
+        .single();
+
+      if (paymentSettings?.stripe_account_id) {
+        const session = await stripe.checkout.sessions.retrieve(
+          searchParams.session_id,
+          { expand: ["subscription"] },
+          { stripeAccount: paymentSettings.stripe_account_id }
+        );
+
+        if (
+          session.mode === "subscription" &&
+          session.subscription &&
+          session.status === "complete"
+        ) {
+          const sub =
+            typeof session.subscription === "string"
+              ? await stripe.subscriptions.retrieve(
+                  session.subscription,
+                  { expand: ["items.data"] },
+                  { stripeAccount: paymentSettings.stripe_account_id }
+                )
+              : session.subscription;
+
+          const firstItem = sub.items?.data?.[0];
+          const periodEndTs = firstItem?.current_period_end;
+          const periodEndIso = periodEndTs
+            ? new Date(periodEndTs * 1000).toISOString()
+            : null;
+
+          await serviceClient.from("user_memberships").upsert(
+            {
+              org_id: org.id,
+              user_id: auth.user.id,
+              tier_id: tier.id,
+              status: "active",
+              source: "stripe",
+              stripe_subscription_id: sub.id,
+              stripe_customer_id: session.customer as string,
+              current_period_end: periodEndIso,
+              cancelled_at: null,
+            },
+            { onConflict: "org_id,user_id" }
+          );
+        }
+      }
+    } catch (err) {
+      // Non-fatal — the webhook will handle it as a fallback
+      console.error("[membership] Session verification failed:", err);
+    }
+  }
 
   // Fetch user's membership if authenticated
   let membership: {
