@@ -7,6 +7,7 @@ import { useSidebar } from "@/context/sidebar-context";
 import { createClient } from "@/lib/supabase/client";
 import { Menu, X, Search, User, HelpCircle, BellRing, LogOut } from "lucide-react";
 import { NotificationBell } from "@/components/notifications/notification-bell";
+import { LocationSwitcher } from "@/components/location-switcher";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,7 +33,25 @@ export type AdminHeaderUser = {
   fullName: string | null;
 };
 
-export function AdminHeader({ user, userId }: { user?: AdminHeaderUser; userId?: string }) {
+type LocationInfo = {
+  id: string;
+  name: string;
+  is_default: boolean;
+};
+
+export function AdminHeader({
+  user,
+  userId,
+  locationsEnabled,
+  locations,
+  activeLocationId,
+}: {
+  user?: AdminHeaderUser;
+  userId?: string;
+  locationsEnabled?: boolean;
+  locations?: LocationInfo[];
+  activeLocationId?: string | null;
+}) {
   const { isMobileOpen, toggleMobileSidebar } = useSidebar();
   const searchRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -73,6 +92,14 @@ export function AdminHeader({ user, userId }: { user?: AdminHeaderUser; userId?:
           <Menu className="h-5 w-5" />
         )}
       </button>
+
+      {/* Location switcher */}
+      {locationsEnabled && locations && locations.length > 1 && activeLocationId && (
+        <LocationSwitcher
+          locations={locations}
+          activeLocationId={activeLocationId}
+        />
+      )}
 
       {/* Search bar */}
       <div className="hidden flex-1 lg:block">

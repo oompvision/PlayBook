@@ -6,20 +6,25 @@ import { SidebarProvider } from "@/context/sidebar-context";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminBackdrop } from "@/components/admin/admin-backdrop";
+import { resolveLocationId, getOrgLocations } from "@/lib/location";
 
 export default async function AdminLayout({
   children,
+  searchParams: searchParamsPromise,
 }: {
   children: React.ReactNode;
+  searchParams?: Promise<{ [key: string]: string | undefined }>;
 }) {
   const slug = await getFacilitySlug();
   if (!slug) redirect("/");
+
+  const searchParams = searchParamsPromise ? await searchParamsPromise : {};
 
   // Resolve slug to org — required to validate admin belongs to this org
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, scheduling_type")
+    .select("id, scheduling_type, locations_enabled")
     .eq("slug", slug)
     .single();
 
@@ -42,6 +47,16 @@ export default async function AdminLayout({
     }
   }
 
+  // Resolve location context
+  const locations = org.locations_enabled
+    ? await getOrgLocations(org.id)
+    : [];
+  const activeLocationId = await resolveLocationId(
+    org.id,
+    searchParams.location,
+    auth.user.id
+  );
+
   return (
     <SidebarProvider>
       <div className="min-h-screen bg-gray-50">
@@ -51,6 +66,9 @@ export default async function AdminLayout({
           <AdminHeader
             user={{ email: auth.user.email, fullName: auth.profile.full_name }}
             userId={auth.user.id}
+            locationsEnabled={org.locations_enabled}
+            locations={locations}
+            activeLocationId={activeLocationId}
           />
           <main className="p-4 md:p-6">{children}</main>
         </div>

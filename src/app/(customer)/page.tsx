@@ -3,6 +3,7 @@ import { getAuthUser, ensureCustomerOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getTodayInTimezone } from "@/lib/utils";
+import { resolveLocationId, getOrgLocations } from "@/lib/location";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,11 @@ import { AvailabilityWidget } from "@/components/availability-widget";
 import { DynamicAvailabilityWidget } from "@/components/dynamic-availability-widget";
 import { AdminLoginForm } from "@/components/admin-login-form";
 
-export default async function FacilityHomePage() {
+export default async function FacilityHomePage({
+  searchParams: searchParamsPromise,
+}: {
+  searchParams?: Promise<{ [key: string]: string | undefined }>;
+}) {
   const slug = await getFacilitySlug();
   const auth = await getAuthUser();
 
@@ -75,11 +80,13 @@ export default async function FacilityHomePage() {
     );
   }
 
+  const searchParams = searchParamsPromise ? await searchParamsPromise : {};
+
   // Fetch org details for the facility landing page
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, logo_url, cover_photo_url, timezone, min_booking_lead_minutes, scheduling_type, bookable_window_days")
+    .select("id, name, slug, logo_url, cover_photo_url, timezone, min_booking_lead_minutes, scheduling_type, bookable_window_days, locations_enabled")
     .eq("slug", slug)
     .single();
 
@@ -90,16 +97,31 @@ export default async function FacilityHomePage() {
   const minBookingLeadMinutes = org?.min_booking_lead_minutes ?? 15;
   const schedulingType = org?.scheduling_type ?? "slot_based";
   const bookableWindowDays = org?.bookable_window_days ?? 30;
+  const locationsEnabled = org?.locations_enabled ?? false;
 
-  // Fetch active bays for the desktop availability widget
-  const { data: bays } = org
-    ? await supabase
+  // Resolve location context
+  const activeLocationId = org
+    ? await resolveLocationId(org.id, searchParams.location, auth?.user.id)
+    : null;
+  const locations = org && locationsEnabled
+    ? await getOrgLocations(org.id)
+    : [];
+
+  // Fetch active bays for the desktop availability widget (filtered by location)
+  let baysQuery = org
+    ? supabase
         .from("bays")
         .select("id, name, resource_type")
         .eq("org_id", org.id)
         .eq("is_active", true)
-        .order("sort_order")
-        .order("created_at")
+    : null;
+
+  if (baysQuery && activeLocationId) {
+    baysQuery = baysQuery.eq("location_id", activeLocationId);
+  }
+
+  const { data: bays } = baysQuery
+    ? await baysQuery.order("sort_order").order("created_at")
     : { data: null };
 
   // Link customer to org on first visit (replaces logic from removed /book/confirm page)
@@ -143,20 +165,32 @@ export default async function FacilityHomePage() {
   let defaultDurations: number[] = [60];
 
   if (org && schedulingType === "dynamic" && bays && bays.length > 0) {
+    let groupsQuery = supabase
+      .from("facility_groups")
+      .select("id, name, description")
+      .eq("org_id", org.id);
+
+    if (activeLocationId) {
+      groupsQuery = groupsQuery.eq("location_id", activeLocationId);
+    }
+
+    let rulesQuery = supabase
+      .from("dynamic_schedule_rules")
+      .select("available_durations")
+      .eq("org_id", org.id)
+      .limit(1);
+
+    if (activeLocationId) {
+      rulesQuery = rulesQuery.eq("location_id", activeLocationId);
+    }
+
     const [groupsResult, membersResult, rulesResult] = await Promise.all([
-      supabase
-        .from("facility_groups")
-        .select("id, name, description")
-        .eq("org_id", org.id),
+      groupsQuery,
       supabase
         .from("facility_group_members")
         .select("group_id, bay_id")
         .in("bay_id", bays.map((b) => b.id)),
-      supabase
-        .from("dynamic_schedule_rules")
-        .select("available_durations")
-        .eq("org_id", org.id)
-        .limit(1),
+      rulesQuery,
     ]);
 
     const groups = groupsResult.data || [];
@@ -248,6 +282,9 @@ export default async function FacilityHomePage() {
                   userProfileId={auth?.profile.id}
                   paymentMode={paymentMode}
                   cancellationWindowHours={cancellationWindowHours}
+                  locationId={activeLocationId}
+                  locations={locations}
+                  locationsEnabled={locationsEnabled}
                 />
               ) : (
                 <AvailabilityWidget
@@ -264,6 +301,9 @@ export default async function FacilityHomePage() {
                   userProfileId={auth?.profile.id}
                   paymentMode={paymentMode}
                   cancellationWindowHours={cancellationWindowHours}
+                  locationId={activeLocationId}
+                  locations={locations}
+                  locationsEnabled={locationsEnabled}
                 />
               )
             ) : (
@@ -356,6 +396,9 @@ export default async function FacilityHomePage() {
                 isAuthenticated={!!auth}
                 paymentMode={paymentMode}
                 cancellationWindowHours={cancellationWindowHours}
+                locationId={activeLocationId}
+                locations={locations}
+                locationsEnabled={locationsEnabled}
               />
             ) : (
               <AvailabilityWidget
@@ -369,6 +412,9 @@ export default async function FacilityHomePage() {
                 isAuthenticated={!!auth}
                 paymentMode={paymentMode}
                 cancellationWindowHours={cancellationWindowHours}
+                locationId={activeLocationId}
+                locations={locations}
+                locationsEnabled={locationsEnabled}
               />
             )
           ) : (

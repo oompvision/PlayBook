@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { org_id, bay_id, group_id, date, start_time, end_time, price_cents, notes } =
+  const { org_id, bay_id, group_id, date, start_time, end_time, price_cents, notes, location_id } =
     body;
 
   if (!org_id || !date || !start_time || !end_time || price_cents == null) {
@@ -159,6 +159,7 @@ export async function POST(request: NextRequest) {
     p_end_time: end_time,
     p_price_cents: price_cents,
     p_notes: notes || null,
+    p_location_id: location_id || null,
   });
 
   if (error) {
