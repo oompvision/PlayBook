@@ -813,7 +813,7 @@ export function AvailabilityWidget({
       const res = await fetch("/api/stripe/create-checkout-intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slot_ids: slotIdsArray }),
+        body: JSON.stringify({ slot_ids: slotIdsArray, location_id: locationId || null }),
       });
 
       if (!res.ok) {
