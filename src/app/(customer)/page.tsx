@@ -160,6 +160,82 @@ export default async function FacilityHomePage({
 
   const todayStr = getTodayInTimezone(timezone);
 
+  // Fetch membership context for booking integration
+  let membershipContext: {
+    isMember: boolean;
+    effectiveWindowDays: number;
+    guestWindowDays: number;
+    memberWindowDays: number;
+    discountType: "flat" | "percent" | null;
+    discountValue: number;
+    tierName: string | null;
+    membershipEnabled: boolean;
+  } = {
+    isMember: false,
+    effectiveWindowDays: bookableWindowDays,
+    guestWindowDays: bookableWindowDays,
+    memberWindowDays: bookableWindowDays,
+    discountType: null,
+    discountValue: 0,
+    tierName: null,
+    membershipEnabled: false,
+  };
+
+  if (org) {
+    const serviceClient = createServiceClient();
+    const { data: orgMembership } = await serviceClient
+      .from("organizations")
+      .select("membership_tiers_enabled, guest_booking_window_days, member_booking_window_days")
+      .eq("id", org.id)
+      .single();
+
+    if (orgMembership?.membership_tiers_enabled) {
+      const guestWindow = orgMembership.guest_booking_window_days ?? bookableWindowDays;
+      const memberWindow = orgMembership.member_booking_window_days ?? bookableWindowDays;
+
+      // Fetch tier for discount info
+      const { data: tier } = await serviceClient
+        .from("membership_tiers")
+        .select("name, discount_type, discount_value")
+        .eq("org_id", org.id)
+        .single();
+
+      let isMember = false;
+      if (auth) {
+        const { data: membership } = await serviceClient
+          .from("user_memberships")
+          .select("status, current_period_end, expires_at")
+          .eq("org_id", org.id)
+          .eq("user_id", auth.user.id)
+          .single();
+
+        if (membership) {
+          const now = new Date();
+          isMember = !!(
+            (membership.status === "active" &&
+              (!membership.current_period_end || new Date(membership.current_period_end) > now)) ||
+            (membership.status === "admin_granted" &&
+              (!membership.expires_at || new Date(membership.expires_at) > now)) ||
+            (membership.status === "cancelled" &&
+              membership.current_period_end &&
+              new Date(membership.current_period_end) > now)
+          );
+        }
+      }
+
+      membershipContext = {
+        isMember,
+        effectiveWindowDays: isMember ? memberWindow : guestWindow,
+        guestWindowDays: guestWindow,
+        memberWindowDays: memberWindow,
+        discountType: tier ? (tier.discount_type as "flat" | "percent") : null,
+        discountValue: tier ? Number(tier.discount_value) : 0,
+        tierName: tier?.name ?? null,
+        membershipEnabled: true,
+      };
+    }
+  }
+
   // Fetch facility groups + members for dynamic scheduling
   let facilityGroups: Array<{
     id: string;
@@ -294,7 +370,7 @@ export default async function FacilityHomePage({
                   defaultDurations={defaultDurations}
                   todayStr={todayStr}
                   minBookingLeadMinutes={minBookingLeadMinutes}
-                  bookableWindowDays={bookableWindowDays}
+                  bookableWindowDays={membershipContext.effectiveWindowDays}
                   facilitySlug={slug}
                   isAuthenticated={!!auth}
                   userEmail={auth?.profile.email}
@@ -305,6 +381,7 @@ export default async function FacilityHomePage({
                   locationId={activeLocationId}
                   locations={locations}
                   locationsEnabled={locationsEnabled}
+                  membership={membershipContext}
                 />
               ) : (
                 <AvailabilityWidget
@@ -324,6 +401,7 @@ export default async function FacilityHomePage({
                   locationId={activeLocationId}
                   locations={locations}
                   locationsEnabled={locationsEnabled}
+                  membership={membershipContext}
                 />
               )
             ) : (
@@ -411,7 +489,7 @@ export default async function FacilityHomePage({
                 defaultDurations={defaultDurations}
                 todayStr={todayStr}
                 minBookingLeadMinutes={minBookingLeadMinutes}
-                bookableWindowDays={bookableWindowDays}
+                bookableWindowDays={membershipContext.effectiveWindowDays}
                 facilitySlug={slug}
                 isAuthenticated={!!auth}
                 paymentMode={paymentMode}
@@ -419,6 +497,7 @@ export default async function FacilityHomePage({
                 locationId={activeLocationId}
                 locations={locations}
                 locationsEnabled={locationsEnabled}
+                membership={membershipContext}
               />
             ) : (
               <AvailabilityWidget
@@ -435,6 +514,7 @@ export default async function FacilityHomePage({
                 locationId={activeLocationId}
                 locations={locations}
                 locationsEnabled={locationsEnabled}
+                membership={membershipContext}
               />
             )
           ) : (

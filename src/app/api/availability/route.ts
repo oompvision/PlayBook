@@ -1,4 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
+import { getAuthUser } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import {
   getAvailableTimesForBay,
@@ -62,7 +64,7 @@ export async function GET(request: NextRequest) {
   const { data: org, error: orgError } = await supabase
     .from("organizations")
     .select(
-      "id, timezone, bookable_window_days, min_booking_lead_minutes, scheduling_type"
+      "id, timezone, bookable_window_days, min_booking_lead_minutes, scheduling_type, membership_tiers_enabled"
     )
     .eq("id", orgId)
     .single();
@@ -81,7 +83,23 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Check bookable_window_days
+  // Determine effective bookable window (membership-aware)
+  let effectiveWindowDays = org.bookable_window_days || 30;
+  if (org.membership_tiers_enabled) {
+    const auth = await getAuthUser();
+    if (auth) {
+      const serviceClient = createServiceClient();
+      const { data: windowData } = await serviceClient.rpc(
+        "get_effective_bookable_window",
+        { p_org_id: orgId, p_user_id: auth.user.id }
+      );
+      if (windowData != null) {
+        effectiveWindowDays = windowData;
+      }
+    }
+  }
+
+  // Check bookable window
   const today = new Date(
     new Intl.DateTimeFormat("en-CA", { timeZone: org.timezone }).format(
       new Date()
@@ -89,7 +107,7 @@ export async function GET(request: NextRequest) {
   );
   const requestedDate = new Date(date + "T12:00:00");
   const maxDate = new Date(today);
-  maxDate.setDate(maxDate.getDate() + (org.bookable_window_days || 30));
+  maxDate.setDate(maxDate.getDate() + effectiveWindowDays);
 
   if (requestedDate < today) {
     return NextResponse.json(
@@ -99,7 +117,7 @@ export async function GET(request: NextRequest) {
   }
   if (requestedDate > maxDate) {
     return NextResponse.json(
-      { error: `Cannot book more than ${org.bookable_window_days} days ahead` },
+      { error: `Cannot book more than ${effectiveWindowDays} days ahead` },
       { status: 400 }
     );
   }

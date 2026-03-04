@@ -49,6 +49,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   Sparkles,
+  Crown,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -101,6 +102,17 @@ type CheckoutIntent = {
   cancellation_policy_text: string;
 };
 
+type MembershipContext = {
+  isMember: boolean;
+  effectiveWindowDays: number;
+  guestWindowDays: number;
+  memberWindowDays: number;
+  discountType: "flat" | "percent" | null;
+  discountValue: number;
+  tierName: string | null;
+  membershipEnabled: boolean;
+};
+
 type DynamicAvailabilityWidgetProps = {
   orgId: string;
   orgName: string;
@@ -122,6 +134,7 @@ type DynamicAvailabilityWidgetProps = {
   locationId?: string | null;
   locations?: Array<{ id: string; name: string; is_default: boolean; address: string | null }>;
   locationsEnabled?: boolean;
+  membership?: MembershipContext;
 };
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -211,7 +224,27 @@ export function DynamicAvailabilityWidget(
     locationId,
     locations = [],
     locationsEnabled = false,
+    membership,
   } = props;
+
+  // Membership discount calculation
+  const memberDiscount = membership?.isMember && membership.discountType && membership.discountValue
+    ? membership
+    : null;
+
+  function calcDiscount(priceCents: number): { discountCents: number; finalCents: number; label: string } {
+    if (!memberDiscount) return { discountCents: 0, finalCents: priceCents, label: "" };
+    let discountCents: number;
+    let label: string;
+    if (memberDiscount.discountType === "percent") {
+      discountCents = Math.round(priceCents * memberDiscount.discountValue / 100);
+      label = `${memberDiscount.discountValue}% member discount`;
+    } else {
+      discountCents = Math.min(memberDiscount.discountValue * 100, priceCents);
+      label = `$${memberDiscount.discountValue.toFixed(2)} member discount`;
+    }
+    return { discountCents, finalCents: priceCents - discountCents, label };
+  }
 
   const router = useRouter();
   const requiresPayment = paymentMode !== "none";
@@ -687,6 +720,8 @@ export function DynamicAvailabilityWidget(
     }
 
     try {
+      const { discountCents, label: discountLabel } = calcDiscount(selectedSlot.price_cents);
+
       const res = await fetch("/api/bookings/dynamic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -700,6 +735,8 @@ export function DynamicAvailabilityWidget(
           price_cents: selectedSlot.price_cents,
           notes: bookingNotes || null,
           location_id: locationId || undefined,
+          discount_cents: discountCents || undefined,
+          discount_description: discountLabel || undefined,
         }),
       });
 
@@ -1493,12 +1530,34 @@ export function DynamicAvailabilityWidget(
                               <span className="text-muted-foreground">Facility</span>
                               <span className="font-medium">{selectedSlot.bay_name}</span>
                             </div>
-                            <div className="flex justify-between border-t pt-2 text-sm">
-                              <span className="font-medium">Total</span>
-                              <span className="text-lg font-bold">
-                                ${(selectedSlot.price_cents / 100).toFixed(2)}
-                              </span>
-                            </div>
+                            {(() => {
+                              const disc = calcDiscount(selectedSlot.price_cents);
+                              return (
+                                <>
+                                  {disc.discountCents > 0 && (
+                                    <>
+                                      <div className="flex justify-between border-t pt-2 text-sm text-muted-foreground">
+                                        <span>Subtotal</span>
+                                        <span>${(selectedSlot.price_cents / 100).toFixed(2)}</span>
+                                      </div>
+                                      <div className="flex justify-between text-sm text-teal-600 dark:text-teal-400">
+                                        <span className="flex items-center gap-1">
+                                          <Crown className="h-3.5 w-3.5" />
+                                          {disc.label}
+                                        </span>
+                                        <span>-${(disc.discountCents / 100).toFixed(2)}</span>
+                                      </div>
+                                    </>
+                                  )}
+                                  <div className={`flex justify-between text-sm ${disc.discountCents > 0 ? "" : "border-t pt-2"}`}>
+                                    <span className="font-medium">Total</span>
+                                    <span className="text-lg font-bold">
+                                      ${(disc.finalCents / 100).toFixed(2)}
+                                    </span>
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
 
                           {/* Notes */}
@@ -1519,6 +1578,26 @@ export function DynamicAvailabilityWidget(
                           <p className="text-sm text-muted-foreground">
                             Booking as {userFullName || userEmail}
                           </p>
+
+                          {/* Guest upsell nudge */}
+                          {membership?.membershipEnabled && !membership.isMember && isAuthenticated && (
+                            <a
+                              href="/membership"
+                              className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:hover:bg-amber-950/50"
+                            >
+                              <Crown className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                              <span className="text-amber-800 dark:text-amber-200">
+                                <span className="font-medium">Join {membership.tierName || "Membership"}</span>
+                                {" — "}
+                                {membership.discountType === "percent"
+                                  ? `Save ${membership.discountValue}% on every booking`
+                                  : membership.discountValue > 0
+                                    ? `Save $${membership.discountValue.toFixed(2)} on every booking`
+                                    : `Book up to ${membership.memberWindowDays} days ahead`}
+                              </span>
+                              <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                            </a>
+                          )}
 
                           {/* Continue button */}
                           <Button
@@ -1709,12 +1788,28 @@ export function DynamicAvailabilityWidget(
                               </div>
                             )}
 
-                            <div className="flex items-center justify-between border-t pt-3 text-sm font-bold">
-                              <span>Total</span>
-                              <span>
-                                ${(selectedSlot.price_cents / 100).toFixed(2)}
-                              </span>
-                            </div>
+                            {(() => {
+                              const disc = calcDiscount(selectedSlot.price_cents);
+                              return (
+                                <>
+                                  {disc.discountCents > 0 && (
+                                    <div className="flex items-center justify-between border-t pt-3 text-sm text-teal-600 dark:text-teal-400">
+                                      <span className="flex items-center gap-1">
+                                        <Crown className="h-3.5 w-3.5" />
+                                        {disc.label}
+                                      </span>
+                                      <span>-${(disc.discountCents / 100).toFixed(2)}</span>
+                                    </div>
+                                  )}
+                                  <div className={`flex items-center justify-between text-sm font-bold ${disc.discountCents > 0 ? "" : "border-t pt-3"}`}>
+                                    <span>Total</span>
+                                    <span>
+                                      ${(disc.finalCents / 100).toFixed(2)}
+                                    </span>
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
 
                           {/* Notes (if provided) */}
@@ -1804,7 +1899,7 @@ export function DynamicAvailabilityWidget(
                                     : "Booking..."}
                                 </>
                               ) : requiresPayment && paymentMode === "charge_upfront" ? (
-                                `Confirm & Pay $${(selectedSlot.price_cents / 100).toFixed(2)}`
+                                `Confirm & Pay $${(calcDiscount(selectedSlot.price_cents).finalCents / 100).toFixed(2)}`
                               ) : requiresPayment ? (
                                 "Confirm & Save Card"
                               ) : (
