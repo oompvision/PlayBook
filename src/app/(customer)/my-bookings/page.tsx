@@ -135,7 +135,26 @@ export default async function MyBookingsPage({
   }
 
   // Fetch user's event registrations
-  const { data: eventRegistrations } = await supabase
+  type EventReg = {
+    id: string;
+    event_id: string;
+    status: string;
+    waitlist_position: number | null;
+    payment_status: string | null;
+    registered_at: string;
+    cancelled_at: string | null;
+    promoted_at: string | null;
+    events: {
+      name: string;
+      start_time: string;
+      end_time: string;
+      price_cents: number;
+      capacity: number;
+      status: string;
+    } | null;
+  };
+
+  const { data: rawEventRegistrations } = await supabase
     .from("event_registrations")
     .select(`
       id,
@@ -146,7 +165,7 @@ export default async function MyBookingsPage({
       registered_at,
       cancelled_at,
       promoted_at,
-      events:event_id!inner (
+      events:event_id (
         name,
         start_time,
         end_time,
@@ -159,12 +178,14 @@ export default async function MyBookingsPage({
     .eq("user_id", auth.profile.id)
     .order("registered_at", { ascending: false });
 
-  const activeEventRegs = eventRegistrations?.filter(
+  const eventRegistrations = (rawEventRegistrations ?? []) as unknown as EventReg[];
+
+  const activeEventRegs = eventRegistrations.filter(
     (r) => r.status !== "cancelled" && r.events
-  ) ?? [];
-  const pastEventRegs = eventRegistrations?.filter(
+  );
+  const pastEventRegs = eventRegistrations.filter(
     (r) => r.status === "cancelled" || (r.events && new Date(r.events.end_time) < new Date())
-  ) ?? [];
+  );
 
   // Split into upcoming+active vs past+cancelled (using visual status)
   const upcoming = enrichedBookings.filter((b) => {
