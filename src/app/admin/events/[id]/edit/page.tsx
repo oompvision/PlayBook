@@ -88,8 +88,15 @@ export default async function EditEventPage({
     );
 
     // Build timestamptz from date + time
+    // If end time <= start time, assume event crosses midnight → bump end date +1
     const startTimestamp = `${date}T${startTime}:00`;
-    const endTimestamp = `${date}T${endTime}:00`;
+    let endDate = date;
+    if (endTime <= startTime) {
+      const d = new Date(date);
+      d.setDate(d.getDate() + 1);
+      endDate = d.toISOString().slice(0, 10);
+    }
+    const endTimestamp = `${endDate}T${endTime}:00`;
 
     const { error } = await supabase
       .from("events")

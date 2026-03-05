@@ -180,6 +180,9 @@ export function EventForm({
               defaultValue={defaultEnd.time}
               className={inputClass}
             />
+            <p className="text-xs text-gray-400">
+              End before start = next day
+            </p>
           </div>
         </div>
       </div>
