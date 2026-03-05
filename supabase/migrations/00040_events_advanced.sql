@@ -105,7 +105,10 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================
 -- 40c. Update register_for_event to call lazy expiry first
+-- Must DROP first because CREATE OR REPLACE cannot change return type
 -- ============================================================
+
+DROP FUNCTION IF EXISTS public.register_for_event(UUID, UUID);
 
 CREATE OR REPLACE FUNCTION public.register_for_event(
   p_event_id UUID,
