@@ -2,6 +2,16 @@
 
 import { useState } from "react";
 
+const DAYS_OF_WEEK = [
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+  { value: 7, label: "Sun" },
+];
+
 type Bay = {
   id: string;
   name: string;
@@ -54,6 +64,8 @@ export function EventForm({
   locationId,
   submitLabel = "Create Event",
   membershipEnabled = false,
+  showRecurring = false,
+  showSaveTemplate = false,
 }: {
   bays: Bay[];
   timezone: string;
@@ -62,10 +74,16 @@ export function EventForm({
   locationId: string | null;
   submitLabel?: string;
   membershipEnabled?: boolean;
+  showRecurring?: boolean;
+  showSaveTemplate?: boolean;
 }) {
   const existingBayIds = event?.event_bays?.map((eb) => eb.bay_id) ?? [];
   const [selectedBayIds, setSelectedBayIds] = useState<string[]>(existingBayIds);
   const [membersOnly, setMembersOnly] = useState(event?.members_only ?? false);
+  const [recurringEnabled, setRecurringEnabled] = useState(false);
+  const [recurringDay, setRecurringDay] = useState<number | null>(null);
+  const [recurringEndType, setRecurringEndType] = useState<"date" | "count">("count");
+  const [saveAsTemplate, setSaveAsTemplate] = useState(false);
 
   // Parse existing event times for default values
   const defaultStart = event?.start_time
@@ -88,10 +106,15 @@ export function EventForm({
       {event?.id && <input type="hidden" name="id" value={event.id} />}
       {locationId && <input type="hidden" name="location" value={locationId} />}
 
-      {/* Hidden field for selected bays */}
+      {/* Hidden fields */}
       <input type="hidden" name="bay_ids" value={JSON.stringify(selectedBayIds)} />
       <input type="hidden" name="members_only" value={membersOnly ? "true" : "false"} />
       <input type="hidden" name="timezone" value={timezone} />
+      <input type="hidden" name="recurring_enabled" value={recurringEnabled ? "true" : "false"} />
+      {recurringEnabled && recurringDay !== null && (
+        <input type="hidden" name="recurring_day" value={recurringDay.toString()} />
+      )}
+      <input type="hidden" name="save_as_template" value={saveAsTemplate ? "true" : "false"} />
 
       {/* Event Details */}
       <div>
@@ -316,6 +339,140 @@ export function EventForm({
           </div>
         </div>
       </div>
+
+      {/* Recurring Events */}
+      {showRecurring && (
+        <div>
+          <h3 className="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+            Recurrence
+          </h3>
+          <div className="space-y-4">
+            <label className="flex cursor-pointer items-center gap-3">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={recurringEnabled}
+                onClick={() => setRecurringEnabled(!recurringEnabled)}
+                className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+                  recurringEnabled ? "bg-blue-600" : "bg-gray-200 dark:bg-gray-700"
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                    recurringEnabled ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+              <div>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Recurring Event
+                </p>
+                <p className="text-xs text-gray-400">
+                  Automatically create weekly instances
+                </p>
+              </div>
+            </label>
+
+            {recurringEnabled && (
+              <div className="space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+                <div className="space-y-1.5">
+                  <label className={labelClass}>Recurs Every</label>
+                  <div className="flex gap-1.5">
+                    {DAYS_OF_WEEK.map((day) => (
+                      <button
+                        key={day.value}
+                        type="button"
+                        onClick={() => setRecurringDay(recurringDay === day.value ? null : day.value)}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                          recurringDay === day.value
+                            ? "bg-blue-600 text-white"
+                            : "bg-white text-gray-600 border border-gray-200 hover:border-gray-300 dark:bg-gray-900 dark:text-gray-400 dark:border-gray-700"
+                        }`}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className={labelClass}>End Condition</label>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="recurring_end_type_radio"
+                        checked={recurringEndType === "count"}
+                        onChange={() => setRecurringEndType("count")}
+                        className="text-blue-600"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">After</span>
+                      <input
+                        name="recurring_occurrences"
+                        type="number"
+                        min="1"
+                        max="52"
+                        defaultValue="8"
+                        disabled={recurringEndType !== "count"}
+                        className={inputClass + " !w-20"}
+                      />
+                      <span className="text-sm text-gray-500">weeks</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="recurring_end_type_radio"
+                        checked={recurringEndType === "date"}
+                        onChange={() => setRecurringEndType("date")}
+                        className="text-blue-600"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">Until</span>
+                      <input
+                        name="recurring_end_date"
+                        type="date"
+                        disabled={recurringEndType !== "date"}
+                        className={inputClass + " !w-44"}
+                      />
+                    </label>
+                  </div>
+                </div>
+                <input type="hidden" name="recurring_end_type" value={recurringEndType} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Save as Template */}
+      {showSaveTemplate && (
+        <div>
+          <label className="flex cursor-pointer items-center gap-3">
+            <input
+              type="checkbox"
+              checked={saveAsTemplate}
+              onChange={(e) => setSaveAsTemplate(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <div>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Save as Template
+              </p>
+              <p className="text-xs text-gray-400">
+                Save this event configuration for reuse (excludes date/time)
+              </p>
+            </div>
+          </label>
+          {saveAsTemplate && (
+            <div className="mt-2 ml-7">
+              <input
+                name="template_name"
+                placeholder="Template name"
+                className={inputClass + " !w-64 placeholder:text-gray-400 dark:placeholder:text-white/30"}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Submit */}
       <div className="flex gap-2 border-t border-gray-200 pt-6 dark:border-gray-700">

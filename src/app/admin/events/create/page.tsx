@@ -20,7 +20,7 @@ async function getOrg() {
 export default async function CreateEventPage({
   searchParams,
 }: {
-  searchParams: Promise<{ location?: string }>;
+  searchParams: Promise<{ location?: string; template?: string }>;
 }) {
   const params = await searchParams;
   const org = await getOrg();
@@ -39,6 +39,47 @@ export default async function CreateEventPage({
     .order("name");
   if (locationId) baysQuery.eq("location_id", locationId);
   const { data: bays } = await baysQuery;
+
+  // Fetch template for pre-fill if ?template=ID is provided
+  let templateEvent: {
+    name: string;
+    description: string | null;
+    start_time: string;
+    end_time: string;
+    capacity: number;
+    price_cents: number;
+    members_only: boolean;
+    member_enrollment_days_before: number | null;
+    guest_enrollment_days_before: number;
+    waitlist_promotion_hours: number;
+    status: string;
+  } | undefined;
+
+  if (params.template) {
+    const { data: tpl } = await supabase
+      .from("event_templates")
+      .select("name, config")
+      .eq("id", params.template)
+      .eq("org_id", org.id)
+      .single();
+
+    if (tpl?.config) {
+      const c = tpl.config as Record<string, unknown>;
+      templateEvent = {
+        name: "",
+        description: (c.description as string) || null,
+        start_time: "",
+        end_time: "",
+        capacity: (c.capacity as number) || 12,
+        price_cents: (c.price_cents as number) || 0,
+        members_only: (c.members_only as boolean) || false,
+        member_enrollment_days_before: (c.member_enrollment_days_before as number) ?? null,
+        guest_enrollment_days_before: (c.guest_enrollment_days_before as number) ?? 7,
+        waitlist_promotion_hours: (c.waitlist_promotion_hours as number) ?? 24,
+        status: "draft",
+      };
+    }
+  }
 
   async function createEvent(formData: FormData) {
     "use server";
@@ -134,6 +175,49 @@ export default async function CreateEventPage({
       }
     }
 
+    // Handle recurring event creation
+    const recurringEnabled = formData.get("recurring_enabled") === "true";
+    if (recurringEnabled) {
+      const recurringDay = parseInt(formData.get("recurring_day") as string, 10);
+      const recurringEndType = formData.get("recurring_end_type") as string;
+
+      if (!isNaN(recurringDay)) {
+        const rpcParams: Record<string, unknown> = {
+          p_event_id: newEvent.id,
+          p_day_of_week: recurringDay,
+        };
+
+        if (recurringEndType === "date") {
+          const endDate = formData.get("recurring_end_date") as string;
+          if (endDate) rpcParams.p_end_date = endDate;
+        } else {
+          const occurrences = parseInt(formData.get("recurring_occurrences") as string, 10);
+          if (!isNaN(occurrences) && occurrences > 0) rpcParams.p_occurrences = occurrences;
+        }
+
+        await supabase.rpc("create_recurring_event_instances", rpcParams);
+      }
+    }
+
+    // Handle save as template
+    const saveAsTemplate = formData.get("save_as_template") === "true";
+    if (saveAsTemplate) {
+      const templateName = (formData.get("template_name") as string) || name;
+      await supabase.from("event_templates").insert({
+        org_id: org.id,
+        name: templateName,
+        config: {
+          capacity,
+          price_cents: Math.round(price * 100),
+          members_only: membersOnly,
+          member_enrollment_days_before: memberEnrollmentDays,
+          guest_enrollment_days_before: guestEnrollmentDays,
+          waitlist_promotion_hours: waitlistHours,
+          description,
+        },
+      });
+    }
+
     revalidatePath("/admin/events");
     redirect(`/admin/events?saved=true${locParam}`);
   }
@@ -157,6 +241,9 @@ export default async function CreateEventPage({
           locationId={locationId}
           submitLabel="Create Event"
           membershipEnabled={org.membership_tiers_enabled}
+          event={templateEvent}
+          showRecurring
+          showSaveTemplate
         />
       </div>
     </div>

@@ -15,6 +15,7 @@ import {
   Eye,
   Send,
   XCircle,
+  LayoutTemplate,
 } from "lucide-react";
 
 async function getOrg() {
@@ -259,13 +260,22 @@ export default async function EventsPage({
             more.
           </p>
         </div>
-        <Link
-          href={`/admin/events/create${locationId ? `?location=${locationId}` : ""}`}
-          className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
-        >
-          <Plus className="h-4 w-4" />
-          Create Event
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/admin/events/templates${locationId ? `?location=${locationId}` : ""}`}
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            <LayoutTemplate className="h-4 w-4" />
+            Templates
+          </Link>
+          <Link
+            href={`/admin/events/create${locationId ? `?location=${locationId}` : ""}`}
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" />
+            Create Event
+          </Link>
+        </div>
       </div>
 
       {/* Alerts */}
