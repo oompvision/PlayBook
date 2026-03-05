@@ -64,7 +64,19 @@ export default async function EventDetailPage({
   if (!event) redirect("/admin/events");
 
   // Fetch registrations with user profiles
-  const { data: registrations } = await supabase
+  type RegRow = {
+    id: string;
+    user_id: string;
+    status: string;
+    waitlist_position: number | null;
+    payment_status: string | null;
+    registered_at: string;
+    cancelled_at: string | null;
+    promoted_at: string | null;
+    profiles: { full_name: string | null; email: string } | null;
+  };
+
+  const { data: rawRegistrations } = await supabase
     .from("event_registrations")
     .select(`
       id,
@@ -79,6 +91,8 @@ export default async function EventDetailPage({
     `)
     .eq("event_id", id)
     .order("registered_at", { ascending: true });
+
+  const registrations = (rawRegistrations ?? []) as unknown as RegRow[];
 
   // Check for conflicts before publishing
   let conflicts: { affected_slots: number; affected_bookings: number } | null = null;
@@ -180,7 +194,7 @@ export default async function EventDetailPage({
     .filter(Boolean)
     .join(", ");
 
-  const activeRegs = registrations?.filter((r) => r.status !== "cancelled") ?? [];
+  const activeRegs = registrations.filter((r) => r.status !== "cancelled");
   const confirmedCount = activeRegs.filter(
     (r) => r.status === "confirmed" || r.status === "pending_payment"
   ).length;
@@ -220,7 +234,7 @@ export default async function EventDetailPage({
   const csvRows = [
     ["Name", "Email", "Status", "Payment", "Registered At"].join(","),
     ...(activeRegs.map((r) => {
-      const profile = r.profiles as { full_name: string | null; email: string } | null;
+      const profile = r.profiles;
       return [
         `"${profile?.full_name || "N/A"}"`,
         `"${profile?.email || "N/A"}"`,
@@ -446,10 +460,7 @@ export default async function EventDetailPage({
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
                 {activeRegs.map((reg) => {
-                  const profile = reg.profiles as {
-                    full_name: string | null;
-                    email: string;
-                  } | null;
+                  const profile = reg.profiles;
 
                   return (
                     <tr
