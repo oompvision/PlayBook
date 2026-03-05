@@ -18,6 +18,7 @@ import {
   Layers,
   Ban,
   BadgeDollarSign,
+  CalendarDays,
 } from "lucide-react";
 
 const baseNavItems = [
@@ -38,6 +39,7 @@ const dynamicNavItems = [
 ];
 
 const commonNavItems = [
+  { label: "Events", href: "/admin/events", icon: CalendarDays },
   { label: "Bookings", href: "/admin/bookings", icon: CalendarCheck },
   { label: "Customers", href: "/admin/customers", icon: Users },
   { label: "Revenue", href: "/admin/revenue", icon: DollarSign },
