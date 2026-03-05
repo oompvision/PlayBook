@@ -266,7 +266,7 @@ export function MembersList({ entries, orgId, locationsEnabled }: Props) {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    {entry.source === "admin" && (
+                    {entry.source === "admin" ? (
                       <button
                         onClick={() => handleRevoke(entry.id)}
                         disabled={revoking === entry.id}
@@ -279,6 +279,10 @@ export function MembersList({ entries, orgId, locationsEnabled }: Props) {
                         )}
                         Revoke
                       </button>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+                        Stripe
+                      </span>
                     )}
                   </td>
                 </tr>
@@ -316,7 +320,7 @@ export function MembersList({ entries, orgId, locationsEnabled }: Props) {
                     : ""}
                 </p>
               </div>
-              {entry.source === "admin" && (
+              {entry.source === "admin" ? (
                 <button
                   onClick={() => handleRevoke(entry.id)}
                   disabled={revoking === entry.id}
@@ -328,6 +332,10 @@ export function MembersList({ entries, orgId, locationsEnabled }: Props) {
                     <UserMinus className="h-4 w-4" />
                   )}
                 </button>
+              ) : (
+                <span className="shrink-0 inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+                  Stripe
+                </span>
               )}
             </div>
           </div>

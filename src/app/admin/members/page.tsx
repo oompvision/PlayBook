@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { getFacilitySlug } from "@/lib/facility";
 import { redirect } from "next/navigation";
 import { Search, Crown, Users, X, SlidersHorizontal } from "lucide-react";
@@ -99,9 +100,11 @@ export default async function MembersPage({
   const profileMap = new Map(profiles.map((p) => [p.id, p]));
 
   // Fetch location preferences for default location column
+  // Use service client to bypass RLS (admin may not satisfy user_id = auth.uid() policy)
   let locationNameMap: Record<string, string> = {};
   if (org.locations_enabled && memberUserIds.length > 0) {
-    const { data: prefs } = await supabase
+    const service = createServiceClient();
+    const { data: prefs } = await service
       .from("user_location_preferences")
       .select("user_id, default_location_id, locations:default_location_id(name)")
       .eq("org_id", org.id)
