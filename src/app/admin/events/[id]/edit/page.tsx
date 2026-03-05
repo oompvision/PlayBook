@@ -135,15 +135,49 @@ export default async function EditEventPage({
     redirect(`/admin/events?saved=true${locParam}`);
   }
 
+  async function publishEvent() {
+    "use server";
+    const org = await getOrg();
+    if (!org) return;
+    const supabase = await createClient();
+    const loc = locationId ? `&location=${locationId}` : "";
+
+    const { error } = await supabase.rpc("publish_event", {
+      p_event_id: id,
+      p_cancel_conflicting_bookings: false,
+    });
+
+    if (error) {
+      redirect(
+        `/admin/events/${id}/edit?error=${encodeURIComponent(error.message)}${loc ? `&${loc.slice(1)}` : ""}`
+      );
+    }
+
+    revalidatePath("/admin/events");
+    redirect(`/admin/events?saved=true${loc}`);
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
-          Edit Event
-        </h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Update event details. Changes to published events will notify registered users.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
+            Edit Event
+          </h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            Update event details. Changes to published events will notify registered users.
+          </p>
+        </div>
+        {event.status === "draft" && (
+          <form action={publishEvent}>
+            <button
+              type="submit"
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-green-600 px-5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-green-700"
+            >
+              Publish Event
+            </button>
+          </form>
+        )}
       </div>
 
       {search.error && (
@@ -161,6 +195,8 @@ export default async function EditEventPage({
           locationId={locationId}
           submitLabel="Save Changes"
           membershipEnabled={org.membership_tiers_enabled}
+          showRecurring={event.status === "draft"}
+          showSaveTemplate={event.status === "draft"}
         />
       </div>
     </div>

@@ -537,6 +537,21 @@ export default async function EventsPage({
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5">
+                        {event.status === "draft" && (
+                          <form action={publishEvent}>
+                            <input type="hidden" name="id" value={event.id} />
+                            {locationId && (
+                              <input type="hidden" name="location" value={locationId} />
+                            )}
+                            <button
+                              type="submit"
+                              className="rounded-lg p-1.5 text-green-600 transition-colors hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-950/30"
+                              title="Publish"
+                            >
+                              <Send className="h-4 w-4" />
+                            </button>
+                          </form>
+                        )}
                         <Link
                           href={`/admin/events/${event.id}/edit${locationId ? `?location=${locationId}` : ""}`}
                           className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -555,6 +570,21 @@ export default async function EventsPage({
                             <Copy className="h-4 w-4" />
                           </button>
                         </form>
+                        {event.status === "published" && (
+                          <form action={cancelEvent}>
+                            <input type="hidden" name="id" value={event.id} />
+                            {locationId && (
+                              <input type="hidden" name="location" value={locationId} />
+                            )}
+                            <button
+                              type="submit"
+                              className="rounded-lg p-1.5 text-red-400 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30"
+                              title="Cancel Event"
+                            >
+                              <XCircle className="h-4 w-4" />
+                            </button>
+                          </form>
+                        )}
                         {event.status === "draft" && (
                           <form action={deleteEvent}>
                             <input type="hidden" name="id" value={event.id} />
