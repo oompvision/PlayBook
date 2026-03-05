@@ -13,6 +13,8 @@ import {
   Pencil,
   Trash2,
   Eye,
+  Send,
+  XCircle,
 } from "lucide-react";
 
 async function getOrg() {
@@ -158,6 +160,50 @@ export default async function EventsPage({
 
     revalidatePath("/admin/events");
     redirect(`/admin/events/${newEvent.id}/edit${locParam}`);
+  }
+
+  async function publishEvent(formData: FormData) {
+    "use server";
+    const supabase = await createClient();
+    const id = formData.get("id") as string;
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `&location=${loc}` : "";
+    const cancelConflicts = formData.get("cancel_conflicts") === "true";
+
+    const { data, error } = await supabase.rpc("publish_event", {
+      p_event_id: id,
+      p_cancel_conflicting_bookings: cancelConflicts,
+    });
+
+    if (error) {
+      redirect(
+        `/admin/events?error=${encodeURIComponent(error.message)}${locParam}`
+      );
+    }
+
+    revalidatePath("/admin/events");
+    redirect(`/admin/events?saved=true${locParam}`);
+  }
+
+  async function cancelEvent(formData: FormData) {
+    "use server";
+    const supabase = await createClient();
+    const id = formData.get("id") as string;
+    const loc = formData.get("location") as string | null;
+    const locParam = loc ? `&location=${loc}` : "";
+
+    const { error } = await supabase.rpc("cancel_event", {
+      p_event_id: id,
+    });
+
+    if (error) {
+      redirect(
+        `/admin/events?error=${encodeURIComponent(error.message)}${locParam}`
+      );
+    }
+
+    revalidatePath("/admin/events");
+    redirect(`/admin/events?saved=true${locParam}`);
   }
 
   const statusFilter = params.status || "all";
@@ -368,6 +414,28 @@ export default async function EventsPage({
                           <td className="px-6 py-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
                               <Link
+                                href={`/admin/events/${event.id}${locationId ? `?location=${locationId}` : ""}`}
+                                className="rounded-lg border border-gray-300 bg-white p-2 text-gray-500 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:bg-gray-800"
+                                title="View Details"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Link>
+                              {event.status === "draft" && (
+                                <form action={publishEvent}>
+                                  <input type="hidden" name="id" value={event.id} />
+                                  {locationId && (
+                                    <input type="hidden" name="location" value={locationId} />
+                                  )}
+                                  <button
+                                    type="submit"
+                                    className="rounded-lg border border-green-300 bg-white p-2 text-green-600 shadow-sm transition-colors hover:bg-green-50 dark:border-green-700 dark:bg-transparent dark:text-green-400 dark:hover:bg-green-950/30"
+                                    title="Publish"
+                                  >
+                                    <Send className="h-4 w-4" />
+                                  </button>
+                                </form>
+                              )}
+                              <Link
                                 href={`/admin/events/${event.id}/edit${locationId ? `?location=${locationId}` : ""}`}
                                 className="rounded-lg border border-gray-300 bg-white p-2 text-gray-500 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:bg-gray-800"
                                 title="Edit"
@@ -387,6 +455,21 @@ export default async function EventsPage({
                                   <Copy className="h-4 w-4" />
                                 </button>
                               </form>
+                              {event.status === "published" && (
+                                <form action={cancelEvent}>
+                                  <input type="hidden" name="id" value={event.id} />
+                                  {locationId && (
+                                    <input type="hidden" name="location" value={locationId} />
+                                  )}
+                                  <button
+                                    type="submit"
+                                    className="rounded-lg border border-gray-300 bg-white p-2 text-red-500 shadow-sm transition-colors hover:bg-red-50 dark:border-gray-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
+                                    title="Cancel Event"
+                                  >
+                                    <XCircle className="h-4 w-4" />
+                                  </button>
+                                </form>
+                              )}
                               {event.status === "draft" && (
                                 <form action={deleteEvent}>
                                   <input type="hidden" name="id" value={event.id} />

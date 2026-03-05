@@ -134,6 +134,38 @@ export default async function MyBookingsPage({
     }
   }
 
+  // Fetch user's event registrations
+  const { data: eventRegistrations } = await supabase
+    .from("event_registrations")
+    .select(`
+      id,
+      event_id,
+      status,
+      waitlist_position,
+      payment_status,
+      registered_at,
+      cancelled_at,
+      promoted_at,
+      events:event_id (
+        name,
+        start_time,
+        end_time,
+        price_cents,
+        capacity,
+        status
+      )
+    `)
+    .eq("org_id", org.id)
+    .eq("user_id", auth.profile.id)
+    .order("registered_at", { ascending: false });
+
+  const activeEventRegs = eventRegistrations?.filter(
+    (r) => r.status !== "cancelled" && r.events
+  ) ?? [];
+  const pastEventRegs = eventRegistrations?.filter(
+    (r) => r.status === "cancelled" || (r.events && new Date(r.events.end_time) < new Date())
+  ) ?? [];
+
   // Split into upcoming+active vs past+cancelled (using visual status)
   const upcoming = enrichedBookings.filter((b) => {
     const vs = getVisualBookingStatus(b.status, b.start_time, b.end_time);
@@ -205,6 +237,23 @@ export default async function MyBookingsPage({
     redirect("/my-bookings?cancelled=true");
   }
 
+  async function cancelEventRegistration(formData: FormData) {
+    "use server";
+    const supabase = await createClient();
+    const regId = formData.get("registration_id") as string;
+
+    const { error } = await supabase.rpc("cancel_event_registration", {
+      p_registration_id: regId,
+    });
+
+    if (error) {
+      redirect(`/my-bookings?error=${encodeURIComponent(error.message)}`);
+    }
+
+    revalidatePath("/my-bookings");
+    redirect("/my-bookings?cancelled=true");
+  }
+
   return (
     <div className="flex-1 p-8">
       <div className="mx-auto max-w-2xl">
@@ -260,6 +309,132 @@ export default async function MyBookingsPage({
           cancellationWindowHours={cancellationWindowHours}
           paymentMode={paymentMode}
         />
+
+        {/* My Events Section */}
+        {(activeEventRegs.length > 0 || pastEventRegs.length > 0) && (
+          <div className="mt-10">
+            <h2 className="text-2xl font-bold tracking-tight">My Events</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Your event registrations.
+            </p>
+
+            {activeEventRegs.length > 0 && (
+              <div className="mt-4 space-y-3">
+                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                  Upcoming
+                </h3>
+                {activeEventRegs.map((reg) => {
+                  const event = reg.events as {
+                    name: string;
+                    start_time: string;
+                    end_time: string;
+                    price_cents: number;
+                  } | null;
+                  if (!event) return null;
+                  const startStr = new Intl.DateTimeFormat("en-US", {
+                    timeZone: org.timezone,
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  }).format(new Date(event.start_time));
+                  const endStr = new Intl.DateTimeFormat("en-US", {
+                    timeZone: org.timezone,
+                    hour: "numeric",
+                    minute: "2-digit",
+                  }).format(new Date(event.end_time));
+
+                  const statusColor = reg.status === "confirmed"
+                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                    : reg.status === "waitlisted"
+                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                      : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
+
+                  return (
+                    <div
+                      key={reg.id}
+                      className="rounded-lg border p-4"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                              Event
+                            </span>
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${statusColor}`}>
+                              {reg.status === "pending_payment" ? "Payment Pending" : reg.status}
+                              {reg.waitlist_position ? ` #${reg.waitlist_position}` : ""}
+                            </span>
+                          </div>
+                          <p className="mt-1.5 font-semibold">{event.name}</p>
+                          <p className="mt-0.5 text-sm text-muted-foreground">
+                            {startStr} – {endStr}
+                          </p>
+                          {event.price_cents > 0 && (
+                            <p className="mt-0.5 text-sm font-medium">
+                              ${(event.price_cents / 100).toFixed(2)}
+                            </p>
+                          )}
+                        </div>
+                        {reg.status !== "cancelled" && (
+                          <form action={cancelEventRegistration}>
+                            <input type="hidden" name="registration_id" value={reg.id} />
+                            <button
+                              type="submit"
+                              className="rounded-md border px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </form>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {pastEventRegs.length > 0 && (
+              <div className="mt-6 space-y-3">
+                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                  Past
+                </h3>
+                {pastEventRegs.map((reg) => {
+                  const event = reg.events as {
+                    name: string;
+                    start_time: string;
+                    end_time: string;
+                    price_cents: number;
+                  } | null;
+                  if (!event) return null;
+                  const startStr = new Intl.DateTimeFormat("en-US", {
+                    timeZone: org.timezone,
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  }).format(new Date(event.start_time));
+
+                  return (
+                    <div
+                      key={reg.id}
+                      className="rounded-lg border p-4 opacity-60"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                          {reg.status === "cancelled" ? "Cancelled" : "Completed"}
+                        </span>
+                      </div>
+                      <p className="mt-1.5 font-semibold">{event.name}</p>
+                      <p className="mt-0.5 text-sm text-muted-foreground">{startStr}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

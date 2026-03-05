@@ -11,6 +11,7 @@ import { SignOutButton } from "@/components/sign-out-button";
 import { AvailabilityWidget } from "@/components/availability-widget";
 import { DynamicAvailabilityWidget } from "@/components/dynamic-availability-widget";
 import { AdminLoginForm } from "@/components/admin-login-form";
+import { EventsFeed } from "@/components/events/events-feed";
 
 export default async function FacilityHomePage({
   searchParams: searchParamsPromise,
@@ -412,6 +413,15 @@ export default async function FacilityHomePage({
                 </p>
               </div>
             )}
+            {org && (
+              <EventsFeed
+                orgId={org.id}
+                timezone={timezone}
+                isAuthenticated={!!auth}
+                isMember={membershipContext.isMember}
+                userId={auth?.profile.id}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -525,6 +535,15 @@ export default async function FacilityHomePage({
                 No facilities are currently available for booking.
               </p>
             </div>
+          )}
+          {org && (
+            <EventsFeed
+              orgId={org.id}
+              timezone={timezone}
+              isAuthenticated={!!auth}
+              isMember={membershipContext.isMember}
+              userId={auth?.profile.id}
+            />
           )}
         </div>
       </div>
