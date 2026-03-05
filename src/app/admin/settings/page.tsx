@@ -6,6 +6,7 @@ import { BrandingSettings } from "./branding-settings";
 import { PaymentSettings } from "./payment-settings";
 import { CancellationPolicySettings } from "./cancellation-policy-settings";
 import { SchedulingModeSettings } from "./scheduling-mode-settings";
+import { MembershipTierSettings } from "./membership-tier-settings";
 import { EmailSettingsToggles } from "@/components/admin/email-settings-toggles";
 import {
   Settings,
@@ -71,23 +72,29 @@ export default async function FacilitySettingsPage({
       parseInt(formData.get("default_slot_duration_minutes") as string) || 60;
     const minBookingLeadMinutes =
       parseInt(formData.get("min_booking_lead_minutes") as string) ?? 15;
-    const bookableWindowDays = Math.min(
-      365,
-      Math.max(1, parseInt(formData.get("bookable_window_days") as string) || 30)
-    );
+    // Only update bookable_window_days if membership tiers are not enabled
+    // (when enabled, it's managed via the Membership Tiers section)
+    const updateData: Record<string, unknown> = {
+      name,
+      description,
+      address,
+      phone,
+      timezone,
+      default_slot_duration_minutes: defaultDuration,
+      min_booking_lead_minutes: minBookingLeadMinutes,
+    };
+
+    if (!org.membership_tiers_enabled) {
+      const bookableWindowDays = Math.min(
+        365,
+        Math.max(1, parseInt(formData.get("bookable_window_days") as string) || 30)
+      );
+      updateData.bookable_window_days = bookableWindowDays;
+    }
 
     const { error } = await supabase
       .from("organizations")
-      .update({
-        name,
-        description,
-        address,
-        phone,
-        timezone,
-        default_slot_duration_minutes: defaultDuration,
-        min_booking_lead_minutes: minBookingLeadMinutes,
-        bookable_window_days: bookableWindowDays,
-      })
+      .update(updateData)
       .eq("id", org.id);
 
     if (error) {
@@ -276,17 +283,24 @@ export default async function FacilitySettingsPage({
                   <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
                     Bookable Window (days)
                   </label>
-                  <input
-                    name="bookable_window_days"
-                    type="number"
-                    min="1"
-                    max="365"
-                    defaultValue={org.bookable_window_days ?? 30}
-                    className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-                  />
+                  {org.membership_tiers_enabled ? (
+                    <div className="flex h-10 items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-400">
+                      {org.guest_booking_window_days ?? org.bookable_window_days ?? 30} days (guest) / {org.member_booking_window_days ?? org.bookable_window_days ?? 30} days (member)
+                    </div>
+                  ) : (
+                    <input
+                      name="bookable_window_days"
+                      type="number"
+                      min="1"
+                      max="365"
+                      defaultValue={org.bookable_window_days ?? 30}
+                      className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                    />
+                  )}
                   <p className="text-xs text-gray-400 dark:text-gray-500">
-                    How many days into the future customers can book. Admins can
-                    still build schedules beyond this window.
+                    {org.membership_tiers_enabled
+                      ? "Bookable Window is managed in the Membership Tiers section below."
+                      : "How many days into the future customers can book. Admins can still build schedules beyond this window."}
                   </p>
                 </div>
               </div>
@@ -309,6 +323,9 @@ export default async function FacilitySettingsPage({
 
       {/* Payment Processing */}
       <PaymentSettingsSection orgId={org.id} />
+
+      {/* Membership Tiers */}
+      <MembershipTierSection orgId={org.id} />
 
       {/* Cancellation Policy */}
       <CancellationPolicySection orgId={org.id} />
@@ -340,6 +357,70 @@ async function PaymentSettingsSection({ orgId }: { orgId: string }) {
   };
 
   return <PaymentSettings initialSettings={initialSettings} />;
+}
+
+async function MembershipTierSection({ orgId }: { orgId: string }) {
+  const supabase = await createClient();
+
+  // Fetch org for current window settings
+  const { data: orgData } = await supabase
+    .from("organizations")
+    .select(
+      "membership_tiers_enabled, bookable_window_days, guest_booking_window_days, member_booking_window_days"
+    )
+    .eq("id", orgId)
+    .single();
+
+  // Fetch existing tier
+  const { data: tier } = await supabase
+    .from("membership_tiers")
+    .select(
+      "name, benefit_description, discount_type, discount_value, price_monthly_cents, price_yearly_cents"
+    )
+    .eq("org_id", orgId)
+    .single();
+
+  // Count active Stripe subscribers
+  const { count } = await supabase
+    .from("user_memberships")
+    .select("*", { count: "exact", head: true })
+    .eq("org_id", orgId)
+    .eq("source", "stripe")
+    .in("status", ["active", "past_due"]);
+
+  // Check Stripe Connect status
+  const { data: paymentSettings } = await supabase
+    .from("org_payment_settings")
+    .select("stripe_account_id, stripe_onboarding_complete")
+    .eq("org_id", orgId)
+    .single();
+
+  return (
+    <MembershipTierSettings
+      orgId={orgId}
+      initialEnabled={orgData?.membership_tiers_enabled ?? false}
+      initialBookableWindowDays={orgData?.bookable_window_days ?? 30}
+      initialGuestBookableWindowDays={orgData?.guest_booking_window_days ?? null}
+      initialMemberBookableWindowDays={orgData?.member_booking_window_days ?? null}
+      initialTier={
+        tier
+          ? {
+              name: tier.name,
+              benefit_description: tier.benefit_description,
+              discount_type: tier.discount_type as "flat" | "percent",
+              discount_value: Number(tier.discount_value),
+              price_monthly_cents: tier.price_monthly_cents,
+              price_yearly_cents: tier.price_yearly_cents,
+            }
+          : null
+      }
+      stripeConnected={
+        !!paymentSettings?.stripe_account_id &&
+        !!paymentSettings?.stripe_onboarding_complete
+      }
+      activeStripeSubscriberCount={count ?? 0}
+    />
+  );
 }
 
 async function CancellationPolicySection({ orgId }: { orgId: string }) {

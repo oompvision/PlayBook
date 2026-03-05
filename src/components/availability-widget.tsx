@@ -43,6 +43,7 @@ import {
   AlertTriangle,
   MapPin,
   ShieldCheck,
+  Crown,
 } from "lucide-react";
 import { ChatWidget, type BookingAction } from "@/components/chat/chat-widget";
 import { AuthModal } from "@/components/auth-modal";
@@ -128,6 +129,17 @@ type AvailabilityWidgetProps = {
   locationsEnabled?: boolean;
   /** How many days into the future customers can book (default 30) */
   bookableWindowDays?: number;
+  /** Membership context for discount + upsell */
+  membership?: {
+    isMember: boolean;
+    effectiveWindowDays: number;
+    guestWindowDays: number;
+    memberWindowDays: number;
+    discountType: "flat" | "percent" | null;
+    discountValue: number;
+    tierName: string | null;
+    membershipEnabled: boolean;
+  };
 };
 
 type ToastData = {
@@ -248,9 +260,29 @@ export function AvailabilityWidget({
   locations = [],
   locationsEnabled = false,
   bookableWindowDays = 30,
+  membership,
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const isModify = mode === "modify";
+
+  // Membership discount calculation
+  const memberDiscount = membership?.isMember && membership.discountType && membership.discountValue
+    ? membership
+    : null;
+
+  function calcDiscount(priceCents: number): { discountCents: number; finalCents: number; label: string } {
+    if (!memberDiscount) return { discountCents: 0, finalCents: priceCents, label: "" };
+    let discountCents: number;
+    let label: string;
+    if (memberDiscount.discountType === "percent") {
+      discountCents = Math.round(priceCents * memberDiscount.discountValue / 100);
+      label = `${memberDiscount.discountValue}% member discount`;
+    } else {
+      discountCents = Math.min(memberDiscount.discountValue * 100, priceCents);
+      label = `$${memberDiscount.discountValue.toFixed(2)} member discount`;
+    }
+    return { discountCents, finalCents: priceCents - discountCents, label };
+  }
 
   // Compute the max bookable date from today + bookable window
   const maxBookableDateStr = addDays(todayStr, bookableWindowDays);
@@ -950,6 +982,10 @@ export function AvailabilityWidget({
       return;
     }
 
+    // Calculate membership discount
+    const totalCentsForDiscount = selectedSlotInfo.reduce((sum, s) => sum + s.price_cents, 0);
+    const { discountCents: bookingDiscountCents, label: bookingDiscountLabel } = calcDiscount(totalCentsForDiscount);
+
     // Create the booking via RPC
     const { data, error } = await supabase.rpc("create_booking", {
       p_org_id: orgId,
@@ -959,6 +995,8 @@ export function AvailabilityWidget({
       p_slot_ids: slotIdsArray,
       p_notes: notes || null,
       p_location_id: locationId || null,
+      p_discount_cents: bookingDiscountCents || 0,
+      p_discount_description: bookingDiscountLabel || null,
     });
 
     if (error) {
@@ -1636,7 +1674,10 @@ export function AvailabilityWidget({
                       {selectedTimeKeys.size !== 1 ? "s" : ""} selected
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Total: ${(totalCents / 100).toFixed(2)}
+                      Total: ${(calcDiscount(totalCents).finalCents / 100).toFixed(2)}
+                      {calcDiscount(totalCents).discountCents > 0 && (
+                        <span className="ml-1 text-teal-600 dark:text-teal-400">(member price)</span>
+                      )}
                       {selectedBayObj && eligibleBays.length > 1 && (
                         <> &middot; {selectedBayObj.name}</>
                       )}
@@ -1967,10 +2008,26 @@ export function AvailabilityWidget({
                           ))}
                         </div>
                         <div className="mt-3 border-t pt-3">
-                          <div className="flex items-center justify-between font-bold">
-                            <span>Total</span>
-                            <span>${(totalCents / 100).toFixed(2)}</span>
-                          </div>
+                          {(() => {
+                            const disc = calcDiscount(totalCents);
+                            return (
+                              <>
+                                {disc.discountCents > 0 && (
+                                  <div className="mb-1 flex items-center justify-between text-sm text-teal-600 dark:text-teal-400">
+                                    <span className="flex items-center gap-1">
+                                      <Crown className="h-3.5 w-3.5" />
+                                      {disc.label}
+                                    </span>
+                                    <span>-${(disc.discountCents / 100).toFixed(2)}</span>
+                                  </div>
+                                )}
+                                <div className="flex items-center justify-between font-bold">
+                                  <span>Total</span>
+                                  <span>${(disc.finalCents / 100).toFixed(2)}</span>
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
 
@@ -2278,9 +2335,21 @@ export function AvailabilityWidget({
                               ))}
                             </div>
                             <div className="mt-3 border-t pt-3">
+                              {(() => {
+                                const disc = calcDiscount(totalCents);
+                                return disc.discountCents > 0 ? (
+                                  <div className="mb-1 flex items-center justify-between text-sm text-teal-600 dark:text-teal-400">
+                                    <span className="flex items-center gap-1">
+                                      <Crown className="h-3.5 w-3.5" />
+                                      {disc.label}
+                                    </span>
+                                    <span>-${(disc.discountCents / 100).toFixed(2)}</span>
+                                  </div>
+                                ) : null;
+                              })()}
                               <div className="flex items-center justify-between font-bold">
                                 <span>Total</span>
-                                <span>${(totalCents / 100).toFixed(2)}</span>
+                                <span>${(calcDiscount(totalCents).finalCents / 100).toFixed(2)}</span>
                               </div>
                             </div>
                           </div>
@@ -2300,6 +2369,26 @@ export function AvailabilityWidget({
                           <p className="mb-4 text-sm text-muted-foreground">
                             Booking as {userFullName || userEmail}
                           </p>
+
+                          {/* Guest upsell nudge */}
+                          {membership?.membershipEnabled && !membership.isMember && isAuthenticated && (
+                            <a
+                              href="/membership"
+                              className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:hover:bg-amber-950/50"
+                            >
+                              <Crown className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                              <span className="text-amber-800 dark:text-amber-200">
+                                <span className="font-medium">Join {membership.tierName || "Membership"}</span>
+                                {" — "}
+                                {membership.discountType === "percent"
+                                  ? `Save ${membership.discountValue}% on every booking`
+                                  : membership.discountValue > 0
+                                    ? `Save $${membership.discountValue.toFixed(2)} on every booking`
+                                    : `Book up to ${membership.memberWindowDays} days ahead`}
+                              </span>
+                              <ArrowRight className="ml-auto h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                            </a>
+                          )}
 
                           {/* Continue button */}
                           <Button
@@ -2490,10 +2579,26 @@ export function AvailabilityWidget({
                             )}
 
                             {/* Total */}
-                            <div className="flex items-center justify-between border-t pt-3 text-sm font-bold">
-                              <span>Total</span>
-                              <span>${(totalCents / 100).toFixed(2)}</span>
-                            </div>
+                            {(() => {
+                              const disc = calcDiscount(totalCents);
+                              return (
+                                <>
+                                  {disc.discountCents > 0 && (
+                                    <div className="flex items-center justify-between border-t pt-3 text-sm text-teal-600 dark:text-teal-400">
+                                      <span className="flex items-center gap-1">
+                                        <Crown className="h-3.5 w-3.5" />
+                                        {disc.label}
+                                      </span>
+                                      <span>-${(disc.discountCents / 100).toFixed(2)}</span>
+                                    </div>
+                                  )}
+                                  <div className={`flex items-center justify-between text-sm font-bold ${disc.discountCents > 0 ? "pt-1" : "border-t pt-3"}`}>
+                                    <span>Total</span>
+                                    <span>${(disc.finalCents / 100).toFixed(2)}</span>
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
 
                           {/* Notes (if provided) */}
@@ -2585,7 +2690,7 @@ export function AvailabilityWidget({
                                       : "Booking..."}
                                 </>
                               ) : requiresPayment && paymentMode === "charge_upfront" ? (
-                                `Confirm & Pay $${(totalCents / 100).toFixed(2)}`
+                                `Confirm & Pay $${(calcDiscount(totalCents).finalCents / 100).toFixed(2)}`
                               ) : requiresPayment ? (
                                 "Confirm & Save Card"
                               ) : (

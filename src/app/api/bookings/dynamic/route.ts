@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { org_id, bay_id, group_id, date, start_time, end_time, price_cents, notes, location_id } =
+  const { org_id, bay_id, group_id, date, start_time, end_time, price_cents, notes, location_id, discount_cents, discount_description } =
     body;
 
   if (!org_id || !date || !start_time || !end_time || price_cents == null) {
@@ -160,6 +160,8 @@ export async function POST(request: NextRequest) {
     p_price_cents: price_cents,
     p_notes: notes || null,
     p_location_id: location_id || null,
+    p_discount_cents: discount_cents || 0,
+    p_discount_description: discount_description || null,
   });
 
   if (error) {

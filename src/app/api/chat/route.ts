@@ -217,6 +217,7 @@ type OrgContext = {
   min_booking_lead_minutes: number;
   scheduling_type: string;
   bookable_window_days: number;
+  effective_window_days: number;
 };
 
 async function executeFacilityInfo(org: OrgContext) {
@@ -261,9 +262,9 @@ async function executeAvailableSlotsSlotBased(
 ) {
   const supabase = await createClient();
 
-  // Validate date is within the bookable window
+  // Validate date is within the bookable window (membership-aware)
   const today = getTodayInTimezone(org.timezone);
-  const windowDays = org.bookable_window_days || 30;
+  const windowDays = org.effective_window_days;
   const maxDate = new Date(today + "T12:00:00");
   maxDate.setDate(maxDate.getDate() + windowDays);
   const maxDateStr = maxDate.toISOString().split("T")[0];
@@ -390,7 +391,7 @@ async function executeAvailableSlotsDynamic(
   const supabase = await createClient();
 
   const today = getTodayInTimezone(org.timezone);
-  const windowDays = org.bookable_window_days || 30;
+  const windowDays = org.effective_window_days;
   const maxDate = new Date(today + "T12:00:00");
   maxDate.setDate(maxDate.getDate() + windowDays);
   const maxDateStr = maxDate.toISOString().split("T")[0];
@@ -1030,7 +1031,7 @@ export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, timezone, description, address, phone, min_booking_lead_minutes, scheduling_type, bookable_window_days")
+    .select("id, name, slug, timezone, description, address, phone, min_booking_lead_minutes, scheduling_type, bookable_window_days, membership_tiers_enabled")
     .eq("slug", facilitySlug)
     .single();
 
@@ -1042,6 +1043,49 @@ export async function POST(request: Request) {
   const auth = await getAuthUser();
   const customerId = auth?.profile?.id ?? null;
   const customerName = auth?.profile?.full_name ?? null;
+
+  // Resolve membership-aware bookable window + tier context
+  let effectiveWindowDays = org.bookable_window_days || 30;
+  let membershipInfo: {
+    enabled: boolean;
+    isMember: boolean;
+    tierName: string | null;
+    discountType: string | null;
+    discountValue: number;
+    guestWindowDays: number;
+    memberWindowDays: number;
+  } = { enabled: false, isMember: false, tierName: null, discountType: null, discountValue: 0, guestWindowDays: effectiveWindowDays, memberWindowDays: effectiveWindowDays };
+
+  if (org.membership_tiers_enabled) {
+    const svc = createServiceClient();
+
+    const [windowResult, orgWindowResult, tierResult, membershipResult] = await Promise.all([
+      svc.rpc("get_effective_bookable_window", { p_org_id: org.id, p_user_id: auth?.user?.id ?? null }),
+      svc.from("organizations").select("guest_booking_window_days, member_booking_window_days").eq("id", org.id).single(),
+      svc.from("membership_tiers").select("name, discount_type, discount_value").eq("org_id", org.id).single(),
+      auth ? svc.rpc("is_active_member", { p_org_id: org.id, p_user_id: auth.user.id }) : Promise.resolve({ data: false }),
+    ]);
+
+    if (windowResult.data != null) {
+      effectiveWindowDays = windowResult.data;
+    }
+
+    const guestWindow = orgWindowResult.data?.guest_booking_window_days ?? org.bookable_window_days ?? 30;
+    const memberWindow = orgWindowResult.data?.member_booking_window_days ?? guestWindow;
+
+    membershipInfo = {
+      enabled: true,
+      isMember: !!membershipResult.data,
+      tierName: tierResult.data?.name ?? null,
+      discountType: tierResult.data?.discount_type ?? null,
+      discountValue: tierResult.data?.discount_value ? Number(tierResult.data.discount_value) : 0,
+      guestWindowDays: guestWindow,
+      memberWindowDays: memberWindow,
+    };
+  }
+
+  // Attach effective window to org context
+  const orgContext: OrgContext = { ...org, effective_window_days: effectiveWindowDays };
 
   // Fetch payment settings for this org
   const service = createServiceClient();
@@ -1076,9 +1120,9 @@ export async function POST(request: Request) {
           .join("\n")
       : "No facilities configured yet.";
 
-  const today = getTodayInTimezone(org.timezone);
-  const isDynamic = (org.scheduling_type ?? "slot_based") === "dynamic";
-  const windowDays = org.bookable_window_days || 30;
+  const today = getTodayInTimezone(orgContext.timezone);
+  const isDynamic = (orgContext.scheduling_type ?? "slot_based") === "dynamic";
+  const windowDays = effectiveWindowDays;
 
   // Fetch facility groups + durations for dynamic scheduling
   let facilityGroupInfo = "";
@@ -1124,6 +1168,34 @@ export async function POST(request: Request) {
     ? `The customer is signed in${customerName ? ` as ${customerName}` : ""}. They can book slots, view their bookings, and cancel bookings.`
     : "The customer is NOT signed in. They can browse availability but must sign in before booking, viewing bookings, or cancelling. Direct them to sign in at /auth/login if they want to perform these actions.";
 
+  // Build membership prompt section
+  let membershipPrompt = "";
+  if (membershipInfo.enabled) {
+    const discountDesc = membershipInfo.discountType === "percent"
+      ? `${membershipInfo.discountValue}% off every booking`
+      : membershipInfo.discountValue > 0
+        ? `$${membershipInfo.discountValue.toFixed(2)} off every booking`
+        : null;
+
+    if (membershipInfo.isMember) {
+      membershipPrompt = `
+Membership:
+- This customer is an ACTIVE MEMBER${membershipInfo.tierName ? ` (${membershipInfo.tierName})` : ""}.
+- They can book up to ${membershipInfo.memberWindowDays} days ahead (guests can only book ${membershipInfo.guestWindowDays} days ahead).
+${discountDesc ? `- Their member discount (${discountDesc}) is applied automatically at checkout — you do NOT need to calculate discounted prices. Show the standard listed price when discussing availability.` : ""}
+- When confirming bookings, you can mention they're getting their member benefits.`;
+    } else {
+      membershipPrompt = `
+Membership:
+- This facility offers a membership program${membershipInfo.tierName ? ` called "${membershipInfo.tierName}"` : ""}.
+- This customer is NOT a member (guest).
+- Guests can book up to ${membershipInfo.guestWindowDays} days ahead. Members can book up to ${membershipInfo.memberWindowDays} days ahead.
+${discountDesc ? `- Members get ${discountDesc}.` : ""}
+- If the customer asks about a date beyond ${membershipInfo.guestWindowDays} days, let them know that members can book further in advance and suggest they check out the membership at /membership.
+- Do NOT aggressively upsell. Only mention membership benefits naturally when relevant (e.g., when they hit the booking window limit, or if they ask about pricing/discounts/membership).`;
+    }
+  }
+
   const schedulingTypeInfo = isDynamic
     ? `Scheduling type: DYNAMIC — customers choose a date, duration, and start time. Availability is computed in real-time from operating hours, existing bookings, and block-outs. When checking availability, you MUST include a duration parameter (in minutes).
 ${facilityGroupInfo}${durationInfo ? `${durationInfo}\n` : ""}
@@ -1148,6 +1220,7 @@ Today's date is ${today}.
 Customers can book up to ${windowDays} days ahead.
 
 Authentication: ${authStatus}
+${membershipPrompt}
 
 Guidelines:
 - Always use the get_available_slots tool to look up real-time availability. Never guess or make up availability.${isDynamic ? "\n- For get_available_slots, ALWAYS include a duration parameter. If the customer doesn't specify a duration, ask them or default to the first available duration option." : ""}
@@ -1286,24 +1359,24 @@ Quick reply buttons:
 
         switch (call.name) {
           case "get_facility_info":
-            result = await executeFacilityInfo(org as OrgContext);
+            result = await executeFacilityInfo(orgContext);
             break;
           case "get_available_slots":
             result = await executeAvailableSlots(
-              org as OrgContext,
+              orgContext,
               call.args as { date: string; duration?: number; bay_name?: string; resource_type?: string }
             );
             break;
           case "get_my_bookings":
             result = await executeGetMyBookings(
-              org as OrgContext,
+              orgContext,
               customerId,
               call.args as { status_filter?: string }
             );
             break;
           case "create_booking":
             result = await executeCreateBooking(
-              org as OrgContext,
+              orgContext,
               customerId,
               call.args as {
                 slot_ids?: string[];
@@ -1319,7 +1392,7 @@ Quick reply buttons:
             break;
           case "cancel_booking":
             result = await executeCancelBooking(
-              org as OrgContext,
+              orgContext,
               customerId,
               call.args as { confirmation_code: string }
             );

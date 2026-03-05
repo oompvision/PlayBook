@@ -12,6 +12,7 @@ import {
   LayoutTemplate,
   CalendarCheck,
   Users,
+  Crown,
   DollarSign,
   Settings,
   Layers,
@@ -46,9 +47,11 @@ const commonNavItems = [
 export function AdminSidebar({
   slug,
   schedulingType = "slot_based",
+  membershipEnabled = false,
 }: {
   slug: string;
   schedulingType?: string;
+  membershipEnabled?: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -90,7 +93,11 @@ export function AdminSidebar({
             ...(schedulingType === "dynamic"
               ? dynamicNavItems
               : slotBasedNavItems),
-            ...commonNavItems,
+            ...commonNavItems.slice(0, 2),
+            ...(membershipEnabled
+              ? [{ label: "Members", href: "/admin/members", icon: Crown }]
+              : []),
+            ...commonNavItems.slice(2),
           ].map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { User, LogOut } from "lucide-react";
+import { User, LogOut, Crown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,9 +27,11 @@ function getInitials(name: string | null, email: string): string {
 export function CustomerAvatarMenu({
   userName,
   userEmail,
+  membershipEnabled = false,
 }: {
   userName: string | null;
   userEmail: string;
+  membershipEnabled?: boolean;
 }) {
   const router = useRouter();
 
@@ -71,6 +73,14 @@ export function CustomerAvatarMenu({
             Profile
           </Link>
         </DropdownMenuItem>
+        {membershipEnabled && (
+          <DropdownMenuItem asChild>
+            <Link href="/membership" className="cursor-pointer">
+              <Crown className="mr-2 h-4 w-4" />
+              Member Benefits
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={handleSignOut}
