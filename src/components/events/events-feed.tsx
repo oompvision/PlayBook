@@ -89,7 +89,7 @@ export async function EventsFeed({
         {visibleEvents.map((event) => {
           const registered = countMap[event.id] || 0;
           const bayNames = event.event_bays
-            ?.map((eb: { bays: { name: string } | null }) => eb.bays?.name)
+            ?.map((eb: { bays: { name: string }[] | null }) => eb.bays?.[0]?.name)
             .filter(Boolean)
             .join(", ");
           const userStatus = userRegs[event.id] || null;

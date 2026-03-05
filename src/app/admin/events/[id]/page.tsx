@@ -190,7 +190,7 @@ export default async function EventDetailPage({
   };
 
   const bayNames = event.event_bays
-    ?.map((eb: { bays: { name: string } | null }) => eb.bays?.name)
+    ?.map((eb: { bays: { name: string }[] | null }) => eb.bays?.[0]?.name)
     .filter(Boolean)
     .join(", ");
 
