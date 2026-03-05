@@ -1,57 +1,17 @@
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { requireAdmin } from "@/lib/auth";
+import { getStripe } from "@/lib/stripe";
 import { NextRequest, NextResponse } from "next/server";
-
-/**
- * GET /api/admin/members?action=search&org_id=...&q=...
- *
- * Searches customers in the org for the grant membership modal.
- */
-export async function GET(request: NextRequest) {
-  const { searchParams } = request.nextUrl;
-  const action = searchParams.get("action");
-  const orgId = searchParams.get("org_id");
-  const q = searchParams.get("q");
-
-  if (action !== "search" || !orgId) {
-    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
-  }
-
-  await requireAdmin(orgId);
-
-  const supabase = await createClient();
-
-  let query = supabase
-    .from("profiles")
-    .select("id, full_name, email, phone")
-    .eq("org_id", orgId)
-    .eq("role", "customer")
-    .limit(20);
-
-  if (q) {
-    query = query.or(
-      `full_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`
-    );
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ customers: data || [] });
-}
 
 /**
  * POST /api/admin/members
  *
  * Grant admin membership to a customer.
- * Body: { org_id, user_id, expires_at? }
+ * Body: { org_id, user_id }
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { org_id, user_id, expires_at } = body;
+  const { org_id, user_id } = body;
 
   if (!org_id || !user_id) {
     return NextResponse.json(
@@ -62,7 +22,7 @@ export async function POST(request: NextRequest) {
 
   await requireAdmin(org_id);
 
-  const supabase = await createClient();
+  const supabase = createServiceClient();
 
   // Get the membership tier for this org
   const { data: tier } = await supabase
@@ -101,7 +61,7 @@ export async function POST(request: NextRequest) {
         status: "admin_granted",
         source: "admin",
         tier_id: tier.id,
-        expires_at: expires_at || null,
+        expires_at: null,
         cancelled_at: null,
         stripe_subscription_id: null,
         stripe_customer_id: null,
@@ -119,7 +79,6 @@ export async function POST(request: NextRequest) {
       tier_id: tier.id,
       status: "admin_granted",
       source: "admin",
-      expires_at: expires_at || null,
     });
 
     if (error) {
@@ -133,7 +92,7 @@ export async function POST(request: NextRequest) {
 /**
  * DELETE /api/admin/members
  *
- * Revoke an admin-granted membership.
+ * Revoke a membership. For Stripe memberships, also cancels the Stripe subscription.
  * Body: { membership_id, org_id }
  */
 export async function DELETE(request: NextRequest) {
@@ -149,12 +108,12 @@ export async function DELETE(request: NextRequest) {
 
   await requireAdmin(org_id);
 
-  const supabase = await createClient();
+  const supabase = createServiceClient();
 
-  // Verify membership exists and is admin-granted
+  // Fetch membership details
   const { data: membership } = await supabase
     .from("user_memberships")
-    .select("id, source")
+    .select("id, source, stripe_subscription_id, status")
     .eq("id", membership_id)
     .eq("org_id", org_id)
     .single();
@@ -166,13 +125,30 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  if (membership.source !== "admin") {
-    return NextResponse.json(
-      { error: "Only admin-granted memberships can be revoked. Stripe memberships must be cancelled by the customer." },
-      { status: 400 }
-    );
+  // If Stripe subscription exists, cancel it
+  if (membership.stripe_subscription_id) {
+    try {
+      // Get the org's connected Stripe account
+      const { data: paymentSettings } = await supabase
+        .from("org_payment_settings")
+        .select("stripe_account_id")
+        .eq("org_id", org_id)
+        .single();
+
+      const stripe = getStripe();
+      await stripe.subscriptions.cancel(membership.stripe_subscription_id, {
+        ...(paymentSettings?.stripe_account_id
+          ? { stripeAccount: paymentSettings.stripe_account_id }
+          : {}),
+      });
+    } catch (stripeError) {
+      console.error("Failed to cancel Stripe subscription:", stripeError);
+      // Continue with local revocation even if Stripe cancel fails
+      // The webhook will eventually reconcile
+    }
   }
 
+  // Delete the membership record
   const { error } = await supabase
     .from("user_memberships")
     .delete()

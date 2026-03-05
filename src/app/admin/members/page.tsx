@@ -25,9 +25,12 @@ export type MemberEntry = {
   phone: string | null;
   defaultLocation: string | null;
   billingInterval: "monthly" | "yearly" | "admin_granted" | null;
-  status: string;
-  source: string;
-  createdAt: string;
+  status: "active" | "admin_granted" | "cancelled" | "guest";
+  source: string | null;
+  membershipId: string | null;
+  memberSince: string | null;
+  registeredAt: string;
+  stripeSubscriptionId: string | null;
 };
 
 export default async function MembersPage({
@@ -61,6 +64,7 @@ export default async function MembersPage({
   }
 
   const supabase = await createClient();
+  const service = createServiceClient();
   const search = params.q?.trim();
 
   // Fetch membership tier for this org
@@ -70,105 +74,114 @@ export default async function MembersPage({
     .eq("org_id", org.id)
     .single();
 
-  // Fetch members with profile join
-  const { data: memberships } = await supabase
+  // Fetch ALL registered customers for the org
+  let profileQuery = supabase
+    .from("profiles")
+    .select("id, email, full_name, phone, created_at")
+    .eq("org_id", org.id)
+    .eq("role", "customer")
+    .order("created_at", { ascending: false });
+
+  if (search) {
+    profileQuery = profileQuery.or(
+      `full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`
+    );
+  }
+
+  const { data: customers } = await profileQuery;
+  const allCustomerIds = (customers || []).map((c) => c.id);
+
+  // Fetch memberships for all customers in this org
+  const { data: memberships } = await service
     .from("user_memberships")
     .select("id, user_id, status, source, stripe_subscription_id, current_period_end, expires_at, created_at")
     .eq("org_id", org.id)
-    .in("status", ["active", "admin_granted", "cancelled"]);
+    .in("user_id", allCustomerIds);
 
-  const memberUserIds = (memberships || []).map((m) => m.user_id);
+  const membershipMap = new Map(
+    (memberships || []).map((m) => [m.user_id, m])
+  );
 
-  // Fetch profiles for members
-  let profiles: { id: string; email: string; full_name: string | null; phone: string | null }[] = [];
-  if (memberUserIds.length > 0) {
-    let profileQuery = supabase
-      .from("profiles")
-      .select("id, email, full_name, phone")
-      .in("id", memberUserIds);
-
-    if (search) {
-      profileQuery = profileQuery.or(
-        `full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`
-      );
-    }
-
-    const { data } = await profileQuery;
-    profiles = data || [];
-  }
-
-  const profileMap = new Map(profiles.map((p) => [p.id, p]));
-
-  // Fetch location preferences for default location column
-  // Use service client to bypass RLS (admin may not satisfy user_id = auth.uid() policy)
+  // Fetch location preferences via service client (bypasses RLS)
+  // Also fetch the org's default location as fallback for users without explicit preference
   let locationNameMap: Record<string, string> = {};
-  if (org.locations_enabled && memberUserIds.length > 0) {
-    const service = createServiceClient();
-    const { data: prefs } = await service
-      .from("user_location_preferences")
-      .select("user_id, default_location_id, locations:default_location_id(name)")
-      .eq("org_id", org.id)
-      .in("user_id", memberUserIds);
+  let orgDefaultLocationName: string | null = null;
 
-    if (prefs) {
-      for (const p of prefs) {
-        const locName = (p.locations as unknown as { name: string } | null)?.name;
-        if (locName) locationNameMap[p.user_id] = locName;
+  if (org.locations_enabled) {
+    // Get org's default location
+    const { data: defaultLoc } = await service
+      .from("locations")
+      .select("id, name")
+      .eq("org_id", org.id)
+      .eq("is_default", true)
+      .eq("is_active", true)
+      .single();
+
+    if (defaultLoc) orgDefaultLocationName = defaultLoc.name;
+
+    if (allCustomerIds.length > 0) {
+      const { data: prefs } = await service
+        .from("user_location_preferences")
+        .select("user_id, default_location_id, locations:default_location_id(name)")
+        .eq("org_id", org.id)
+        .in("user_id", allCustomerIds);
+
+      if (prefs) {
+        for (const p of prefs) {
+          const locName = (p.locations as unknown as { name: string } | null)?.name;
+          if (locName) locationNameMap[p.user_id] = locName;
+        }
       }
     }
   }
 
-  // Determine billing interval from Stripe subscription metadata or tier pricing
-  // For Stripe members, we infer from price — if tier has both monthly/yearly,
-  // we check subscription interval. For admin-granted, it's "admin_granted".
-  const memberEntries: MemberEntry[] = (memberships || [])
-    .filter((m) => profileMap.has(m.user_id))
-    .map((m) => {
-      const profile = profileMap.get(m.user_id)!;
-      let billingInterval: MemberEntry["billingInterval"] = null;
+  // Build unified list: all customers with membership status overlaid
+  const entries: MemberEntry[] = (customers || []).map((c) => {
+    const membership = membershipMap.get(c.id);
+    const isActive = membership && (membership.status === "active" || membership.status === "admin_granted");
+    let billingInterval: MemberEntry["billingInterval"] = null;
 
-      if (m.source === "admin") {
+    if (membership) {
+      if (membership.source === "admin") {
         billingInterval = "admin_granted";
       } else if (tier) {
-        // If org only has one price, that's the interval
         if (tier.price_monthly_cents && !tier.price_yearly_cents) {
           billingInterval = "monthly";
         } else if (!tier.price_monthly_cents && tier.price_yearly_cents) {
           billingInterval = "yearly";
         } else {
-          // Both available — default to monthly (Stripe webhook can refine this later)
           billingInterval = "monthly";
         }
       }
+    }
 
-      return {
-        id: m.id,
-        userId: m.user_id,
-        name: profile.full_name,
-        email: profile.email,
-        phone: profile.phone,
-        defaultLocation: locationNameMap[m.user_id] || null,
-        billingInterval,
-        status: m.status,
-        source: m.source,
-        createdAt: m.created_at,
-      };
-    })
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // Resolve default location: explicit preference > org default
+    const defaultLocation = locationNameMap[c.id] || orgDefaultLocationName;
+
+    return {
+      id: c.id,
+      userId: c.id,
+      name: c.full_name,
+      email: c.email,
+      phone: c.phone,
+      defaultLocation: org.locations_enabled ? defaultLocation : null,
+      billingInterval,
+      status: membership
+        ? (membership.status as MemberEntry["status"])
+        : "guest",
+      source: membership?.source || null,
+      membershipId: membership?.id || null,
+      memberSince: membership?.created_at || null,
+      registeredAt: c.created_at,
+      stripeSubscriptionId: membership?.stripe_subscription_id || null,
+    };
+  });
 
   // Stats
-  const activeMemberCount = memberEntries.filter(
-    (m) => m.status === "active" || m.status === "admin_granted"
+  const activeMemberCount = entries.filter(
+    (e) => e.status === "active" || e.status === "admin_granted"
   ).length;
-
-  // Total registered customers (non-members = guests)
-  const { count: totalCustomerCount } = await supabase
-    .from("profiles")
-    .select("id", { count: "exact", head: true })
-    .eq("org_id", org.id)
-    .eq("role", "customer");
-
-  const guestCount = (totalCustomerCount || 0) - activeMemberCount;
+  const guestCount = entries.filter((e) => e.status === "guest").length;
 
   // Per-location stats (when multi-location enabled)
   let locationStats: { name: string; memberCount: number }[] = [];
@@ -182,8 +195,8 @@ export default async function MembersPage({
 
     if (locations && locations.length > 0) {
       const locationMemberCounts: Record<string, number> = {};
-      for (const entry of memberEntries) {
-        if (entry.defaultLocation) {
+      for (const entry of entries) {
+        if ((entry.status === "active" || entry.status === "admin_granted") && entry.defaultLocation) {
           locationMemberCounts[entry.defaultLocation] =
             (locationMemberCounts[entry.defaultLocation] || 0) + 1;
         }
@@ -205,9 +218,12 @@ export default async function MembersPage({
             Members
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Manage membership subscribers and granted members.
+            Manage membership subscribers and registered customers.
           </p>
         </div>
+        <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+          {entries.length} total
+        </span>
       </div>
 
       {/* Stats Cards */}
@@ -290,23 +306,24 @@ export default async function MembersPage({
 
       {/* Members Table */}
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-        {memberEntries.length === 0 ? (
+        {entries.length === 0 ? (
           <div className="px-6 py-16 text-center">
-            <Crown className="mx-auto h-10 w-10 text-gray-300 dark:text-gray-600" />
+            <Users className="mx-auto h-10 w-10 text-gray-300 dark:text-gray-600" />
             <p className="mt-3 text-sm font-medium text-gray-500 dark:text-gray-400">
-              {search ? "No members match your search" : "No members yet"}
+              {search ? "No customers match your search" : "No customers yet"}
             </p>
             {!search && (
               <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">
-                Members will appear here once customers subscribe or are granted membership.
+                Customers will appear here once they register.
               </p>
             )}
           </div>
         ) : (
           <MembersList
-            entries={memberEntries}
+            entries={entries}
             orgId={org.id}
             locationsEnabled={org.locations_enabled ?? false}
+            tierName={tier?.name || null}
           />
         )}
       </div>
