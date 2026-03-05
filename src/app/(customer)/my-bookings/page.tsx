@@ -146,7 +146,7 @@ export default async function MyBookingsPage({
       registered_at,
       cancelled_at,
       promoted_at,
-      events:event_id (
+      events:event_id!inner (
         name,
         start_time,
         end_time,
