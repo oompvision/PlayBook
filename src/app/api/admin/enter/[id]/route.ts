@@ -36,10 +36,15 @@ export async function GET(
   }
 
   // Set cookie and redirect to admin dashboard
-  const response = NextResponse.redirect(new URL("/admin", request.url));
+  // Include ?facility= param so middleware can resolve the slug immediately,
+  // even if the cookie isn't available on the redirected request yet
+  const response = NextResponse.redirect(
+    new URL(`/admin?facility=${encodeURIComponent(org.slug)}`, request.url)
+  );
   response.cookies.set("playbook-admin-org", org.slug, {
     path: "/",
     httpOnly: true,
+    secure: true,
     sameSite: "lax",
     maxAge: 60 * 60 * 8, // 8 hours
   });
