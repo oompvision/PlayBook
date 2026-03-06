@@ -44,6 +44,8 @@ import {
   MapPin,
   ShieldCheck,
   Crown,
+  Users,
+  CalendarDays,
 } from "lucide-react";
 import { ChatWidget, type BookingAction } from "@/components/chat/chat-widget";
 import { AuthModal } from "@/components/auth-modal";
@@ -71,6 +73,13 @@ type TimeGroup = {
     slot_id: string;
     price_cents: number;
   }>;
+  // Event fields (present when isEvent = true)
+  isEvent?: boolean;
+  eventId?: string;
+  eventName?: string;
+  eventCapacity?: number;
+  eventRegisteredCount?: number;
+  eventPriceCents?: number;
 };
 
 type Booking = {
@@ -592,6 +601,65 @@ export function AvailabilityWidget({
         const prices = group.available_bays.map((b) => b.price_cents);
         group.all_same_price = prices.every((p) => p === prices[0]);
         group.available_bays.sort((a, b) => (bayOrderMap[a.bay_id] ?? 0) - (bayOrderMap[b.bay_id] ?? 0));
+      }
+
+      // Fetch published events for this date and merge into timeline
+      const { data: dayEvents } = await supabase
+        .from("events")
+        .select(`
+          id, name, start_time, end_time, capacity, price_cents,
+          event_bays(bay_id, bays:bay_id(name))
+        `)
+        .eq("org_id", orgId)
+        .eq("status", "published")
+        .gte("start_time", dayStart)
+        .lt("start_time", dayEnd)
+        .order("start_time");
+
+      if (dayEvents && dayEvents.length > 0) {
+        // Fetch registration counts for these events
+        const eventIds = dayEvents.map((e: { id: string }) => e.id);
+        const { data: regCounts } = await supabase
+          .from("event_registrations")
+          .select("event_id")
+          .in("event_id", eventIds)
+          .in("status", ["confirmed", "pending_payment"]);
+
+        const countMap: Record<string, number> = {};
+        if (regCounts) {
+          for (const r of regCounts) {
+            countMap[r.event_id] = (countMap[r.event_id] || 0) + 1;
+          }
+        }
+
+        for (const evt of dayEvents) {
+          const bayNames = (evt.event_bays as { bay_id: string; bays: { name: string }[] }[])
+            ?.map((eb) => eb.bays?.[0]?.name)
+            .filter(Boolean) || [];
+
+          groups.push({
+            key: `event-${evt.id}`,
+            start_time: evt.start_time,
+            end_time: evt.end_time,
+            min_price_cents: evt.price_cents,
+            all_same_price: true,
+            available_bays: bayNames.map((name: string, i: number) => ({
+              bay_id: (evt.event_bays as { bay_id: string }[])?.[i]?.bay_id || "",
+              bay_name: name,
+              slot_id: "",
+              price_cents: evt.price_cents,
+            })),
+            isEvent: true,
+            eventId: evt.id,
+            eventName: evt.name,
+            eventCapacity: evt.capacity,
+            eventRegisteredCount: countMap[evt.id] || 0,
+            eventPriceCents: evt.price_cents,
+          });
+        }
+
+        // Re-sort after merging events
+        groups.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
       }
 
       setTimeGroups(groups);
@@ -1558,6 +1626,59 @@ export function AvailabilityWidget({
               {timeGroups.map((group) => {
                 const startTime = formatTime(group.start_time, timezone);
                 const endTime = formatTime(group.end_time, timezone);
+
+                // Event row — distinct visual treatment, not selectable
+                if (group.isEvent) {
+                  const spotsLeft = (group.eventCapacity || 0) - (group.eventRegisteredCount || 0);
+                  const priceLabel = group.eventPriceCents === 0
+                    ? "Free"
+                    : `$${((group.eventPriceCents || 0) / 100).toFixed(2)}`;
+
+                  return (
+                    <div
+                      key={group.key}
+                      className="flex w-full items-center justify-between rounded-lg border border-green-200 bg-green-50/50 px-4 py-3 text-left dark:border-green-900/30 dark:bg-green-950/20"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
+                          <CalendarDays className="h-4 w-4 text-green-700 dark:text-green-400" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium">
+                              {group.eventName}
+                            </p>
+                            <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                              Event
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {startTime} &ndash; {endTime}
+                          </p>
+                          <div className="mt-0.5 flex flex-wrap gap-1.5">
+                            {group.available_bays.map((b) => (
+                              <span
+                                key={b.bay_id}
+                                className="inline-block rounded-full bg-green-100/80 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:bg-green-900/20 dark:text-green-400"
+                              >
+                                {b.bay_name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-sm font-semibold">{priceLabel}</span>
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Users className="h-3 w-3" />
+                          {spotsLeft > 0 ? `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left` : "Full"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Regular slot row
                 const priceLabel = group.all_same_price
                   ? `$${(group.min_price_cents / 100).toFixed(2)}`
                   : `from $${(group.min_price_cents / 100).toFixed(2)}`;
