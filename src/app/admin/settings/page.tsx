@@ -375,7 +375,7 @@ async function MembershipTierSection({ orgId }: { orgId: string }) {
   const { data: tier } = await supabase
     .from("membership_tiers")
     .select(
-      "name, benefit_description, discount_type, discount_value, price_monthly_cents, price_yearly_cents"
+      "name, benefit_description, discount_type, discount_value, event_discount_type, event_discount_value, price_monthly_cents, price_yearly_cents"
     )
     .eq("org_id", orgId)
     .single();
@@ -409,6 +409,8 @@ async function MembershipTierSection({ orgId }: { orgId: string }) {
               benefit_description: tier.benefit_description,
               discount_type: tier.discount_type as "flat" | "percent",
               discount_value: Number(tier.discount_value),
+              event_discount_type: (tier.event_discount_type as "flat" | "percent") ?? "percent",
+              event_discount_value: Number(tier.event_discount_value ?? 0),
               price_monthly_cents: tier.price_monthly_cents,
               price_yearly_cents: tier.price_yearly_cents,
             }
