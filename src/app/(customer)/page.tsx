@@ -420,6 +420,7 @@ export default async function FacilityHomePage({
                 isAuthenticated={!!auth}
                 isMember={membershipContext.isMember}
                 userId={auth?.profile.id}
+                paymentMode={paymentMode}
               />
             )}
           </div>

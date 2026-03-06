@@ -1,14 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import {
   CalendarDays,
   Clock,
   MapPin,
   Users,
-  Loader2,
 } from "lucide-react";
+import { EventRegistrationPanel, type EventForPanel } from "./event-registration-panel";
 
 type EventCardEvent = {
   id: string;
@@ -31,6 +30,7 @@ type EventCardProps = {
   isAuthenticated: boolean;
   isMember: boolean;
   userRegistrationStatus: string | null;
+  paymentMode: string;
 };
 
 export function EventCard({
@@ -39,11 +39,11 @@ export function EventCard({
   isAuthenticated,
   isMember,
   userRegistrationStatus,
+  paymentMode,
 }: EventCardProps) {
-  const [registering, setRegistering] = useState(false);
   const [status, setStatus] = useState(userRegistrationStatus);
-  const [error, setError] = useState<string | null>(null);
   const [regCount, setRegCount] = useState(event.registeredCount);
+  const [showPanel, setShowPanel] = useState(false);
 
   const spotsLeft = event.capacity - regCount;
   const isFull = spotsLeft <= 0;
@@ -75,45 +75,29 @@ export function EventCard({
       minute: "2-digit",
     }).format(new Date(iso));
 
-  async function handleRegister() {
-    if (!isAuthenticated) {
-      window.location.href = "/auth/login?redirect=" + encodeURIComponent(window.location.pathname);
-      return;
-    }
+  function handleRegisterClick() {
+    setShowPanel(true);
+  }
 
-    setRegistering(true);
-    setError(null);
-
-    try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        window.location.href = "/auth/login";
-        return;
-      }
-
-      const { data, error: rpcError } = await supabase.rpc("register_for_event", {
-        p_event_id: event.id,
-        p_user_id: user.id,
-      });
-
-      if (rpcError) {
-        setError(rpcError.message);
-        return;
-      }
-
-      const result = data as { status: string; waitlist_position: number | null };
-      setStatus(result.status);
-
-      if (result.status === "confirmed" || result.status === "pending_payment") {
-        setRegCount((c) => c + 1);
-      }
-    } catch {
-      setError("Registration failed. Please try again.");
-    } finally {
-      setRegistering(false);
+  function handleRegistered(newStatus: string) {
+    setStatus(newStatus);
+    if (newStatus === "confirmed" || newStatus === "pending_payment") {
+      setRegCount((c) => c + 1);
     }
   }
+
+  const panelEvent: EventForPanel = {
+    id: event.id,
+    name: event.name,
+    description: event.description,
+    startTime: event.startTime,
+    endTime: event.endTime,
+    capacity: event.capacity,
+    registeredCount: regCount,
+    priceCents: event.priceCents,
+    membersOnly: event.membersOnly,
+    bayNames: event.bayNames,
+  };
 
   const getButtonContent = () => {
     if (status === "confirmed") {
@@ -156,98 +140,104 @@ export function EventCard({
   };
 
   const canRegister =
-    !status && enrollmentOpen && isAuthenticated && !registering;
+    !status && enrollmentOpen && isAuthenticated;
   const canJoinWaitlist = !status && enrollmentOpen && isFull && isAuthenticated;
 
   return (
-    <div className="flex flex-col rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.03]">
-      {/* Event badge */}
-      <div className="mb-3 flex items-center justify-between">
-        <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-          Event
-        </span>
-        {event.membersOnly && (
-          <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-            Members Only
+    <>
+      <div className="flex flex-col rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.03]">
+        {/* Event badge */}
+        <div className="mb-3 flex items-center justify-between">
+          <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+            Event
           </span>
-        )}
-      </div>
-
-      {/* Event name */}
-      <h3 className="text-base font-semibold text-gray-800 dark:text-white/90">
-        {event.name}
-      </h3>
-
-      {/* Details */}
-      <div className="mt-3 space-y-1.5">
-        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-          <CalendarDays className="h-4 w-4 shrink-0" />
-          <span>{formatDate(event.startTime)}</span>
-        </div>
-        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-          <Clock className="h-4 w-4 shrink-0" />
-          <span>
-            {formatTime(event.startTime)} – {formatTime(event.endTime)}
-          </span>
-        </div>
-        {event.bayNames && (
-          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-            <MapPin className="h-4 w-4 shrink-0" />
-            <span>{event.bayNames}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Spots & Price */}
-      <div className="mt-4 flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <Users className="h-4 w-4 text-gray-400" />
-          {isFull ? (
-            <span className="text-sm font-medium text-red-600 dark:text-red-400">
-              Full
-            </span>
-          ) : (
-            <span className="text-sm text-gray-600 dark:text-gray-400">
-              {spotsLeft} spot{spotsLeft !== 1 ? "s" : ""} left
+          {event.membersOnly && (
+            <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+              Members Only
             </span>
           )}
         </div>
-        <span className="text-sm font-semibold text-gray-800 dark:text-white/90">
-          {event.priceCents === 0
-            ? "Free"
-            : `$${(event.priceCents / 100).toFixed(2)}`}
-        </span>
-      </div>
 
-      {/* Error */}
-      {error && (
-        <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
-      )}
+        {/* Event name */}
+        <h3 className="text-base font-semibold text-gray-800 dark:text-white/90">
+          {event.name}
+        </h3>
 
-      {/* Register button */}
-      <div className="mt-4">
-        {status ? (
-          <div className="flex h-10 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
-            {getButtonContent()}
+        {/* Details */}
+        <div className="mt-3 space-y-1.5">
+          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <CalendarDays className="h-4 w-4 shrink-0" />
+            <span>{formatDate(event.startTime)}</span>
           </div>
-        ) : enrollmentOpen ? (
-          <button
-            onClick={handleRegister}
-            disabled={registering || (!canRegister && !canJoinWaitlist && isAuthenticated)}
-            className="flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
-            {registering ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <Clock className="h-4 w-4 shrink-0" />
+            <span>
+              {formatTime(event.startTime)} – {formatTime(event.endTime)}
+            </span>
+          </div>
+          {event.bayNames && (
+            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+              <MapPin className="h-4 w-4 shrink-0" />
+              <span>{event.bayNames}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Spots & Price */}
+        <div className="mt-4 flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Users className="h-4 w-4 text-gray-400" />
+            {isFull ? (
+              <span className="text-sm font-medium text-red-600 dark:text-red-400">
+                Full
+              </span>
             ) : (
-              getButtonContent()
+              <span className="text-sm text-gray-600 dark:text-gray-400">
+                {spotsLeft} spot{spotsLeft !== 1 ? "s" : ""} left
+              </span>
             )}
-          </button>
-        ) : (
-          <div className="flex h-10 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800">
-            {getButtonContent()}
           </div>
-        )}
+          <span className="text-sm font-semibold text-gray-800 dark:text-white/90">
+            {event.priceCents === 0
+              ? "Free"
+              : `$${(event.priceCents / 100).toFixed(2)}`}
+          </span>
+        </div>
+
+        {/* Register button */}
+        <div className="mt-4">
+          {status ? (
+            <div className="flex h-10 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
+              {getButtonContent()}
+            </div>
+          ) : enrollmentOpen ? (
+            <button
+              onClick={handleRegisterClick}
+              disabled={!canRegister && !canJoinWaitlist && isAuthenticated}
+              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
+            >
+              {getButtonContent()}
+            </button>
+          ) : (
+            <div className="flex h-10 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800">
+              {getButtonContent()}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* Registration panel */}
+      {showPanel && (
+        <EventRegistrationPanel
+          event={panelEvent}
+          timezone={timezone}
+          isAuthenticated={isAuthenticated}
+          isMember={isMember}
+          paymentMode={paymentMode}
+          onClose={() => setShowPanel(false)}
+          onRegistered={handleRegistered}
+        />
+      )}
+    </>
   );
 }

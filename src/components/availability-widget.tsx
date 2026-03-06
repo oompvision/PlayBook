@@ -53,6 +53,7 @@ import {
   BookingDetailsModal,
   type BookingDetailData,
 } from "@/components/booking-details-modal";
+import { EventRegistrationPanel, type EventForPanel } from "@/components/events/event-registration-panel";
 import { LocationSwitcher } from "@/components/location-switcher";
 
 type Bay = {
@@ -77,9 +78,11 @@ type TimeGroup = {
   isEvent?: boolean;
   eventId?: string;
   eventName?: string;
+  eventDescription?: string | null;
   eventCapacity?: number;
   eventRegisteredCount?: number;
   eventPriceCents?: number;
+  eventMembersOnly?: boolean;
 };
 
 type Booking = {
@@ -318,6 +321,7 @@ export function AvailabilityWidget({
   const [mounted, setMounted] = useState(false);
   const [autoAdvancedFrom, setAutoAdvancedFrom] = useState<string | null>(null);
   const [chatExpanded, setChatExpanded] = useState(false);
+  const [selectedEventForPanel, setSelectedEventForPanel] = useState<EventForPanel | null>(null);
 
   // Booking panel state
   const [panelOpen, setPanelOpen] = useState(false);
@@ -607,8 +611,8 @@ export function AvailabilityWidget({
       const { data: dayEvents } = await supabase
         .from("events")
         .select(`
-          id, name, start_time, end_time, capacity, price_cents,
-          event_bays(bay_id, bays:bay_id(name))
+          id, name, description, start_time, end_time, capacity, price_cents,
+          members_only, event_bays(bay_id, bays:bay_id(name))
         `)
         .eq("org_id", orgId)
         .eq("status", "published")
@@ -617,20 +621,17 @@ export function AvailabilityWidget({
         .order("start_time");
 
       if (dayEvents && dayEvents.length > 0) {
-        // Fetch registration counts for these events
+        // Fetch registration counts using SECURITY DEFINER RPC (bypasses RLS)
         const eventIds = dayEvents.map((e: { id: string }) => e.id);
-        const { data: regCounts } = await supabase
-          .from("event_registrations")
-          .select("event_id")
-          .in("event_id", eventIds)
-          .in("status", ["confirmed", "pending_payment"]);
-
         const countMap: Record<string, number> = {};
-        if (regCounts) {
-          for (const r of regCounts) {
-            countMap[r.event_id] = (countMap[r.event_id] || 0) + 1;
-          }
-        }
+        await Promise.all(
+          eventIds.map(async (id: string) => {
+            const { data } = await supabase.rpc("get_event_registration_count", {
+              p_event_id: id,
+            });
+            countMap[id] = data ?? 0;
+          })
+        );
 
         for (const evt of dayEvents) {
           const bayNames = (evt.event_bays as { bay_id: string; bays: { name: string }[] }[])
@@ -652,9 +653,11 @@ export function AvailabilityWidget({
             isEvent: true,
             eventId: evt.id,
             eventName: evt.name,
+            eventDescription: evt.description,
             eventCapacity: evt.capacity,
             eventRegisteredCount: countMap[evt.id] || 0,
             eventPriceCents: evt.price_cents,
+            eventMembersOnly: evt.members_only,
           });
         }
 
@@ -1627,7 +1630,7 @@ export function AvailabilityWidget({
                 const startTime = formatTime(group.start_time, timezone);
                 const endTime = formatTime(group.end_time, timezone);
 
-                // Event row — distinct visual treatment, not selectable
+                // Event row — clickable, opens registration panel
                 if (group.isEvent) {
                   const spotsLeft = (group.eventCapacity || 0) - (group.eventRegisteredCount || 0);
                   const priceLabel = group.eventPriceCents === 0
@@ -1635,9 +1638,24 @@ export function AvailabilityWidget({
                     : `$${((group.eventPriceCents || 0) / 100).toFixed(2)}`;
 
                   return (
-                    <div
+                    <button
                       key={group.key}
-                      className="flex w-full items-center justify-between rounded-lg border border-green-200 bg-green-50/50 px-4 py-3 text-left dark:border-green-900/30 dark:bg-green-950/20"
+                      type="button"
+                      onClick={() => {
+                        setSelectedEventForPanel({
+                          id: group.eventId!,
+                          name: group.eventName || "",
+                          description: group.eventDescription || null,
+                          startTime: group.start_time,
+                          endTime: group.end_time,
+                          capacity: group.eventCapacity || 0,
+                          registeredCount: group.eventRegisteredCount || 0,
+                          priceCents: group.eventPriceCents || 0,
+                          membersOnly: group.eventMembersOnly || false,
+                          bayNames: group.available_bays.map((b) => b.bay_name).join(", "),
+                        });
+                      }}
+                      className="flex w-full items-center justify-between rounded-lg border border-green-200 bg-green-50/50 px-4 py-3 text-left transition-colors hover:bg-green-100/70 dark:border-green-900/30 dark:bg-green-950/20 dark:hover:bg-green-950/40"
                     >
                       <div className="flex items-center gap-3">
                         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
@@ -1674,7 +1692,7 @@ export function AvailabilityWidget({
                           {spotsLeft > 0 ? `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left` : "Full"}
                         </span>
                       </div>
-                    </div>
+                    </button>
                   );
                 }
 
@@ -2852,6 +2870,22 @@ export function AvailabilityWidget({
           description={toastData.description}
           duration={10000}
           onClose={() => setToastData(null)}
+        />
+      )}
+
+      {/* Event registration panel */}
+      {selectedEventForPanel && (
+        <EventRegistrationPanel
+          event={selectedEventForPanel}
+          timezone={timezone}
+          isAuthenticated={!!isAuthenticated}
+          isMember={!!membership?.isMember}
+          paymentMode={paymentMode}
+          onClose={() => setSelectedEventForPanel(null)}
+          onRegistered={() => {
+            setSelectedEventForPanel(null);
+            fetchTimeGroups(selectedDate);
+          }}
         />
       )}
     </div>

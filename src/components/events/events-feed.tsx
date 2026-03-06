@@ -7,6 +7,7 @@ type EventsFeedProps = {
   isAuthenticated: boolean;
   isMember: boolean;
   userId?: string;
+  paymentMode?: string;
 };
 
 export async function EventsFeed({
@@ -15,6 +16,7 @@ export async function EventsFeed({
   isAuthenticated,
   isMember,
   userId,
+  paymentMode = "none",
 }: EventsFeedProps) {
   const supabase = await createClient();
 
@@ -115,6 +117,7 @@ export async function EventsFeed({
               isAuthenticated={isAuthenticated}
               isMember={isMember}
               userRegistrationStatus={userStatus}
+              paymentMode={paymentMode}
             />
           );
         })}
