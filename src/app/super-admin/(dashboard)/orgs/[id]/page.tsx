@@ -24,6 +24,7 @@ import {
   Users,
   Trash2,
 } from "lucide-react";
+import { EnterAsAdminButton } from "@/components/super-admin/enter-as-admin-button";
 
 export default async function OrgDetailPage({
   params,
@@ -348,9 +349,7 @@ export default async function OrgDetailPage({
           <h1 className="text-3xl font-bold tracking-tight">{org.name}</h1>
           <p className="mt-1 text-muted-foreground">{org.slug}.ezbooker.app</p>
         </div>
-        <a href={`/api/admin/enter/${id}`}>
-          <Button variant="outline">Enter as Admin</Button>
-        </a>
+        <EnterAsAdminButton orgId={id} />
       </div>
 
       {/* Banners */}
