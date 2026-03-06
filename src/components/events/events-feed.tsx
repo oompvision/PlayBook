@@ -87,7 +87,7 @@ export async function EventsFeed({
       <h2 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white/90">
         Upcoming Events
       </h2>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="space-y-4">
         {visibleEvents.map((event) => {
           const registered = countMap[event.id] || 0;
           const bayNames = event.event_bays

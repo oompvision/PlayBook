@@ -146,11 +146,13 @@ export default async function MyBookingsPage({
     promoted_at: string | null;
     events: {
       name: string;
+      description: string | null;
       start_time: string;
       end_time: string;
       price_cents: number;
       capacity: number;
       status: string;
+      event_bays: { bay_id: string; bays: { name: string } | null }[];
     } | null;
   };
 
@@ -167,11 +169,13 @@ export default async function MyBookingsPage({
       promoted_at,
       events:event_id (
         name,
+        description,
         start_time,
         end_time,
         price_cents,
         capacity,
-        status
+        status,
+        event_bays (bay_id, bays:bay_id (name))
       )
     `)
     .eq("org_id", org.id)
@@ -180,22 +184,119 @@ export default async function MyBookingsPage({
 
   const eventRegistrations = (rawEventRegistrations ?? []) as unknown as EventReg[];
 
-  const activeEventRegs = eventRegistrations.filter(
-    (r) => r.status !== "cancelled" && r.events
-  );
-  const pastEventRegs = eventRegistrations.filter(
-    (r) => r.status === "cancelled" || (r.events && new Date(r.events.end_time) < new Date())
-  );
+  // Get registration counts for events
+  const eventCountMap: Record<string, number> = {};
+  const eventIds = [...new Set(eventRegistrations.map((r) => r.event_id))];
+  for (const eid of eventIds) {
+    const { data: count } = await service.rpc("get_event_registration_count", { p_event_id: eid });
+    eventCountMap[eid] = count ?? 0;
+  }
+
+  // Build unified feed items
+  type FeedItemBooking = {
+    kind: "booking";
+    sortDate: string;
+    booking: (typeof enrichedBookings)[number];
+  };
+  type FeedItemEvent = {
+    kind: "event";
+    sortDate: string;
+    registration: EventReg;
+    eventData: {
+      name: string;
+      description: string | null;
+      startTime: string;
+      endTime: string;
+      priceCents: number;
+      capacity: number;
+      registeredCount: number;
+      bayNames: string;
+    };
+  };
+  type FeedItem = FeedItemBooking | FeedItemEvent;
+
+  const now = new Date();
+
+  // Build upcoming event items (non-cancelled, event not ended)
+  const upcomingEventItems: FeedItemEvent[] = eventRegistrations
+    .filter((r) => r.status !== "cancelled" && r.events && new Date(r.events.end_time) >= now)
+    .map((r) => {
+      const evt = r.events!;
+      const bayNames = (evt.event_bays as unknown as { bay_id: string; bays: { name: string } | null }[])
+        ?.map((eb) => eb.bays?.name)
+        .filter(Boolean)
+        .join(", ") || "";
+      return {
+        kind: "event" as const,
+        sortDate: evt.start_time,
+        registration: r,
+        eventData: {
+          name: evt.name,
+          description: evt.description,
+          startTime: evt.start_time,
+          endTime: evt.end_time,
+          priceCents: evt.price_cents,
+          capacity: evt.capacity,
+          registeredCount: eventCountMap[r.event_id] ?? 0,
+          bayNames,
+        },
+      };
+    });
+
+  // Build past event items (cancelled or event ended)
+  const pastEventItems: FeedItemEvent[] = eventRegistrations
+    .filter((r) => r.status === "cancelled" || (r.events && new Date(r.events.end_time) < now))
+    .map((r) => {
+      const evt = r.events!;
+      if (!evt) return null;
+      const bayNames = (evt.event_bays as unknown as { bay_id: string; bays: { name: string } | null }[])
+        ?.map((eb) => eb.bays?.name)
+        .filter(Boolean)
+        .join(", ") || "";
+      return {
+        kind: "event" as const,
+        sortDate: evt.start_time,
+        registration: r,
+        eventData: {
+          name: evt.name,
+          description: evt.description,
+          startTime: evt.start_time,
+          endTime: evt.end_time,
+          priceCents: evt.price_cents,
+          capacity: evt.capacity,
+          registeredCount: eventCountMap[r.event_id] ?? 0,
+          bayNames,
+        },
+      };
+    })
+    .filter((item): item is FeedItemEvent => item !== null);
 
   // Split into upcoming+active vs past+cancelled (using visual status)
-  const upcoming = enrichedBookings.filter((b) => {
+  const upcomingBookings = enrichedBookings.filter((b) => {
     const vs = getVisualBookingStatus(b.status, b.start_time, b.end_time);
     return vs === "confirmed" || vs === "active";
   });
-  const past = enrichedBookings.filter((b) => {
+  const pastBookings = enrichedBookings.filter((b) => {
     const vs = getVisualBookingStatus(b.status, b.start_time, b.end_time);
     return vs === "completed" || vs === "cancelled";
   });
+
+  // Merge bookings + events into unified feeds
+  const upcomingBookingItems: FeedItemBooking[] = upcomingBookings.map((b) => ({
+    kind: "booking" as const,
+    sortDate: b.start_time,
+    booking: b,
+  }));
+  const pastBookingItems: FeedItemBooking[] = pastBookings.map((b) => ({
+    kind: "booking" as const,
+    sortDate: b.start_time,
+    booking: b,
+  }));
+
+  const unifiedUpcoming: FeedItem[] = [...upcomingBookingItems, ...upcomingEventItems]
+    .sort((a, b) => new Date(a.sortDate).getTime() - new Date(b.sortDate).getTime());
+  const unifiedPast: FeedItem[] = [...pastBookingItems, ...pastEventItems]
+    .sort((a, b) => new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime());
 
   async function cancelBooking(formData: FormData) {
     "use server";
@@ -320,142 +421,17 @@ export default async function MyBookingsPage({
         )}
 
         <MyBookingsList
-          upcoming={upcoming}
-          past={past}
+          upcoming={unifiedUpcoming}
+          past={unifiedPast}
           bayMap={bayMap}
           timezone={org.timezone}
           orgId={org.id}
           initialBookingCode={params.booking}
           cancelAction={cancelBooking}
+          cancelEventAction={cancelEventRegistration}
           cancellationWindowHours={cancellationWindowHours}
           paymentMode={paymentMode}
         />
-
-        {/* My Events Section */}
-        {(activeEventRegs.length > 0 || pastEventRegs.length > 0) && (
-          <div className="mt-10">
-            <h2 className="text-2xl font-bold tracking-tight">My Events</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Your event registrations.
-            </p>
-
-            {activeEventRegs.length > 0 && (
-              <div className="mt-4 space-y-3">
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                  Upcoming
-                </h3>
-                {activeEventRegs.map((reg) => {
-                  const event = reg.events as {
-                    name: string;
-                    start_time: string;
-                    end_time: string;
-                    price_cents: number;
-                  } | null;
-                  if (!event) return null;
-                  const startStr = new Intl.DateTimeFormat("en-US", {
-                    timeZone: org.timezone,
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  }).format(new Date(event.start_time));
-                  const endStr = new Intl.DateTimeFormat("en-US", {
-                    timeZone: org.timezone,
-                    hour: "numeric",
-                    minute: "2-digit",
-                  }).format(new Date(event.end_time));
-
-                  const statusColor = reg.status === "confirmed"
-                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                    : reg.status === "waitlisted"
-                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
-
-                  return (
-                    <div
-                      key={reg.id}
-                      className="rounded-lg border p-4"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                              Event
-                            </span>
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${statusColor}`}>
-                              {reg.status === "pending_payment" ? "Payment Pending" : reg.status}
-                              {reg.waitlist_position ? ` #${reg.waitlist_position}` : ""}
-                            </span>
-                          </div>
-                          <p className="mt-1.5 font-semibold">{event.name}</p>
-                          <p className="mt-0.5 text-sm text-muted-foreground">
-                            {startStr} – {endStr}
-                          </p>
-                          {event.price_cents > 0 && (
-                            <p className="mt-0.5 text-sm font-medium">
-                              ${(event.price_cents / 100).toFixed(2)}
-                            </p>
-                          )}
-                        </div>
-                        {reg.status !== "cancelled" && (
-                          <form action={cancelEventRegistration}>
-                            <input type="hidden" name="registration_id" value={reg.id} />
-                            <button
-                              type="submit"
-                              className="rounded-md border px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
-                            >
-                              Cancel
-                            </button>
-                          </form>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {pastEventRegs.length > 0 && (
-              <div className="mt-6 space-y-3">
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                  Past
-                </h3>
-                {pastEventRegs.map((reg) => {
-                  const event = reg.events as {
-                    name: string;
-                    start_time: string;
-                    end_time: string;
-                    price_cents: number;
-                  } | null;
-                  if (!event) return null;
-                  const startStr = new Intl.DateTimeFormat("en-US", {
-                    timeZone: org.timezone,
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  }).format(new Date(event.start_time));
-
-                  return (
-                    <div
-                      key={reg.id}
-                      className="rounded-lg border p-4 opacity-60"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                          {reg.status === "cancelled" ? "Cancelled" : "Completed"}
-                        </span>
-                      </div>
-                      <p className="mt-1.5 font-semibold">{event.name}</p>
-                      <p className="mt-0.5 text-sm text-muted-foreground">{startStr}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
