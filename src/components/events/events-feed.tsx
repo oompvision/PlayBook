@@ -44,18 +44,18 @@ export async function EventsFeed({
 
   if (!events || events.length === 0) return null;
 
-  // Get registration counts for all events
+  // Get registration counts using SECURITY DEFINER RPC (bypasses RLS so
+  // customers can see total count, not just their own registrations)
   const eventIds = events.map((e) => e.id);
-  const { data: regCounts } = await supabase
-    .from("event_registrations")
-    .select("event_id, status")
-    .in("event_id", eventIds)
-    .in("status", ["confirmed", "pending_payment"]);
-
   const countMap: Record<string, number> = {};
-  for (const r of regCounts ?? []) {
-    countMap[r.event_id] = (countMap[r.event_id] || 0) + 1;
-  }
+  await Promise.all(
+    eventIds.map(async (id) => {
+      const { data } = await supabase.rpc("get_event_registration_count", {
+        p_event_id: id,
+      });
+      countMap[id] = data ?? 0;
+    })
+  );
 
   // Get user's existing registrations
   let userRegs: Record<string, string> = {};
