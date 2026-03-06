@@ -634,8 +634,9 @@ export function AvailabilityWidget({
         );
 
         for (const evt of dayEvents) {
-          const bayNames = (evt.event_bays as { bay_id: string; bays: { name: string }[] }[])
-            ?.map((eb) => eb.bays?.[0]?.name)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const bayNames = (evt.event_bays as any[])
+            ?.map((eb) => eb.bays?.name ?? eb.bays?.[0]?.name)
             .filter(Boolean) || [];
 
           groups.push({

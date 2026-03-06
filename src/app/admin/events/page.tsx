@@ -359,7 +359,8 @@ export default async function EventsPage({
                       const registered = regCounts[event.id] || 0;
                       const spotsLeft = event.capacity - registered;
                       const bayNames = event.event_bays
-                        ?.map((eb: { bays: { name: string }[] | null }) => eb.bays?.[0]?.name)
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        ?.map((eb: any) => eb.bays?.name ?? eb.bays?.[0]?.name)
                         .filter(Boolean)
                         .join(", ");
 
@@ -510,7 +511,8 @@ export default async function EventsPage({
               {events.map((event) => {
                 const registered = regCounts[event.id] || 0;
                 const bayNames = event.event_bays
-                  ?.map((eb: { bays: { name: string }[] | null }) => eb.bays?.[0]?.name)
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  ?.map((eb: any) => eb.bays?.name ?? eb.bays?.[0]?.name)
                   .filter(Boolean)
                   .join(", ");
 

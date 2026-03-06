@@ -190,7 +190,8 @@ export default async function EventDetailPage({
   };
 
   const bayNames = event.event_bays
-    ?.map((eb: { bays: { name: string }[] | null }) => eb.bays?.[0]?.name)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ?.map((eb: any) => eb.bays?.name ?? eb.bays?.[0]?.name)
     .filter(Boolean)
     .join(", ");
 

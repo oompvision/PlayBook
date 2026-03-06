@@ -91,7 +91,8 @@ export async function EventsFeed({
         {visibleEvents.map((event) => {
           const registered = countMap[event.id] || 0;
           const bayNames = event.event_bays
-            ?.map((eb: { bays: { name: string }[] | null }) => eb.bays?.[0]?.name)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ?.map((eb: any) => eb.bays?.name ?? eb.bays?.[0]?.name)
             .filter(Boolean)
             .join(", ");
           const userStatus = userRegs[event.id] || null;
