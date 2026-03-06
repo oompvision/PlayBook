@@ -63,7 +63,7 @@ export default async function EventDetailPage({
 
   if (!event) redirect("/admin/events");
 
-  // Fetch registrations with user profiles
+  // Fetch registrations (separate query from profiles to avoid PostgREST FK resolution issues)
   type RegRow = {
     id: string;
     user_id: string;
@@ -86,13 +86,28 @@ export default async function EventDetailPage({
       payment_status,
       registered_at,
       cancelled_at,
-      promoted_at,
-      profiles:user_id (full_name, email)
+      promoted_at
     `)
     .eq("event_id", id)
     .order("registered_at", { ascending: true });
 
-  const registrations = (rawRegistrations ?? []) as unknown as RegRow[];
+  // Fetch profiles separately and merge
+  const userIds = (rawRegistrations ?? []).map((r) => r.user_id);
+  let profilesMap: Record<string, { full_name: string | null; email: string }> = {};
+  if (userIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, full_name, email")
+      .in("id", userIds);
+    if (profiles) {
+      profilesMap = Object.fromEntries(profiles.map((p) => [p.id, p]));
+    }
+  }
+
+  const registrations: RegRow[] = (rawRegistrations ?? []).map((r) => ({
+    ...r,
+    profiles: profilesMap[r.user_id] || null,
+  }));
 
   // Check for conflicts before publishing
   let conflicts: { affected_slots: number; affected_bookings: number } | null = null;
