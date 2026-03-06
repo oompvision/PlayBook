@@ -191,6 +191,7 @@ export default async function DayEditorPage({
       return {
         bay_schedule_id: schedule.id,
         org_id: org.id,
+        location_id: bayInfo?.location_id,
         start_time: toTimestamp(date, ts.start_time, org.timezone),
         end_time: toTimestamp(date, ts.end_time, org.timezone),
         price_cents: priceCents,
@@ -248,6 +249,7 @@ export default async function DayEditorPage({
     const { error } = await supabase.from("bay_schedule_slots").insert({
       bay_schedule_id: schedule.id,
       org_id: org.id,
+      location_id: bayInfo?.location_id,
       start_time: toTimestamp(date, startTime, org.timezone),
       end_time: toTimestamp(date, endTime, org.timezone),
       price_cents: Math.round(price * 100),

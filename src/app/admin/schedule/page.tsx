@@ -174,11 +174,18 @@ export default async function ScheduleManagerPage({
     const allConcreteSlots: {
       bay_schedule_id: string;
       org_id: string;
+      location_id: string | undefined;
       start_time: string;
       end_time: string;
       price_cents: number;
       status: "available";
     }[] = [];
+
+    // Build a map of bay_id → location_id from the bays we already fetched
+    const bayLocationMap = new Map<string, string>();
+    for (const b of baysData || []) {
+      if (b.location_id) bayLocationMap.set(b.id, b.location_id);
+    }
 
     for (const schedule of upsertedSchedules) {
       const hourlyRate = bayRates.get(schedule.bay_id) || 0;
@@ -197,6 +204,7 @@ export default async function ScheduleManagerPage({
         allConcreteSlots.push({
           bay_schedule_id: schedule.id,
           org_id: org.id,
+          location_id: bayLocationMap.get(schedule.bay_id),
           start_time: toTimestamp(schedule.date, ts.start_time, org.timezone),
           end_time: toTimestamp(schedule.date, ts.end_time, org.timezone),
           price_cents: priceCents,
