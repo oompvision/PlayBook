@@ -25,7 +25,7 @@ export default async function AdminLayout({
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, scheduling_type, locations_enabled, membership_tiers_enabled")
+    .select("id, scheduling_type, locations_enabled, membership_tiers_enabled, events_enabled")
     .eq("slug", slug)
     .single();
 
@@ -61,7 +61,7 @@ export default async function AdminLayout({
   return (
     <SidebarProvider>
       <div className="min-h-screen bg-gray-50">
-        <AdminSidebar slug={slug} schedulingType={org.scheduling_type} membershipEnabled={org.membership_tiers_enabled} />
+        <AdminSidebar slug={slug} schedulingType={org.scheduling_type} membershipEnabled={org.membership_tiers_enabled} eventsEnabled={org.events_enabled} />
         <AdminBackdrop />
         <div className="lg:ml-[280px]">
           <AdminHeader

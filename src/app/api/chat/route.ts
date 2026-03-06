@@ -1323,7 +1323,7 @@ export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, timezone, description, address, phone, min_booking_lead_minutes, scheduling_type, bookable_window_days, membership_tiers_enabled")
+    .select("id, name, slug, timezone, description, address, phone, min_booking_lead_minutes, scheduling_type, bookable_window_days, membership_tiers_enabled, events_enabled")
     .eq("slug", facilitySlug)
     .single();
 
@@ -1554,7 +1554,7 @@ Payment policy:
 - When confirming a booking, include this notice: "By confirming, you agree to the facility's terms and cancellation policy."${cancellationPolicyText ? `\n- Cancellation policy: ${cancellationPolicyText}` : ""}
 - Do NOT use start_checkout when no payment is required — use create_booking instead.
 `}
-Event guidelines:
+${org.events_enabled ? `Event guidelines:
 - Use get_events when the customer asks about events, classes, clinics, or group activities.
 - When showing events, include: name, date, time, price, spots remaining, and which facilities are used.
 - For members, show both the regular price and their discounted member price.
@@ -1563,7 +1563,8 @@ Event guidelines:
 - For paid events, direct the customer to the events section on the facility page to register and pay.
 - BEFORE calling register_for_event, summarize the event and confirm that the customer wants to register.
 - Members-only events: if the customer is not a member, let them know the event is members-only and suggest checking out the membership at /membership.
-
+` : `This facility does not have events enabled. If the customer asks about events, let them know this facility doesn't currently offer events.
+`}
 Quick reply buttons:
 - ALWAYS call suggest_quick_replies to offer clickable buttons when the customer needs to make a choice.
 - When to use quick replies:
@@ -1587,6 +1588,12 @@ Quick reply buttons:
     let quickReplies: string[] = [];
     let bookingAction: { date: string; bay_name: string; start_time: string; end_time?: string; duration?: number; price_cents?: number; slot_ids?: string[] } | null = null;
 
+    // Filter out event tools if events are disabled for this org
+    const eventToolNames = new Set(["get_events", "register_for_event"]);
+    const activeToolDeclarations = org.events_enabled
+      ? toolDeclarations
+      : toolDeclarations.filter((t) => !eventToolNames.has(t.name!));
+
     // Tool call loop — up to 5 rounds to prevent infinite loops
     for (let i = 0; i < 5; i++) {
       const response = await getGenAI().models.generateContent({
@@ -1594,7 +1601,7 @@ Quick reply buttons:
         contents: currentMessages,
         config: {
           systemInstruction,
-          tools: [{ functionDeclarations: toolDeclarations }],
+          tools: [{ functionDeclarations: activeToolDeclarations }],
         },
       });
 

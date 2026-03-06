@@ -87,7 +87,7 @@ export default async function FacilityHomePage({
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, logo_url, cover_photo_url, timezone, min_booking_lead_minutes, scheduling_type, bookable_window_days, locations_enabled")
+    .select("id, name, slug, logo_url, cover_photo_url, timezone, min_booking_lead_minutes, scheduling_type, bookable_window_days, locations_enabled, events_enabled")
     .eq("slug", slug)
     .single();
 
@@ -413,7 +413,7 @@ export default async function FacilityHomePage({
                 </p>
               </div>
             )}
-            {org && (
+            {org && org.events_enabled && (
               <EventsFeed
                 orgId={org.id}
                 timezone={timezone}
@@ -538,7 +538,7 @@ export default async function FacilityHomePage({
               </p>
             </div>
           )}
-          {org && (
+          {org && org.events_enabled && (
             <EventsFeed
               orgId={org.id}
               timezone={timezone}

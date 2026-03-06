@@ -7,6 +7,7 @@ import { PaymentSettings } from "./payment-settings";
 import { CancellationPolicySettings } from "./cancellation-policy-settings";
 import { SchedulingModeSettings } from "./scheduling-mode-settings";
 import { MembershipTierSettings } from "./membership-tier-settings";
+import { EventsSettings } from "./events-settings";
 import { EmailSettingsToggles } from "@/components/admin/email-settings-toggles";
 import {
   Settings,
@@ -324,6 +325,9 @@ export default async function FacilitySettingsPage({
       {/* Payment Processing */}
       <PaymentSettingsSection orgId={org.id} />
 
+      {/* Events */}
+      <EventsSection orgId={org.id} />
+
       {/* Membership Tiers */}
       <MembershipTierSection orgId={org.id} />
 
@@ -442,6 +446,42 @@ async function CancellationPolicySection({ orgId }: { orgId: string }) {
   };
 
   return <CancellationPolicySettings initialSettings={initialSettings} />;
+}
+
+async function EventsSection({ orgId }: { orgId: string }) {
+  const supabase = await createClient();
+
+  const { data: orgData } = await supabase
+    .from("organizations")
+    .select("events_enabled")
+    .eq("id", orgId)
+    .single();
+
+  // Count published events with active registrations (blocks disabling)
+  const { data: publishedEvents } = await supabase
+    .from("events")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("status", "published")
+    .gt("end_time", new Date().toISOString());
+
+  let activeEventCount = 0;
+  if (publishedEvents && publishedEvents.length > 0) {
+    const eventIds = publishedEvents.map((e) => e.id);
+    const { count } = await supabase
+      .from("event_registrations")
+      .select("id", { count: "exact", head: true })
+      .in("event_id", eventIds)
+      .in("status", ["confirmed", "pending_payment"]);
+    if (count && count > 0) activeEventCount = publishedEvents.length;
+  }
+
+  return (
+    <EventsSettings
+      initialEnabled={orgData?.events_enabled ?? false}
+      activeEventCount={activeEventCount}
+    />
+  );
 }
 
 async function EmailNotificationsSection({ orgId }: { orgId: string }) {
