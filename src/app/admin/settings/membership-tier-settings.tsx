@@ -16,6 +16,8 @@ type MembershipTierSettingsProps = {
     benefit_description: string | null;
     discount_type: DiscountType;
     discount_value: number;
+    event_discount_type: DiscountType;
+    event_discount_value: number;
     price_monthly_cents: number | null;
     price_yearly_cents: number | null;
   } | null;
@@ -47,6 +49,12 @@ export function MembershipTierSettings({
   );
   const [discountValue, setDiscountValue] = useState(
     initialTier?.discount_value?.toString() ?? "0"
+  );
+  const [eventDiscountType, setEventDiscountType] = useState<DiscountType>(
+    initialTier?.event_discount_type ?? "percent"
+  );
+  const [eventDiscountValue, setEventDiscountValue] = useState(
+    initialTier?.event_discount_value?.toString() ?? "0"
   );
   const [priceMonthly, setPriceMonthly] = useState(
     initialTier?.price_monthly_cents != null
@@ -116,6 +124,15 @@ export function MembershipTierSettings({
         setError("Percentage discount cannot exceed 100%.");
         return;
       }
+      const edv = parseFloat(eventDiscountValue);
+      if (isNaN(edv) || edv < 0) {
+        setError("Event discount value must be a positive number.");
+        return;
+      }
+      if (eventDiscountType === "percent" && edv > 100) {
+        setError("Event percentage discount cannot exceed 100%.");
+        return;
+      }
     }
 
     setSaving(true);
@@ -130,6 +147,8 @@ export function MembershipTierSettings({
           benefit_description: benefitDescription || null,
           discount_type: discountType,
           discount_value: parseFloat(discountValue) || 0,
+          event_discount_type: eventDiscountType,
+          event_discount_value: parseFloat(eventDiscountValue) || 0,
           price_monthly_cents: priceMonthly
             ? Math.round(parseFloat(priceMonthly) * 100)
             : null,
@@ -386,6 +405,67 @@ export function MembershipTierSettings({
                     onChange={(e) => setDiscountValue(e.target.value)}
                     placeholder={
                       discountType === "percent" ? "e.g. 10" : "e.g. 5.00"
+                    }
+                    className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Event Discount */}
+            <div className="border-t border-gray-200 pt-6 dark:border-white/[0.05]">
+              <h3 className="mb-4 text-sm font-semibold text-gray-800 dark:text-white/90">
+                Event Registration Discount
+              </h3>
+              <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+                Separate discount for event registration. Set to 0 for no event
+                discount.
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Discount Type
+                  </label>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEventDiscountType("percent")}
+                      className={`flex-1 rounded-lg border-2 px-3 py-2 text-sm font-medium transition-colors ${
+                        eventDiscountType === "percent"
+                          ? "border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/20 dark:text-blue-300"
+                          : "border-gray-200 text-gray-600 hover:border-gray-300 dark:border-white/10 dark:text-gray-400 dark:hover:border-white/20"
+                      }`}
+                    >
+                      Percentage (%)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEventDiscountType("flat")}
+                      className={`flex-1 rounded-lg border-2 px-3 py-2 text-sm font-medium transition-colors ${
+                        eventDiscountType === "flat"
+                          ? "border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/20 dark:text-blue-300"
+                          : "border-gray-200 text-gray-600 hover:border-gray-300 dark:border-white/10 dark:text-gray-400 dark:hover:border-white/20"
+                      }`}
+                    >
+                      Flat Amount ($)
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    {eventDiscountType === "percent"
+                      ? "Discount Percentage"
+                      : "Discount Amount ($)"}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step={eventDiscountType === "percent" ? "1" : "0.01"}
+                    max={eventDiscountType === "percent" ? "100" : undefined}
+                    value={eventDiscountValue}
+                    onChange={(e) => setEventDiscountValue(e.target.value)}
+                    placeholder={
+                      eventDiscountType === "percent" ? "e.g. 10" : "e.g. 5.00"
                     }
                     className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:placeholder:text-white/30"
                   />

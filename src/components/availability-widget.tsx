@@ -44,6 +44,8 @@ import {
   MapPin,
   ShieldCheck,
   Crown,
+  Users,
+  CalendarDays,
 } from "lucide-react";
 import { ChatWidget, type BookingAction } from "@/components/chat/chat-widget";
 import { AuthModal } from "@/components/auth-modal";
@@ -51,6 +53,11 @@ import {
   BookingDetailsModal,
   type BookingDetailData,
 } from "@/components/booking-details-modal";
+import {
+  EventDetailsModal,
+  type EventDetailData,
+} from "@/components/event-details-modal";
+import { EventRegistrationPanel, type EventForPanel } from "@/components/events/event-registration-panel";
 import { LocationSwitcher } from "@/components/location-switcher";
 
 type Bay = {
@@ -71,6 +78,15 @@ type TimeGroup = {
     slot_id: string;
     price_cents: number;
   }>;
+  // Event fields (present when isEvent = true)
+  isEvent?: boolean;
+  eventId?: string;
+  eventName?: string;
+  eventDescription?: string | null;
+  eventCapacity?: number;
+  eventRegisteredCount?: number;
+  eventPriceCents?: number;
+  eventMembersOnly?: boolean;
 };
 
 type Booking = {
@@ -309,6 +325,7 @@ export function AvailabilityWidget({
   const [mounted, setMounted] = useState(false);
   const [autoAdvancedFrom, setAutoAdvancedFrom] = useState<string | null>(null);
   const [chatExpanded, setChatExpanded] = useState(false);
+  const [selectedEventForPanel, setSelectedEventForPanel] = useState<EventForPanel | null>(null);
 
   // Booking panel state
   const [panelOpen, setPanelOpen] = useState(false);
@@ -373,6 +390,28 @@ export function AvailabilityWidget({
   const [sidebarBooking, setSidebarBooking] = useState<BookingDetailData | null>(null);
   const [sidebarModalOpen, setSidebarModalOpen] = useState(false);
 
+  // Sidebar event registrations
+  type SidebarEventReg = {
+    id: string;
+    event_id: string;
+    status: string;
+    waitlist_position: number | null;
+    registered_at: string;
+    event: {
+      name: string;
+      description: string | null;
+      start_time: string;
+      end_time: string;
+      price_cents: number;
+      capacity: number;
+      registered_count: number;
+      bay_names: string;
+    };
+  };
+  const [sidebarEventRegs, setSidebarEventRegs] = useState<SidebarEventReg[]>([]);
+  const [sidebarEvent, setSidebarEvent] = useState<EventDetailData | null>(null);
+  const [sidebarEventModalOpen, setSidebarEventModalOpen] = useState(false);
+
   // Track whether we restored from localStorage (to auto-open panel)
   const restoredFromStorage = useRef(false);
   // Pending booking action from chat (needs to wait for timeGroups to load after date change)
@@ -406,20 +445,95 @@ export function AvailabilityWidget({
     }
   }, [mounted, orgId]);
 
-  // Fetch upcoming confirmed bookings for the current user (skip in admin-guest/modify mode)
+  // Fetch upcoming confirmed bookings + event registrations (skip in admin-guest/modify mode)
   const fetchBookings = useCallback(async () => {
     if (!isAuthenticated || mode === "admin-guest" || isModify) return;
     setBookingsLoading(true);
     const supabase = createClient();
-    const { data } = await supabase
-      .from("bookings")
-      .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, status, notes")
-      .eq("org_id", orgId)
-      .eq("status", "confirmed")
-      .gte("date", todayStr)
-      .order("date")
-      .order("start_time");
-    setBookings(data || []);
+
+    // Fetch bookings and event registrations in parallel
+    const [bookingsResult, eventRegsResult] = await Promise.all([
+      supabase
+        .from("bookings")
+        .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, status, notes")
+        .eq("org_id", orgId)
+        .eq("status", "confirmed")
+        .gte("date", todayStr)
+        .order("date")
+        .order("start_time"),
+      supabase
+        .from("event_registrations")
+        .select(`
+          id, event_id, status, waitlist_position, registered_at,
+          events:event_id (
+            name, description, start_time, end_time, price_cents, capacity,
+            event_bays (bay_id, bays:bay_id (name))
+          )
+        `)
+        .eq("org_id", orgId)
+        .in("status", ["confirmed", "waitlisted", "pending_payment"]),
+    ]);
+
+    setBookings(bookingsResult.data || []);
+
+    // Process event registrations
+    const now = new Date().toISOString();
+    type RawEventReg = {
+      id: string;
+      event_id: string;
+      status: string;
+      waitlist_position: number | null;
+      registered_at: string;
+      events: {
+        name: string;
+        description: string | null;
+        start_time: string;
+        end_time: string;
+        price_cents: number;
+        capacity: number;
+        event_bays: { bay_id: string; bays: { name: string } | null }[];
+      } | null;
+    };
+    const rawRegs = (eventRegsResult.data || []) as unknown as RawEventReg[];
+    const validRegs = rawRegs.filter((r) => r.events && r.events.end_time >= now);
+
+    // Fetch registration counts for each unique event
+    const eventIds = [...new Set(validRegs.map((r) => r.event_id))];
+    const countMap: Record<string, number> = {};
+    for (const eid of eventIds) {
+      const { count } = await supabase
+        .from("event_registrations")
+        .select("*", { count: "exact", head: true })
+        .eq("event_id", eid)
+        .in("status", ["confirmed", "pending_payment"]);
+      countMap[eid] = count ?? 0;
+    }
+
+    const processed: SidebarEventReg[] = validRegs.map((r) => {
+      const evt = r.events!;
+      const bayNames = (evt.event_bays as unknown as { bay_id: string; bays: { name: string } | null }[])
+        ?.map((eb) => eb.bays?.name)
+        .filter(Boolean)
+        .join(", ") || "";
+      return {
+        id: r.id,
+        event_id: r.event_id,
+        status: r.status,
+        waitlist_position: r.waitlist_position,
+        registered_at: r.registered_at,
+        event: {
+          name: evt.name,
+          description: evt.description,
+          start_time: evt.start_time,
+          end_time: evt.end_time,
+          price_cents: evt.price_cents,
+          capacity: evt.capacity,
+          registered_count: countMap[r.event_id] ?? 0,
+          bay_names: bayNames,
+        },
+      };
+    });
+    setSidebarEventRegs(processed);
     setBookingsLoading(false);
   }, [isAuthenticated, orgId, todayStr, mode]);
 
@@ -592,6 +706,65 @@ export function AvailabilityWidget({
         const prices = group.available_bays.map((b) => b.price_cents);
         group.all_same_price = prices.every((p) => p === prices[0]);
         group.available_bays.sort((a, b) => (bayOrderMap[a.bay_id] ?? 0) - (bayOrderMap[b.bay_id] ?? 0));
+      }
+
+      // Fetch published events for this date and merge into timeline
+      const { data: dayEvents } = await supabase
+        .from("events")
+        .select(`
+          id, name, description, start_time, end_time, capacity, price_cents,
+          members_only, event_bays(bay_id, bays:bay_id(name))
+        `)
+        .eq("org_id", orgId)
+        .eq("status", "published")
+        .gte("start_time", dayStart)
+        .lt("start_time", dayEnd)
+        .order("start_time");
+
+      if (dayEvents && dayEvents.length > 0) {
+        // Fetch registration counts using SECURITY DEFINER RPC (bypasses RLS)
+        const eventIds = dayEvents.map((e: { id: string }) => e.id);
+        const countMap: Record<string, number> = {};
+        await Promise.all(
+          eventIds.map(async (id: string) => {
+            const { data } = await supabase.rpc("get_event_registration_count", {
+              p_event_id: id,
+            });
+            countMap[id] = data ?? 0;
+          })
+        );
+
+        for (const evt of dayEvents) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const bayNames = (evt.event_bays as any[])
+            ?.map((eb) => eb.bays?.name ?? eb.bays?.[0]?.name)
+            .filter(Boolean) || [];
+
+          groups.push({
+            key: `event-${evt.id}`,
+            start_time: evt.start_time,
+            end_time: evt.end_time,
+            min_price_cents: evt.price_cents,
+            all_same_price: true,
+            available_bays: bayNames.map((name: string, i: number) => ({
+              bay_id: (evt.event_bays as { bay_id: string }[])?.[i]?.bay_id || "",
+              bay_name: name,
+              slot_id: "",
+              price_cents: evt.price_cents,
+            })),
+            isEvent: true,
+            eventId: evt.id,
+            eventName: evt.name,
+            eventDescription: evt.description,
+            eventCapacity: evt.capacity,
+            eventRegisteredCount: countMap[evt.id] || 0,
+            eventPriceCents: evt.price_cents,
+            eventMembersOnly: evt.members_only,
+          });
+        }
+
+        // Re-sort after merging events
+        groups.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
       }
 
       setTimeGroups(groups);
@@ -1273,6 +1446,55 @@ export function AvailabilityWidget({
     }
   }
 
+  function openSidebarEvent(reg: SidebarEventReg) {
+    setSidebarEvent({
+      registrationId: reg.id,
+      eventId: reg.event_id,
+      eventName: reg.event.name,
+      description: reg.event.description,
+      startTime: reg.event.start_time,
+      endTime: reg.event.end_time,
+      priceCents: reg.event.price_cents,
+      capacity: reg.event.capacity,
+      registeredCount: reg.event.registered_count,
+      bayNames: reg.event.bay_names,
+      registrationStatus: reg.status,
+      waitlistPosition: reg.waitlist_position,
+      registeredAt: reg.registered_at,
+    });
+    setSidebarEventModalOpen(true);
+  }
+
+  async function handleSidebarEventCancel(registrationId: string) {
+    const supabase = createClient();
+    const { error } = await supabase.rpc("cancel_event_registration", {
+      p_registration_id: registrationId,
+    });
+    if (!error) {
+      setSidebarEventRegs((prev) => prev.filter((r) => r.id !== registrationId));
+      setSidebarEventModalOpen(false);
+      setSidebarEvent(null);
+    }
+  }
+
+  // Build unified sidebar feed (bookings + events sorted by start time)
+  type SidebarItem =
+    | { kind: "booking"; sortDate: string; booking: Booking }
+    | { kind: "event"; sortDate: string; reg: SidebarEventReg };
+
+  const sidebarItems: SidebarItem[] = [
+    ...bookings.map((b) => ({
+      kind: "booking" as const,
+      sortDate: b.start_time,
+      booking: b,
+    })),
+    ...sidebarEventRegs.map((r) => ({
+      kind: "event" as const,
+      sortDate: r.event.start_time,
+      reg: r,
+    })),
+  ].sort((a, b) => new Date(a.sortDate).getTime() - new Date(b.sortDate).getTime());
+
   // Auto-select the first eligible bay when selection changes
   const effectiveBayId = eligibleBays.some((b) => b.bay_id === selectedBayIdForBooking)
     ? selectedBayIdForBooking
@@ -1338,16 +1560,16 @@ export function AvailabilityWidget({
 
   return (
     <div className={hideSidebar ? "" : "flex items-start gap-6"}>
-      {/* ===== Sidebar — Confirmed Bookings + Chat Assistant (desktop only, hidden in admin-guest/modify mode) ===== */}
+      {/* ===== Sidebar — Upcoming Bookings & Events + Chat Assistant (desktop only, hidden in admin-guest/modify mode) ===== */}
       {!hideSidebar && (
       <div className="sticky top-[4.5rem] hidden w-72 shrink-0 flex-col rounded-xl border bg-card shadow-sm lg:flex max-h-[calc(100vh-5.5rem)]">
-        {/* Bookings section — scrollable */}
+        {/* Bookings + Events section — scrollable */}
         <div className="min-h-0 flex-1 overflow-y-auto">
           {isAuthenticated ? (
             <div className="p-3">
               <div className="mb-3 flex items-center gap-2 px-1">
                 <CalendarCheck className="h-4 w-4 text-muted-foreground" />
-                <h3 className="flex-1 text-sm font-semibold">Confirmed Bookings</h3>
+                <h3 className="flex-1 text-sm font-semibold">Upcoming</h3>
                 <a
                   href="/my-bookings"
                   className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -1360,49 +1582,89 @@ export function AvailabilityWidget({
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
-              ) : bookings.length === 0 ? (
+              ) : sidebarItems.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 py-8 text-center">
                   <CalendarCheck className="h-8 w-8 text-muted-foreground/20" />
                   <p className="text-xs text-muted-foreground">
-                    No upcoming bookings
+                    No upcoming bookings or events
                   </p>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {bookings.map((booking) => {
-                    const bayName =
-                      bays.find((b) => b.id === booking.bay_id)?.name ??
-                      "Unknown Bay";
-                    const price = `$${(booking.total_price_cents / 100).toFixed(2)}`;
-                    const isHighlighted = highlightedBookingIds.has(booking.id);
+                  {sidebarItems.map((item) => {
+                    if (item.kind === "booking") {
+                      const booking = item.booking;
+                      const bayName =
+                        bays.find((b) => b.id === booking.bay_id)?.name ??
+                        "Unknown Bay";
+                      const price = `$${(booking.total_price_cents / 100).toFixed(2)}`;
+                      const isHighlighted = highlightedBookingIds.has(booking.id);
+
+                      return (
+                        <button
+                          type="button"
+                          key={`b-${booking.id}`}
+                          onClick={() => openSidebarBooking(booking)}
+                          className={`block w-full rounded-lg border bg-background p-3 text-left transition-all duration-700 hover:bg-muted/50 ${
+                            isHighlighted
+                              ? "border-green-400 shadow-[0_0_8px_rgba(74,222,128,0.3)]"
+                              : ""
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono text-[11px] text-muted-foreground">
+                              {booking.confirmation_code}
+                            </span>
+                            <ArrowUpRight className="h-3 w-3 text-muted-foreground" />
+                          </div>
+                          <p className="mt-1 text-sm font-medium">{bayName}</p>
+                          <div className="mt-1 flex items-center justify-between">
+                            <p className="text-xs text-muted-foreground">
+                              {formatBookingDate(booking.date)} &middot;{" "}
+                              {formatTime(booking.start_time, timezone)}{" "}
+                              &ndash;{" "}
+                              {formatTime(booking.end_time, timezone)}
+                            </p>
+                            <span className="text-xs font-semibold">
+                              {price}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    }
+
+                    // Event registration
+                    const reg = item.reg;
+                    const evt = reg.event;
+                    const eventDateStr = new Date(evt.start_time).toLocaleDateString("en-US", {
+                      timeZone: timezone,
+                      month: "short",
+                      day: "numeric",
+                    });
 
                     return (
                       <button
                         type="button"
-                        key={booking.id}
-                        onClick={() => openSidebarBooking(booking)}
-                        className={`block w-full rounded-lg border bg-background p-3 text-left transition-all duration-700 hover:bg-muted/50 ${
-                          isHighlighted
-                            ? "border-green-400 shadow-[0_0_8px_rgba(74,222,128,0.3)]"
-                            : ""
-                        }`}
+                        key={`e-${reg.id}`}
+                        onClick={() => openSidebarEvent(reg)}
+                        className="block w-full rounded-lg border bg-background p-3 text-left transition-all hover:bg-muted/50"
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-mono text-[11px] text-muted-foreground">
-                            {booking.confirmation_code}
+                          <span className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                            Event
                           </span>
                           <ArrowUpRight className="h-3 w-3 text-muted-foreground" />
                         </div>
-                        <p className="mt-1 text-sm font-medium">{bayName}</p>
+                        <p className="mt-1 text-sm font-medium">{evt.name}</p>
                         <div className="mt-1 flex items-center justify-between">
                           <p className="text-xs text-muted-foreground">
-                            {formatBookingDate(booking.date)} &middot;{" "}
-                            {formatTime(booking.start_time, timezone)}{" "}
+                            {eventDateStr} &middot;{" "}
+                            {formatTime(evt.start_time, timezone)}{" "}
                             &ndash;{" "}
-                            {formatTime(booking.end_time, timezone)}
+                            {formatTime(evt.end_time, timezone)}
                           </p>
                           <span className="text-xs font-semibold">
-                            {price}
+                            {evt.price_cents > 0 ? `$${(evt.price_cents / 100).toFixed(2)}` : "Free"}
                           </span>
                         </div>
                       </button>
@@ -1558,6 +1820,74 @@ export function AvailabilityWidget({
               {timeGroups.map((group) => {
                 const startTime = formatTime(group.start_time, timezone);
                 const endTime = formatTime(group.end_time, timezone);
+
+                // Event row — clickable, opens registration panel
+                if (group.isEvent) {
+                  const spotsLeft = (group.eventCapacity || 0) - (group.eventRegisteredCount || 0);
+                  const priceLabel = group.eventPriceCents === 0
+                    ? "Free"
+                    : `$${((group.eventPriceCents || 0) / 100).toFixed(2)}`;
+
+                  return (
+                    <button
+                      key={group.key}
+                      type="button"
+                      onClick={() => {
+                        setSelectedEventForPanel({
+                          id: group.eventId!,
+                          name: group.eventName || "",
+                          description: group.eventDescription || null,
+                          startTime: group.start_time,
+                          endTime: group.end_time,
+                          capacity: group.eventCapacity || 0,
+                          registeredCount: group.eventRegisteredCount || 0,
+                          priceCents: group.eventPriceCents || 0,
+                          membersOnly: group.eventMembersOnly || false,
+                          bayNames: group.available_bays.map((b) => b.bay_name).join(", "),
+                        });
+                      }}
+                      className="flex w-full items-center justify-between rounded-lg border border-green-200 bg-green-50/50 px-4 py-3 text-left transition-colors hover:bg-green-100/70 dark:border-green-900/30 dark:bg-green-950/20 dark:hover:bg-green-950/40"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
+                          <CalendarDays className="h-4 w-4 text-green-700 dark:text-green-400" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium">
+                              {group.eventName}
+                            </p>
+                            <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                              Event
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {startTime} &ndash; {endTime}
+                          </p>
+                          <div className="mt-0.5 flex flex-wrap gap-1.5">
+                            {group.available_bays.map((b) => (
+                              <span
+                                key={b.bay_id}
+                                className="inline-block rounded-full bg-green-100/80 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:bg-green-900/20 dark:text-green-400"
+                              >
+                                {b.bay_name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-sm font-semibold">{priceLabel}</span>
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Users className="h-3 w-3" />
+                          {spotsLeft > 0 ? `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left` : "Full"}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                }
+
+                // Regular slot row
                 const priceLabel = group.all_same_price
                   ? `$${(group.min_price_cents / 100).toFixed(2)}`
                   : `from $${(group.min_price_cents / 100).toFixed(2)}`;
@@ -2724,6 +3054,18 @@ export function AvailabilityWidget({
         paymentMode={paymentMode}
       />
 
+      {/* Sidebar event detail modal */}
+      <EventDetailsModal
+        event={sidebarEvent}
+        timezone={timezone}
+        open={sidebarEventModalOpen}
+        onOpenChange={(open) => {
+          setSidebarEventModalOpen(open);
+          if (!open) setSidebarEvent(null);
+        }}
+        onCancelClient={handleSidebarEventCancel}
+      />
+
       {/* Toast notification */}
       {toastData && (
         <Toast
@@ -2731,6 +3073,22 @@ export function AvailabilityWidget({
           description={toastData.description}
           duration={10000}
           onClose={() => setToastData(null)}
+        />
+      )}
+
+      {/* Event registration panel */}
+      {selectedEventForPanel && (
+        <EventRegistrationPanel
+          event={selectedEventForPanel}
+          timezone={timezone}
+          isAuthenticated={!!isAuthenticated}
+          isMember={!!membership?.isMember}
+          paymentMode={paymentMode}
+          onClose={() => setSelectedEventForPanel(null)}
+          onRegistered={() => {
+            setSelectedEventForPanel(null);
+            fetchTimeGroups(selectedDate);
+          }}
         />
       )}
     </div>

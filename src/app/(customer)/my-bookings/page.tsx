@@ -134,15 +134,169 @@ export default async function MyBookingsPage({
     }
   }
 
+  // Fetch user's event registrations
+  type EventReg = {
+    id: string;
+    event_id: string;
+    status: string;
+    waitlist_position: number | null;
+    payment_status: string | null;
+    registered_at: string;
+    cancelled_at: string | null;
+    promoted_at: string | null;
+    events: {
+      name: string;
+      description: string | null;
+      start_time: string;
+      end_time: string;
+      price_cents: number;
+      capacity: number;
+      status: string;
+      event_bays: { bay_id: string; bays: { name: string } | null }[];
+    } | null;
+  };
+
+  const { data: rawEventRegistrations } = await supabase
+    .from("event_registrations")
+    .select(`
+      id,
+      event_id,
+      status,
+      waitlist_position,
+      payment_status,
+      registered_at,
+      cancelled_at,
+      promoted_at,
+      events:event_id (
+        name,
+        description,
+        start_time,
+        end_time,
+        price_cents,
+        capacity,
+        status,
+        event_bays (bay_id, bays:bay_id (name))
+      )
+    `)
+    .eq("org_id", org.id)
+    .eq("user_id", auth.profile.id)
+    .order("registered_at", { ascending: false });
+
+  const eventRegistrations = (rawEventRegistrations ?? []) as unknown as EventReg[];
+
+  // Get registration counts for events
+  const eventCountMap: Record<string, number> = {};
+  const eventIds = [...new Set(eventRegistrations.map((r) => r.event_id))];
+  for (const eid of eventIds) {
+    const { data: count } = await service.rpc("get_event_registration_count", { p_event_id: eid });
+    eventCountMap[eid] = count ?? 0;
+  }
+
+  // Build unified feed items
+  type FeedItemBooking = {
+    kind: "booking";
+    sortDate: string;
+    booking: (typeof enrichedBookings)[number];
+  };
+  type FeedItemEvent = {
+    kind: "event";
+    sortDate: string;
+    registration: EventReg;
+    eventData: {
+      name: string;
+      description: string | null;
+      startTime: string;
+      endTime: string;
+      priceCents: number;
+      capacity: number;
+      registeredCount: number;
+      bayNames: string;
+    };
+  };
+  type FeedItem = FeedItemBooking | FeedItemEvent;
+
+  const now = new Date();
+
+  // Build upcoming event items (non-cancelled, event not ended)
+  const upcomingEventItems: FeedItemEvent[] = eventRegistrations
+    .filter((r) => r.status !== "cancelled" && r.events && new Date(r.events.end_time) >= now)
+    .map((r) => {
+      const evt = r.events!;
+      const bayNames = (evt.event_bays as unknown as { bay_id: string; bays: { name: string } | null }[])
+        ?.map((eb) => eb.bays?.name)
+        .filter(Boolean)
+        .join(", ") || "";
+      return {
+        kind: "event" as const,
+        sortDate: evt.start_time,
+        registration: r,
+        eventData: {
+          name: evt.name,
+          description: evt.description,
+          startTime: evt.start_time,
+          endTime: evt.end_time,
+          priceCents: evt.price_cents,
+          capacity: evt.capacity,
+          registeredCount: eventCountMap[r.event_id] ?? 0,
+          bayNames,
+        },
+      };
+    });
+
+  // Build past event items (cancelled or event ended)
+  const pastEventItems: FeedItemEvent[] = eventRegistrations
+    .filter((r) => r.status === "cancelled" || (r.events && new Date(r.events.end_time) < now))
+    .map((r) => {
+      const evt = r.events!;
+      if (!evt) return null;
+      const bayNames = (evt.event_bays as unknown as { bay_id: string; bays: { name: string } | null }[])
+        ?.map((eb) => eb.bays?.name)
+        .filter(Boolean)
+        .join(", ") || "";
+      return {
+        kind: "event" as const,
+        sortDate: evt.start_time,
+        registration: r,
+        eventData: {
+          name: evt.name,
+          description: evt.description,
+          startTime: evt.start_time,
+          endTime: evt.end_time,
+          priceCents: evt.price_cents,
+          capacity: evt.capacity,
+          registeredCount: eventCountMap[r.event_id] ?? 0,
+          bayNames,
+        },
+      };
+    })
+    .filter((item): item is FeedItemEvent => item !== null);
+
   // Split into upcoming+active vs past+cancelled (using visual status)
-  const upcoming = enrichedBookings.filter((b) => {
+  const upcomingBookings = enrichedBookings.filter((b) => {
     const vs = getVisualBookingStatus(b.status, b.start_time, b.end_time);
     return vs === "confirmed" || vs === "active";
   });
-  const past = enrichedBookings.filter((b) => {
+  const pastBookings = enrichedBookings.filter((b) => {
     const vs = getVisualBookingStatus(b.status, b.start_time, b.end_time);
     return vs === "completed" || vs === "cancelled";
   });
+
+  // Merge bookings + events into unified feeds
+  const upcomingBookingItems: FeedItemBooking[] = upcomingBookings.map((b) => ({
+    kind: "booking" as const,
+    sortDate: b.start_time,
+    booking: b,
+  }));
+  const pastBookingItems: FeedItemBooking[] = pastBookings.map((b) => ({
+    kind: "booking" as const,
+    sortDate: b.start_time,
+    booking: b,
+  }));
+
+  const unifiedUpcoming: FeedItem[] = [...upcomingBookingItems, ...upcomingEventItems]
+    .sort((a, b) => new Date(a.sortDate).getTime() - new Date(b.sortDate).getTime());
+  const unifiedPast: FeedItem[] = [...pastBookingItems, ...pastEventItems]
+    .sort((a, b) => new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime());
 
   async function cancelBooking(formData: FormData) {
     "use server";
@@ -205,6 +359,23 @@ export default async function MyBookingsPage({
     redirect("/my-bookings?cancelled=true");
   }
 
+  async function cancelEventRegistration(formData: FormData) {
+    "use server";
+    const supabase = await createClient();
+    const regId = formData.get("registration_id") as string;
+
+    const { error } = await supabase.rpc("cancel_event_registration", {
+      p_registration_id: regId,
+    });
+
+    if (error) {
+      redirect(`/my-bookings?error=${encodeURIComponent(error.message)}`);
+    }
+
+    revalidatePath("/my-bookings");
+    redirect("/my-bookings?cancelled=true");
+  }
+
   return (
     <div className="flex-1 p-8">
       <div className="mx-auto max-w-2xl">
@@ -250,13 +421,14 @@ export default async function MyBookingsPage({
         )}
 
         <MyBookingsList
-          upcoming={upcoming}
-          past={past}
+          upcoming={unifiedUpcoming}
+          past={unifiedPast}
           bayMap={bayMap}
           timezone={org.timezone}
           orgId={org.id}
           initialBookingCode={params.booking}
           cancelAction={cancelBooking}
+          cancelEventAction={cancelEventRegistration}
           cancellationWindowHours={cancellationWindowHours}
           paymentMode={paymentMode}
         />

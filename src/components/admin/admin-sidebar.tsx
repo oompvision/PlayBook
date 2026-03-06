@@ -18,6 +18,7 @@ import {
   Layers,
   Ban,
   BadgeDollarSign,
+  CalendarDays,
 } from "lucide-react";
 
 const baseNavItems = [
@@ -48,10 +49,12 @@ export function AdminSidebar({
   slug,
   schedulingType = "slot_based",
   membershipEnabled = false,
+  eventsEnabled = false,
 }: {
   slug: string;
   schedulingType?: string;
   membershipEnabled?: boolean;
+  eventsEnabled?: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -93,11 +96,14 @@ export function AdminSidebar({
             ...(schedulingType === "dynamic"
               ? dynamicNavItems
               : slotBasedNavItems),
-            ...commonNavItems.slice(0, 2),
+            ...(eventsEnabled
+              ? [{ label: "Events", href: "/admin/events", icon: CalendarDays }]
+              : []),
+            ...commonNavItems.slice(0, 1),
             ...(membershipEnabled
               ? [{ label: "Members", href: "/admin/members", icon: Crown }]
               : []),
-            ...commonNavItems.slice(2),
+            ...commonNavItems.slice(1),
           ].map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);

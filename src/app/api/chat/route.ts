@@ -139,6 +139,36 @@ const toolDeclarations: FunctionDeclaration[] = [
     },
   },
   {
+    name: "get_events",
+    description:
+      "Get upcoming events at this facility. Returns event details including name, date/time, capacity, spots remaining, price, facilities used, and enrollment status. Call this when the customer asks about events, classes, clinics, or group activities.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        date: {
+          type: Type.STRING,
+          description:
+            "Optional date filter in YYYY-MM-DD format. If provided, only returns events on that date. If omitted, returns all upcoming events.",
+        },
+      },
+    },
+  },
+  {
+    name: "register_for_event",
+    description:
+      "Register the customer for a free event. For paid events, direct the customer to the events section on the facility page to complete registration with payment. IMPORTANT: Always confirm with the customer before calling this tool.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        event_id: {
+          type: Type.STRING,
+          description: "The event ID to register for, from a prior get_events response.",
+        },
+      },
+      required: ["event_id"],
+    },
+  },
+  {
     name: "suggest_quick_replies",
     description:
       "Suggest clickable quick-reply buttons for the customer. Call this alongside your text response to give the customer easy tap-to-reply options. Use for confirmations, facility/time selection, and follow-up actions.",
@@ -1005,6 +1035,268 @@ async function executeCancelBooking(
 }
 
 // ---------------------------------------------------------------------------
+// Event tools
+// ---------------------------------------------------------------------------
+
+type EventDiscountInfo = {
+  isMember: boolean;
+  eventDiscountType: string | null;
+  eventDiscountValue: number;
+};
+
+async function executeGetEvents(
+  org: OrgContext,
+  args: { date?: string },
+  customerId: string | null,
+  discountInfo: EventDiscountInfo
+) {
+  const supabase = await createClient();
+  const svc = createServiceClient();
+
+  const now = new Date().toISOString();
+
+  // Fetch published events
+  let query = supabase
+    .from("events")
+    .select(
+      "id, name, description, start_time, end_time, capacity, price_cents, members_only, member_enrollment_days_before, guest_enrollment_days_before, event_bays(bay_id, bays:bay_id(name))"
+    )
+    .eq("org_id", org.id)
+    .eq("status", "published")
+    .gte("end_time", now)
+    .order("start_time", { ascending: true });
+
+  // If date filter provided, scope to that day
+  if (args.date) {
+    const dayStart = toTimestamp(args.date, "00:00:00", org.timezone);
+    const nextDay = new Date(args.date + "T12:00:00Z");
+    nextDay.setDate(nextDay.getDate() + 1);
+    const dayEnd = toTimestamp(nextDay.toISOString().split("T")[0], "00:00:00", org.timezone);
+    query = query.lt("start_time", dayEnd).gte("start_time", dayStart);
+  }
+
+  const { data: events } = await query;
+
+  if (!events || events.length === 0) {
+    return { events: [], message: args.date ? `No upcoming events on ${args.date}.` : "No upcoming events at this time." };
+  }
+
+  // Get registration counts for each event
+  const countMap: Record<string, number> = {};
+  for (const evt of events) {
+    const { data: count } = await svc.rpc("get_event_registration_count", { p_event_id: evt.id });
+    countMap[evt.id] = count ?? 0;
+  }
+
+  // Check user's registrations if authenticated
+  let userRegistrations: Record<string, string> = {};
+  if (customerId) {
+    const { data: regs } = await supabase
+      .from("event_registrations")
+      .select("event_id, status")
+      .eq("user_id", (await getAuthUser())?.user?.id ?? "")
+      .in("event_id", events.map((e) => e.id))
+      .in("status", ["confirmed", "waitlisted", "pending_payment"]);
+
+    if (regs) {
+      for (const r of regs) {
+        userRegistrations[r.event_id] = r.status;
+      }
+    }
+  }
+
+  const today = getTodayInTimezone(org.timezone);
+
+  const result = events.map((evt) => {
+    const registered = countMap[evt.id] || 0;
+    const spotsLeft = evt.capacity - registered;
+    const eventBays = evt.event_bays as unknown as { bay_id: string; bays: { name: string } | null }[];
+    const bays = (eventBays || [])
+      .map((eb) => eb.bays?.name)
+      .filter(Boolean);
+
+    // Calculate enrollment window
+    const eventDate = new Date(evt.start_time);
+    const todayDate = new Date(today + "T12:00:00Z");
+    const daysUntil = Math.ceil((eventDate.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    const enrollmentDays = discountInfo.isMember
+      ? (evt.member_enrollment_days_before ?? 9999)
+      : evt.guest_enrollment_days_before;
+    const enrollmentOpen = daysUntil <= enrollmentDays;
+
+    let enrollmentOpensOn: string | null = null;
+    if (!enrollmentOpen) {
+      const openDate = new Date(eventDate);
+      openDate.setDate(openDate.getDate() - enrollmentDays);
+      enrollmentOpensOn = openDate.toISOString().split("T")[0];
+    }
+
+    // Calculate member pricing
+    let memberPriceCents: number | null = null;
+    if (
+      discountInfo.eventDiscountType &&
+      discountInfo.eventDiscountValue > 0 &&
+      evt.price_cents > 0
+    ) {
+      if (discountInfo.eventDiscountType === "percent") {
+        memberPriceCents = Math.round(
+          evt.price_cents * (1 - discountInfo.eventDiscountValue / 100)
+        );
+      } else {
+        memberPriceCents = Math.max(
+          0,
+          evt.price_cents - Math.round(discountInfo.eventDiscountValue * 100)
+        );
+      }
+    }
+
+    const eventInfo: Record<string, unknown> = {
+      event_id: evt.id,
+      name: evt.name,
+      description: evt.description,
+      date: new Date(evt.start_time).toLocaleDateString("en-US", {
+        timeZone: org.timezone,
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      }),
+      start_time: formatTimeInZone(evt.start_time, org.timezone),
+      end_time: formatTimeInZone(evt.end_time, org.timezone),
+      facilities: bays,
+      capacity: evt.capacity,
+      registered: registered,
+      spots_left: spotsLeft,
+      price: evt.price_cents === 0 ? "Free" : `$${(evt.price_cents / 100).toFixed(2)}`,
+      price_cents: evt.price_cents,
+      members_only: evt.members_only,
+      enrollment_open: enrollmentOpen,
+    };
+
+    if (memberPriceCents !== null) {
+      eventInfo.member_price = `$${(memberPriceCents / 100).toFixed(2)}`;
+      eventInfo.member_price_cents = memberPriceCents;
+    }
+
+    if (!enrollmentOpen && enrollmentOpensOn) {
+      eventInfo.enrollment_opens_on = enrollmentOpensOn;
+    }
+
+    if (customerId && userRegistrations[evt.id]) {
+      eventInfo.your_registration_status = userRegistrations[evt.id];
+    }
+
+    return eventInfo;
+  });
+
+  return { events: result };
+}
+
+async function executeRegisterForEvent(
+  org: OrgContext,
+  args: { event_id: string },
+  customerId: string | null,
+  discountInfo: EventDiscountInfo
+) {
+  if (!customerId) {
+    return {
+      error:
+        "You need to be signed in to register for events. Please sign in at /auth/login first.",
+    };
+  }
+
+  const supabase = await createClient();
+  const auth = await getAuthUser();
+  const userId = auth?.user?.id;
+  if (!userId) {
+    return { error: "Authentication error. Please sign in again." };
+  }
+
+  // Fetch the event
+  const { data: evt } = await supabase
+    .from("events")
+    .select("id, name, start_time, end_time, price_cents, members_only, member_enrollment_days_before, guest_enrollment_days_before, status")
+    .eq("id", args.event_id)
+    .eq("org_id", org.id)
+    .single();
+
+  if (!evt) {
+    return { error: "Event not found." };
+  }
+
+  if (evt.status !== "published") {
+    return { error: "This event is not currently available for registration." };
+  }
+
+  // Check members-only
+  if (evt.members_only && !discountInfo.isMember) {
+    return {
+      error: "This event is for members only. Check out the membership at /membership to join!",
+    };
+  }
+
+  // Check enrollment window
+  const today = getTodayInTimezone(org.timezone);
+  const eventDate = new Date(evt.start_time);
+  const todayDate = new Date(today + "T12:00:00Z");
+  const daysUntil = Math.ceil(
+    (eventDate.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  const enrollmentDays = discountInfo.isMember
+    ? (evt.member_enrollment_days_before ?? 9999)
+    : evt.guest_enrollment_days_before;
+
+  if (daysUntil > enrollmentDays) {
+    const openDate = new Date(eventDate);
+    openDate.setDate(openDate.getDate() - enrollmentDays);
+    const openDateStr = openDate.toISOString().split("T")[0];
+    return {
+      error: `Registration for this event isn't open yet. It opens on ${openDateStr}.`,
+    };
+  }
+
+  // Check if paid event — direct to UI
+  if (evt.price_cents > 0) {
+    return {
+      requires_payment: true,
+      message:
+        "This is a paid event. Please register through the events section on our facility page where you can complete payment.",
+    };
+  }
+
+  // Register for free event via RPC
+  const svc = createServiceClient();
+  const { data: result, error } = await svc.rpc("register_for_event", {
+    p_event_id: args.event_id,
+    p_user_id: userId,
+  });
+
+  if (error) {
+    return { error: `Registration failed: ${error.message}` };
+  }
+
+  const reg = result as { registration_id: string; status: string; waitlist_position: number | null; event_name: string };
+
+  if (reg.status === "confirmed") {
+    return {
+      success: true,
+      message: `You're registered for "${reg.event_name}"! See you there.`,
+      status: "confirmed",
+    };
+  } else if (reg.status === "waitlisted") {
+    return {
+      success: true,
+      message: `The event is currently full. You've been added to the waitlist at position ${reg.waitlist_position}. We'll notify you if a spot opens up!`,
+      status: "waitlisted",
+      waitlist_position: reg.waitlist_position,
+    };
+  }
+
+  return { success: true, status: reg.status };
+}
+
+// ---------------------------------------------------------------------------
 // POST handler
 // ---------------------------------------------------------------------------
 
@@ -1031,7 +1323,7 @@ export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, timezone, description, address, phone, min_booking_lead_minutes, scheduling_type, bookable_window_days, membership_tiers_enabled")
+    .select("id, name, slug, timezone, description, address, phone, min_booking_lead_minutes, scheduling_type, bookable_window_days, membership_tiers_enabled, events_enabled")
     .eq("slug", facilitySlug)
     .single();
 
@@ -1052,9 +1344,11 @@ export async function POST(request: Request) {
     tierName: string | null;
     discountType: string | null;
     discountValue: number;
+    eventDiscountType: string | null;
+    eventDiscountValue: number;
     guestWindowDays: number;
     memberWindowDays: number;
-  } = { enabled: false, isMember: false, tierName: null, discountType: null, discountValue: 0, guestWindowDays: effectiveWindowDays, memberWindowDays: effectiveWindowDays };
+  } = { enabled: false, isMember: false, tierName: null, discountType: null, discountValue: 0, eventDiscountType: null, eventDiscountValue: 0, guestWindowDays: effectiveWindowDays, memberWindowDays: effectiveWindowDays };
 
   if (org.membership_tiers_enabled) {
     const svc = createServiceClient();
@@ -1062,7 +1356,7 @@ export async function POST(request: Request) {
     const [windowResult, orgWindowResult, tierResult, membershipResult] = await Promise.all([
       svc.rpc("get_effective_bookable_window", { p_org_id: org.id, p_user_id: auth?.user?.id ?? null }),
       svc.from("organizations").select("guest_booking_window_days, member_booking_window_days").eq("id", org.id).single(),
-      svc.from("membership_tiers").select("name, discount_type, discount_value").eq("org_id", org.id).single(),
+      svc.from("membership_tiers").select("name, discount_type, discount_value, event_discount_type, event_discount_value").eq("org_id", org.id).single(),
       auth ? svc.rpc("is_active_member", { p_org_id: org.id, p_user_id: auth.user.id }) : Promise.resolve({ data: false }),
     ]);
 
@@ -1079,6 +1373,8 @@ export async function POST(request: Request) {
       tierName: tierResult.data?.name ?? null,
       discountType: tierResult.data?.discount_type ?? null,
       discountValue: tierResult.data?.discount_value ? Number(tierResult.data.discount_value) : 0,
+      eventDiscountType: tierResult.data?.event_discount_type ?? null,
+      eventDiscountValue: tierResult.data?.event_discount_value ? Number(tierResult.data.event_discount_value) : 0,
       guestWindowDays: guestWindow,
       memberWindowDays: memberWindow,
     };
@@ -1177,12 +1473,19 @@ export async function POST(request: Request) {
         ? `$${membershipInfo.discountValue.toFixed(2)} off every booking`
         : null;
 
+    const eventDiscountDesc = membershipInfo.eventDiscountType === "percent"
+      ? membershipInfo.eventDiscountValue > 0 ? `${membershipInfo.eventDiscountValue}% off event registration` : null
+      : membershipInfo.eventDiscountValue > 0
+        ? `$${membershipInfo.eventDiscountValue.toFixed(2)} off event registration`
+        : null;
+
     if (membershipInfo.isMember) {
       membershipPrompt = `
 Membership:
 - This customer is an ACTIVE MEMBER${membershipInfo.tierName ? ` (${membershipInfo.tierName})` : ""}.
 - They can book up to ${membershipInfo.memberWindowDays} days ahead (guests can only book ${membershipInfo.guestWindowDays} days ahead).
 ${discountDesc ? `- Their member discount (${discountDesc}) is applied automatically at checkout — you do NOT need to calculate discounted prices. Show the standard listed price when discussing availability.` : ""}
+${eventDiscountDesc ? `- They also get ${eventDiscountDesc}. When showing event pricing, show both the regular price and their discounted member price.` : ""}
 - When confirming bookings, you can mention they're getting their member benefits.`;
     } else {
       membershipPrompt = `
@@ -1191,6 +1494,7 @@ Membership:
 - This customer is NOT a member (guest).
 - Guests can book up to ${membershipInfo.guestWindowDays} days ahead. Members can book up to ${membershipInfo.memberWindowDays} days ahead.
 ${discountDesc ? `- Members get ${discountDesc}.` : ""}
+${eventDiscountDesc ? `- Members also get ${eventDiscountDesc}.` : ""}
 - If the customer asks about a date beyond ${membershipInfo.guestWindowDays} days, let them know that members can book further in advance and suggest they check out the membership at /membership.
 - Do NOT aggressively upsell. Only mention membership benefits naturally when relevant (e.g., when they hit the booking window limit, or if they ask about pricing/discounts/membership).`;
     }
@@ -1250,6 +1554,17 @@ Payment policy:
 - When confirming a booking, include this notice: "By confirming, you agree to the facility's terms and cancellation policy."${cancellationPolicyText ? `\n- Cancellation policy: ${cancellationPolicyText}` : ""}
 - Do NOT use start_checkout when no payment is required — use create_booking instead.
 `}
+${org.events_enabled ? `Event guidelines:
+- Use get_events when the customer asks about events, classes, clinics, or group activities.
+- When showing events, include: name, date, time, price, spots remaining, and which facilities are used.
+- For members, show both the regular price and their discounted member price.
+- If enrollment isn't open yet, tell the customer when registration opens.
+- For free events, you can register the customer directly using register_for_event (after confirming with them).
+- For paid events, direct the customer to the events section on the facility page to register and pay.
+- BEFORE calling register_for_event, summarize the event and confirm that the customer wants to register.
+- Members-only events: if the customer is not a member, let them know the event is members-only and suggest checking out the membership at /membership.
+` : `This facility does not have events enabled. If the customer asks about events, let them know this facility doesn't currently offer events.
+`}
 Quick reply buttons:
 - ALWAYS call suggest_quick_replies to offer clickable buttons when the customer needs to make a choice.
 - When to use quick replies:
@@ -1273,6 +1588,12 @@ Quick reply buttons:
     let quickReplies: string[] = [];
     let bookingAction: { date: string; bay_name: string; start_time: string; end_time?: string; duration?: number; price_cents?: number; slot_ids?: string[] } | null = null;
 
+    // Filter out event tools if events are disabled for this org
+    const eventToolNames = new Set(["get_events", "register_for_event"]);
+    const activeToolDeclarations = org.events_enabled
+      ? toolDeclarations
+      : toolDeclarations.filter((t) => !eventToolNames.has(t.name!));
+
     // Tool call loop — up to 5 rounds to prevent infinite loops
     for (let i = 0; i < 5; i++) {
       const response = await getGenAI().models.generateContent({
@@ -1280,7 +1601,7 @@ Quick reply buttons:
         contents: currentMessages,
         config: {
           systemInstruction,
-          tools: [{ functionDeclarations: toolDeclarations }],
+          tools: [{ functionDeclarations: activeToolDeclarations }],
         },
       });
 
@@ -1395,6 +1716,30 @@ Quick reply buttons:
               orgContext,
               customerId,
               call.args as { confirmation_code: string }
+            );
+            break;
+          case "get_events":
+            result = await executeGetEvents(
+              orgContext,
+              call.args as { date?: string },
+              customerId,
+              {
+                isMember: membershipInfo.isMember,
+                eventDiscountType: membershipInfo.eventDiscountType,
+                eventDiscountValue: membershipInfo.eventDiscountValue,
+              }
+            );
+            break;
+          case "register_for_event":
+            result = await executeRegisterForEvent(
+              orgContext,
+              call.args as { event_id: string },
+              customerId,
+              {
+                isMember: membershipInfo.isMember,
+                eventDiscountType: membershipInfo.eventDiscountType,
+                eventDiscountValue: membershipInfo.eventDiscountValue,
+              }
             );
             break;
           default:

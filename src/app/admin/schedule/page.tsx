@@ -3,6 +3,7 @@ import { getFacilitySlug } from "@/lib/facility";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getTodayInTimezone, toTimestamp } from "@/lib/utils";
+import { restoreEventHolds } from "@/lib/schedule-utils";
 import { resolveLocationId } from "@/lib/location";
 import { ScheduleCalendar } from "@/components/admin/schedule-calendar";
 import { addMonths, endOfMonth, format } from "date-fns";
@@ -128,7 +129,7 @@ export default async function ScheduleManagerPage({
     // 3. Fetch bay hourly rates
     const { data: baysData } = await supabase
       .from("bays")
-      .select("id, hourly_rate_cents")
+      .select("id, hourly_rate_cents, location_id")
       .in("id", bayIds);
 
     const bayRates = new Map<string, number>();
@@ -138,12 +139,16 @@ export default async function ScheduleManagerPage({
 
     // 4. Batch upsert bay_schedules for all date × bay combinations
     const scheduleRows = dates.flatMap((date) =>
-      bayIds.map((bayId) => ({
-        bay_id: bayId,
-        org_id: org.id,
-        date,
-        template_id: templateId,
-      }))
+      bayIds.map((bayId) => {
+        const bay = baysData?.find((b) => b.id === bayId);
+        return {
+          bay_id: bayId,
+          org_id: org.id,
+          date,
+          template_id: templateId,
+          location_id: bay?.location_id,
+        };
+      })
     );
 
     const { data: upsertedSchedules, error: upsertError } = await supabase
@@ -170,11 +175,18 @@ export default async function ScheduleManagerPage({
     const allConcreteSlots: {
       bay_schedule_id: string;
       org_id: string;
+      location_id: string | undefined;
       start_time: string;
       end_time: string;
       price_cents: number;
       status: "available";
     }[] = [];
+
+    // Build a map of bay_id → location_id from the bays we already fetched
+    const bayLocationMap = new Map<string, string>();
+    for (const b of baysData || []) {
+      if (b.location_id) bayLocationMap.set(b.id, b.location_id);
+    }
 
     for (const schedule of upsertedSchedules) {
       const hourlyRate = bayRates.get(schedule.bay_id) || 0;
@@ -193,6 +205,7 @@ export default async function ScheduleManagerPage({
         allConcreteSlots.push({
           bay_schedule_id: schedule.id,
           org_id: org.id,
+          location_id: bayLocationMap.get(schedule.bay_id),
           start_time: toTimestamp(schedule.date, ts.start_time, org.timezone),
           end_time: toTimestamp(schedule.date, ts.end_time, org.timezone),
           price_cents: priceCents,
@@ -217,6 +230,9 @@ export default async function ScheduleManagerPage({
         };
       }
     }
+
+    // 8. Restore event holds for any published events overlapping these bays/dates
+    await restoreEventHolds(supabase, org.id, bayIds, dates, org.timezone);
 
     revalidatePath("/admin/schedule");
     return { success: true, count: upsertedSchedules.length };

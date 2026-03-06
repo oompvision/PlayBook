@@ -20,7 +20,9 @@ import {
   Ban,
   Plus,
   Trash2,
+  CalendarDays,
 } from "lucide-react";
+import { restoreEventHolds } from "@/lib/schedule-utils";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -57,6 +59,7 @@ const STATUS_COLORS: Record<string, { dot: string; bg: string; text: string }> =
   available: { dot: "bg-green-400", bg: "bg-green-50 border-green-200", text: "text-green-700" },
   booked: { dot: "bg-blue-400", bg: "bg-blue-50 border-blue-200", text: "text-blue-700" },
   blocked: { dot: "bg-gray-400", bg: "bg-gray-100 border-gray-200", text: "text-gray-600" },
+  event_hold: { dot: "bg-purple-400", bg: "bg-purple-50 border-purple-200", text: "text-purple-700" },
 };
 
 export default async function DayEditorPage({
@@ -112,6 +115,7 @@ export default async function DayEditorPage({
   const availableCount = allSlots.filter((s) => s.status === "available").length;
   const bookedCount = allSlots.filter((s) => s.status === "booked").length;
   const blockedCount = allSlots.filter((s) => s.status === "blocked").length;
+  const eventHoldCount = allSlots.filter((s) => s.status === "event_hold").length;
 
   // If a specific bay is focused, scroll to it
   const focusedBayId = params.bay || null;
@@ -145,11 +149,15 @@ export default async function DayEditorPage({
       );
     }
 
+    // Fetch bay's location_id for the bay_schedule record
+    const { data: bayInfo } = await supabase
+      .from("bays").select("location_id").eq("id", bayId).single();
+
     // Upsert bay_schedule
     const { data: schedule, error: schedError } = await supabase
       .from("bay_schedules")
       .upsert(
-        { bay_id: bayId, org_id: org.id, date, template_id: templateId },
+        { bay_id: bayId, org_id: org.id, date, template_id: templateId, location_id: bayInfo?.location_id },
         { onConflict: "bay_id,date" }
       )
       .select("id")
@@ -187,6 +195,7 @@ export default async function DayEditorPage({
       return {
         bay_schedule_id: schedule.id,
         org_id: org.id,
+        location_id: bayInfo?.location_id,
         start_time: toTimestamp(date, ts.start_time, org.timezone),
         end_time: toTimestamp(date, ts.end_time, org.timezone),
         price_cents: priceCents,
@@ -195,6 +204,9 @@ export default async function DayEditorPage({
     });
 
     await supabase.from("bay_schedule_slots").insert(concreteSlots);
+
+    // Restore event holds for any published events overlapping this bay/date
+    await restoreEventHolds(supabase, org.id, [bayId], [date], org.timezone);
 
     revalidatePath("/admin/schedule/day");
     redirect(`/admin/schedule/day?date=${date}&bay=${bayId}&saved=true${locParam}`);
@@ -214,6 +226,10 @@ export default async function DayEditorPage({
     const loc = formData.get("location") as string | null;
     const locParam = loc ? `&location=${loc}` : "";
 
+    // Fetch bay's location_id for the bay_schedule record
+    const { data: bayInfo } = await supabase
+      .from("bays").select("location_id").eq("id", bayId).single();
+
     // Ensure bay_schedule exists
     let { data: schedule } = await supabase
       .from("bay_schedules")
@@ -225,7 +241,7 @@ export default async function DayEditorPage({
     if (!schedule) {
       const { data: newSchedule } = await supabase
         .from("bay_schedules")
-        .insert({ bay_id: bayId, org_id: org.id, date })
+        .insert({ bay_id: bayId, org_id: org.id, date, location_id: bayInfo?.location_id })
         .select("id")
         .single();
       schedule = newSchedule;
@@ -240,6 +256,7 @@ export default async function DayEditorPage({
     const { error } = await supabase.from("bay_schedule_slots").insert({
       bay_schedule_id: schedule.id,
       org_id: org.id,
+      location_id: bayInfo?.location_id,
       start_time: toTimestamp(date, startTime, org.timezone),
       end_time: toTimestamp(date, endTime, org.timezone),
       price_cents: Math.round(price * 100),
@@ -251,6 +268,9 @@ export default async function DayEditorPage({
         `/admin/schedule/day?date=${date}&bay=${bayId}&error=${encodeURIComponent(error.message)}${locParam}`
       );
     }
+
+    // Restore event holds for any published events overlapping this bay/date
+    await restoreEventHolds(supabase, org.id, [bayId], [date], org.timezone);
 
     revalidatePath("/admin/schedule/day");
     redirect(`/admin/schedule/day?date=${date}&bay=${bayId}${locParam}`);
@@ -346,7 +366,7 @@ export default async function DayEditorPage({
       )}
 
       {/* Metric cards */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <div className="rounded-2xl border border-gray-200 bg-white p-5">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
@@ -388,6 +408,17 @@ export default async function DayEditorPage({
             <div>
               <p className="text-sm text-gray-500">Blocked</p>
               <p className="text-xl font-bold text-gray-800">{blockedCount}</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50">
+              <CalendarDays className="h-5 w-5 text-purple-500" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Event Holds</p>
+              <p className="text-xl font-bold text-gray-800">{eventHoldCount}</p>
             </div>
           </div>
         </div>
@@ -565,6 +596,13 @@ export default async function DayEditorPage({
                                   </span>
                                 </td>
                                 <td className="px-4 py-3">
+                                  {slot.status === "event_hold" || slot.status === "booked" ? (
+                                    <div className="flex items-center justify-end">
+                                      <span className="text-xs text-gray-400 italic">
+                                        {slot.status === "event_hold" ? "Managed by event" : "Booked"}
+                                      </span>
+                                    </div>
+                                  ) : (
                                   <div className="flex items-center justify-end gap-2">
                                     <form
                                       action={updateSlot}
@@ -599,23 +637,22 @@ export default async function DayEditorPage({
                                         Save
                                       </Button>
                                     </form>
-                                    {slot.status !== "booked" && (
-                                      <form action={removeSlot}>
-                                        <input type="hidden" name="slot_id" value={slot.id} />
-                                        <input type="hidden" name="bay_id" value={bay.id} />
-                                        <input type="hidden" name="date" value={date} />
-                                        {locationId && <input type="hidden" name="location" value={locationId} />}
-                                        <Button
-                                          type="submit"
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-8 rounded-lg border-red-200 text-red-500 hover:bg-red-50 hover:text-red-600"
-                                        >
-                                          <Trash2 className="h-3.5 w-3.5" />
-                                        </Button>
-                                      </form>
-                                    )}
+                                    <form action={removeSlot}>
+                                      <input type="hidden" name="slot_id" value={slot.id} />
+                                      <input type="hidden" name="bay_id" value={bay.id} />
+                                      <input type="hidden" name="date" value={date} />
+                                      {locationId && <input type="hidden" name="location" value={locationId} />}
+                                      <Button
+                                        type="submit"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-8 rounded-lg border-red-200 text-red-500 hover:bg-red-50 hover:text-red-600"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </form>
                                   </div>
+                                  )}
                                 </td>
                               </tr>
                             );
