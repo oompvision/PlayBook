@@ -3,6 +3,7 @@ import { getFacilitySlug } from "@/lib/facility";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getTodayInTimezone, toTimestamp } from "@/lib/utils";
+import { restoreEventHolds } from "@/lib/schedule-utils";
 import { resolveLocationId } from "@/lib/location";
 import { ScheduleCalendar } from "@/components/admin/schedule-calendar";
 import { addMonths, endOfMonth, format } from "date-fns";
@@ -229,6 +230,9 @@ export default async function ScheduleManagerPage({
         };
       }
     }
+
+    // 8. Restore event holds for any published events overlapping these bays/dates
+    await restoreEventHolds(supabase, org.id, bayIds, dates, org.timezone);
 
     revalidatePath("/admin/schedule");
     return { success: true, count: upsertedSchedules.length };
