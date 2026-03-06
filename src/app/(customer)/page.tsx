@@ -12,6 +12,7 @@ import { AvailabilityWidget } from "@/components/availability-widget";
 import { DynamicAvailabilityWidget } from "@/components/dynamic-availability-widget";
 import { AdminLoginForm } from "@/components/admin-login-form";
 import { EventsFeed } from "@/components/events/events-feed";
+import { MarketingHomepage } from "@/components/marketing/marketing-homepage";
 
 export default async function FacilityHomePage({
   searchParams: searchParamsPromise,
@@ -22,63 +23,12 @@ export default async function FacilityHomePage({
   const auth = await getAuthUser();
 
   if (!slug) {
-    // No facility context — show platform landing with admin login
-    const isAdmin = auth?.profile.role === "admin";
-    const isSuperAdmin = auth?.profile.role === "super_admin";
+    // No facility context — show marketing homepage
+    const authInfo = auth
+      ? { role: auth.profile.role, orgId: auth.profile.org_id }
+      : null;
 
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center p-8">
-        <Image
-          src="/logos/ezbooker-logo-light.svg"
-          alt="EZ Booker"
-          width={240}
-          height={54}
-          priority
-          className="mb-2"
-        />
-        <p className="mb-8 text-lg text-muted-foreground">
-          Sports Facility Booking Platform
-        </p>
-
-        {isSuperAdmin ? (
-          <div className="flex flex-col items-center gap-4">
-            <Link href="/super-admin">
-              <Button size="lg">Go to Dashboard</Button>
-            </Link>
-            <div className="flex flex-col items-center gap-1">
-              <p className="text-sm text-muted-foreground">
-                Signed in as {auth.profile.email}
-              </p>
-              <SignOutButton variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" />
-            </div>
-          </div>
-        ) : isAdmin && auth.profile.org_id ? (
-          <div className="flex flex-col items-center gap-4">
-            <a href={`/api/admin/enter/${auth.profile.org_id}`}>
-              <Button size="lg">Go to Dashboard</Button>
-            </a>
-            <div className="flex flex-col items-center gap-1">
-              <p className="text-sm text-muted-foreground">
-                Signed in as {auth.profile.email}
-              </p>
-              <SignOutButton variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" />
-            </div>
-          </div>
-        ) : (
-          <>
-            <AdminLoginForm />
-            {auth && (
-              <div className="mt-4 flex flex-col items-center gap-1">
-                <p className="text-sm text-muted-foreground">
-                  Signed in as {auth.profile.email}
-                </p>
-                <SignOutButton variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" />
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    );
+    return <MarketingHomepage authInfo={authInfo} />;
   }
 
   const searchParams = searchParamsPromise ? await searchParamsPromise : {};
