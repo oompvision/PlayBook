@@ -8,6 +8,7 @@ type EventsFeedProps = {
   isMember: boolean;
   userId?: string;
   paymentMode?: string;
+  locationId?: string | null;
 };
 
 export async function EventsFeed({
@@ -17,10 +18,11 @@ export async function EventsFeed({
   isMember,
   userId,
   paymentMode = "none",
+  locationId,
 }: EventsFeedProps) {
   const supabase = await createClient();
 
-  const { data: events } = await supabase
+  let query = supabase
     .from("events")
     .select(`
       id,
@@ -43,6 +45,12 @@ export async function EventsFeed({
     .eq("status", "published")
     .gte("end_time", new Date().toISOString())
     .order("start_time", { ascending: true });
+
+  if (locationId) {
+    query = query.eq("location_id", locationId);
+  }
+
+  const { data: events } = await query;
 
   if (!events || events.length === 0) return null;
 

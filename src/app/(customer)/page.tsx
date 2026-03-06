@@ -421,6 +421,7 @@ export default async function FacilityHomePage({
                 isMember={membershipContext.isMember}
                 userId={auth?.profile.id}
                 paymentMode={paymentMode}
+                locationId={activeLocationId}
               />
             )}
           </div>
@@ -544,6 +545,7 @@ export default async function FacilityHomePage({
               isAuthenticated={!!auth}
               isMember={membershipContext.isMember}
               userId={auth?.profile.id}
+              locationId={activeLocationId}
             />
           )}
         </div>
