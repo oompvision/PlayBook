@@ -128,7 +128,7 @@ export default async function ScheduleManagerPage({
     // 3. Fetch bay hourly rates
     const { data: baysData } = await supabase
       .from("bays")
-      .select("id, hourly_rate_cents")
+      .select("id, hourly_rate_cents, location_id")
       .in("id", bayIds);
 
     const bayRates = new Map<string, number>();
@@ -138,12 +138,16 @@ export default async function ScheduleManagerPage({
 
     // 4. Batch upsert bay_schedules for all date × bay combinations
     const scheduleRows = dates.flatMap((date) =>
-      bayIds.map((bayId) => ({
-        bay_id: bayId,
-        org_id: org.id,
-        date,
-        template_id: templateId,
-      }))
+      bayIds.map((bayId) => {
+        const bay = baysData?.find((b) => b.id === bayId);
+        return {
+          bay_id: bayId,
+          org_id: org.id,
+          date,
+          template_id: templateId,
+          location_id: bay?.location_id,
+        };
+      })
     );
 
     const { data: upsertedSchedules, error: upsertError } = await supabase

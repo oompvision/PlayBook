@@ -145,11 +145,15 @@ export default async function DayEditorPage({
       );
     }
 
+    // Fetch bay's location_id for the bay_schedule record
+    const { data: bayInfo } = await supabase
+      .from("bays").select("location_id").eq("id", bayId).single();
+
     // Upsert bay_schedule
     const { data: schedule, error: schedError } = await supabase
       .from("bay_schedules")
       .upsert(
-        { bay_id: bayId, org_id: org.id, date, template_id: templateId },
+        { bay_id: bayId, org_id: org.id, date, template_id: templateId, location_id: bayInfo?.location_id },
         { onConflict: "bay_id,date" }
       )
       .select("id")
@@ -214,6 +218,10 @@ export default async function DayEditorPage({
     const loc = formData.get("location") as string | null;
     const locParam = loc ? `&location=${loc}` : "";
 
+    // Fetch bay's location_id for the bay_schedule record
+    const { data: bayInfo } = await supabase
+      .from("bays").select("location_id").eq("id", bayId).single();
+
     // Ensure bay_schedule exists
     let { data: schedule } = await supabase
       .from("bay_schedules")
@@ -225,7 +233,7 @@ export default async function DayEditorPage({
     if (!schedule) {
       const { data: newSchedule } = await supabase
         .from("bay_schedules")
-        .insert({ bay_id: bayId, org_id: org.id, date })
+        .insert({ bay_id: bayId, org_id: org.id, date, location_id: bayInfo?.location_id })
         .select("id")
         .single();
       schedule = newSchedule;
