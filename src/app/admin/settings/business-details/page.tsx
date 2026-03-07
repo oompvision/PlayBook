@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { getFacilitySlug } from "@/lib/facility";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -42,7 +43,9 @@ export default async function BusinessDetailsPage({
     const address = (formData.get("address") as string) || null;
     const phone = (formData.get("phone") as string) || null;
 
-    const { error } = await supabase
+    // Use service role client to bypass RLS — auth is already verified
+    const service = createServiceClient();
+    const { error } = await service
       .from("organizations")
       .update({ name, description, address, phone })
       .eq("id", org.id);

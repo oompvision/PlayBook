@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { requireAdmin } from "@/lib/auth";
 import { getFacilitySlug } from "@/lib/facility";
 import { NextRequest, NextResponse } from "next/server";
@@ -71,7 +72,9 @@ export async function PUT(request: NextRequest) {
     }
   }
 
-  const { error } = await supabase
+  // Use service role client to bypass RLS — auth is already verified above
+  const service = createServiceClient();
+  const { error } = await service
     .from("organizations")
     .update({ events_enabled })
     .eq("id", org.id);

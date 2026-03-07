@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { getFacilitySlug } from "@/lib/facility";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -78,7 +79,9 @@ export default async function SchedulingSettingsPage({
       updateData.bookable_window_days = bookableWindowDays;
     }
 
-    const { error } = await supabase
+    // Use service role client to bypass RLS — auth is already verified
+    const service = createServiceClient();
+    const { error } = await service
       .from("organizations")
       .update(updateData)
       .eq("id", org.id);
