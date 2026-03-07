@@ -66,10 +66,12 @@ type DbRule = Rule & {
 
 export function DynamicRulesEditor({
   orgId,
+  locationId,
   bays,
   existingRules,
 }: {
   orgId: string;
+  locationId: string | null;
   bays: Bay[];
   existingRules: DbRule[];
 }) {
@@ -251,17 +253,20 @@ export function DynamicRulesEditor({
       }
 
       // Delete existing rules for this bay
-      await supabase
+      const { error: deleteError } = await supabase
         .from("dynamic_schedule_rules")
         .delete()
         .eq("bay_id", selectedBayId)
         .eq("org_id", orgId);
+
+      if (deleteError) throw deleteError;
 
       // Insert new rules
       if (bayRuleEntries.length > 0) {
         const rows = bayRuleEntries.map((r) => ({
           bay_id: selectedBayId,
           org_id: orgId,
+          ...(locationId ? { location_id: locationId } : {}),
           day_of_week: r.day_of_week,
           open_time: r.open_time,
           close_time: r.close_time,
@@ -279,10 +284,14 @@ export function DynamicRulesEditor({
       }
 
       setSaved(true);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to save rules"
-      );
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : err && typeof err === "object" && "message" in err
+          ? String((err as { message: unknown }).message)
+          : "Failed to save rules";
+      setError(message);
     } finally {
       setSaving(false);
     }

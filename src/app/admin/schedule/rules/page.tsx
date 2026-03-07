@@ -93,6 +93,7 @@ export default async function DynamicScheduleRulesPage({
       ) : (
         <DynamicRulesEditor
           orgId={org.id}
+          locationId={locationId}
           bays={bays}
           existingRules={rules || []}
         />
