@@ -61,7 +61,7 @@ export default async function AdminLayout({
   return (
     <SidebarProvider>
       <div className="min-h-screen bg-gray-50">
-        <AdminSidebar slug={slug} schedulingType={org.scheduling_type} membershipEnabled={org.membership_tiers_enabled} eventsEnabled={org.events_enabled} />
+        <AdminSidebar slug={slug} schedulingType={org.scheduling_type} membershipEnabled={org.membership_tiers_enabled} eventsEnabled={org.events_enabled ?? true} />
         <AdminBackdrop />
         <div className="lg:ml-[280px]">
           <AdminHeader
