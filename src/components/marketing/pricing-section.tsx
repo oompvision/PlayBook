@@ -20,7 +20,7 @@ export function PricingSection({ onOpenDemo }: PricingSectionProps) {
               <span className="text-green-600">No surprises.</span>
             </h2>
             <p className="mt-4 text-lg text-gray-600 max-w-2xl mx-auto">
-              One flat monthly fee. Every feature included. No upsells, no tiers, no nickel-and-diming.
+              One flat monthly fee. Every feature included. No upsells, no nickel-and-diming.
             </p>
           </div>
         </ScrollFadeIn>
@@ -45,7 +45,7 @@ export function PricingSection({ onOpenDemo }: PricingSectionProps) {
                 Contact Us for Pricing
               </Button>
               <p className="mt-4 text-sm text-muted-foreground">
-                Pricing scales with your number of locations. Multi-location support included standard.
+                Multi-location support included standard.
               </p>
             </div>
           </div>

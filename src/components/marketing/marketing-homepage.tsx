@@ -10,6 +10,7 @@ import { PricingSection } from "./pricing-section";
 import { CtaBanner } from "./cta-banner";
 import { MarketingFooter } from "./marketing-footer";
 import { DemoModal } from "./demo-modal";
+import { ContactModal } from "./contact-modal";
 
 interface MarketingHomepageProps {
   authInfo?: {
@@ -20,21 +21,24 @@ interface MarketingHomepageProps {
 
 export function MarketingHomepage({ authInfo }: MarketingHomepageProps) {
   const [demoOpen, setDemoOpen] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
   const openDemo = () => setDemoOpen(true);
+  const openContact = () => setContactOpen(true);
 
   return (
     <div className="min-h-screen flex flex-col">
-      <MarketingNav onOpenDemo={openDemo} authInfo={authInfo} />
+      <MarketingNav onOpenDemo={openDemo} onOpenContact={openContact} authInfo={authInfo} />
       <main className="flex-1">
-        <HeroSection onOpenDemo={openDemo} />
+        <HeroSection onOpenDemo={openDemo} onOpenContact={openContact} />
         <FacilityTypesStrip />
         <FeaturesSection />
         <ForPlayersSection />
         <PricingSection onOpenDemo={openDemo} />
-        <CtaBanner onOpenDemo={openDemo} />
+        <CtaBanner onOpenDemo={openDemo} onOpenContact={openContact} />
       </main>
-      <MarketingFooter />
+      <MarketingFooter onOpenContact={openContact} />
       <DemoModal open={demoOpen} onOpenChange={setDemoOpen} />
+      <ContactModal open={contactOpen} onOpenChange={setContactOpen} />
     </div>
   );
 }

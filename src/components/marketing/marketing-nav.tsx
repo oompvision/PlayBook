@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 
 interface MarketingNavProps {
   onOpenDemo: () => void;
+  onOpenContact: () => void;
   authInfo?: {
     role: string;
     orgId: string | null;
@@ -21,7 +22,7 @@ const navLinks = [
   { label: "Pricing", href: "#pricing" },
 ];
 
-export function MarketingNav({ onOpenDemo, authInfo }: MarketingNavProps) {
+export function MarketingNav({ onOpenDemo, onOpenContact, authInfo }: MarketingNavProps) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -75,11 +76,9 @@ export function MarketingNav({ onOpenDemo, authInfo }: MarketingNavProps) {
 
           {/* Desktop CTAs */}
           <div className="hidden md:flex items-center gap-3">
-            <a href="mailto:hello@ezbooker.com">
-              <Button variant="ghost" size="sm" className="text-gray-600">
-                Contact Us
-              </Button>
-            </a>
+            <Button variant="ghost" size="sm" className="text-gray-600" onClick={onOpenContact}>
+              Contact Us
+            </Button>
             <Button
               size="sm"
               className="bg-green-600 hover:bg-green-700 text-white"
@@ -129,11 +128,12 @@ export function MarketingNav({ onOpenDemo, authInfo }: MarketingNavProps) {
             ))}
             <hr className="border-border" />
             <div className="flex flex-col gap-2 pt-2">
-              <a href="mailto:hello@ezbooker.com">
-                <Button variant="outline" className="w-full">
-                  Contact Us
-                </Button>
-              </a>
+              <Button variant="outline" className="w-full" onClick={() => {
+                  setMobileOpen(false);
+                  onOpenContact();
+                }}>
+                Contact Us
+              </Button>
               <Button
                 className="w-full bg-green-600 hover:bg-green-700 text-white"
                 onClick={() => {

@@ -1,7 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
 
-export function MarketingFooter() {
+interface MarketingFooterProps {
+  onOpenContact: () => void;
+}
+
+export function MarketingFooter({ onOpenContact }: MarketingFooterProps) {
   return (
     <footer className="bg-gray-50 border-t border-gray-200">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
@@ -28,9 +32,9 @@ export function MarketingFooter() {
             <a href="#pricing" className="hover:text-gray-900 transition-colors">
               Pricing
             </a>
-            <a href="mailto:hello@ezbooker.com" className="hover:text-gray-900 transition-colors">
+            <button onClick={onOpenContact} className="hover:text-gray-900 transition-colors">
               Contact
-            </a>
+            </button>
             <Link href="/auth/login" className="hover:text-gray-900 transition-colors">
               Admin Login
             </Link>

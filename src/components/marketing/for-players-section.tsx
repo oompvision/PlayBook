@@ -13,7 +13,7 @@ const playerFeatures = [
     icon: UserPlus,
     title: "Easy Sign Up & Booking",
     description:
-      "Create an account and book a session in under a minute. Modify or cancel anytime.",
+      "Tap to book or ask our AI Assistant to book for you — it's magical.",
   },
   {
     icon: Radio,

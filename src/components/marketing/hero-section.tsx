@@ -2,9 +2,10 @@ import { Button } from "@/components/ui/button";
 
 interface HeroSectionProps {
   onOpenDemo: () => void;
+  onOpenContact: () => void;
 }
 
-export function HeroSection({ onOpenDemo }: HeroSectionProps) {
+export function HeroSection({ onOpenDemo, onOpenContact }: HeroSectionProps) {
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-green-50 via-white to-emerald-50">
       {/* Subtle geometric pattern */}
@@ -32,15 +33,14 @@ export function HeroSection({ onOpenDemo }: HeroSectionProps) {
             >
               Book a Demo
             </Button>
-            <a href="mailto:hello@ezbooker.com">
-              <Button
-                variant="outline"
-                size="lg"
-                className="px-8 py-3 text-base border-gray-300 text-gray-700 hover:bg-gray-50"
-              >
-                Contact Us
-              </Button>
-            </a>
+            <Button
+              variant="outline"
+              size="lg"
+              className="px-8 py-3 text-base border-gray-300 text-gray-700 hover:bg-gray-50"
+              onClick={onOpenContact}
+            >
+              Contact Us
+            </Button>
           </div>
         </div>
       </div>

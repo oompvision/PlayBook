@@ -13,12 +13,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CheckCircle, Loader2 } from "lucide-react";
 
-interface DemoModalProps {
+interface ContactModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function DemoModal({ open, onOpenChange }: DemoModalProps) {
+export function ContactModal({ open, onOpenChange }: ContactModalProps) {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,11 +36,11 @@ export function DemoModal({ open, onOpenChange }: DemoModalProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: "demo",
+          type: "contact",
           name: formData.get("name"),
           email: formData.get("email"),
-          facilityType: formData.get("facilityType"),
-          locations: formData.get("locations"),
+          phone: formData.get("phone"),
+          company: formData.get("company"),
           message: formData.get("message"),
         }),
       });
@@ -69,69 +69,44 @@ export function DemoModal({ open, onOpenChange }: DemoModalProps) {
               Thank you!
             </DialogTitle>
             <DialogDescription className="text-center text-muted-foreground">
-              We&apos;ll be in touch shortly to schedule your demo.
+              We&apos;ll be in touch shortly.
             </DialogDescription>
           </div>
         ) : (
           <>
             <DialogHeader>
               <DialogTitle className="text-xl font-semibold font-[family-name:var(--font-heading)]">
-                Book a Demo
+                Contact Us
               </DialogTitle>
               <DialogDescription>
-                See EZBooker in action. Fill out the form and we&apos;ll schedule a personalized walkthrough.
+                Have questions about EZBooker? Drop us a message and we&apos;ll get back to you.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="grid gap-4 pt-2">
               <div className="grid gap-2">
-                <Label htmlFor="demo-name">Name</Label>
-                <Input id="demo-name" name="name" placeholder="Your name" required />
+                <Label htmlFor="contact-name">Name</Label>
+                <Input id="contact-name" name="name" placeholder="Your name" required />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="demo-email">Email</Label>
-                <Input id="demo-email" name="email" type="email" placeholder="you@example.com" required />
+                <Label htmlFor="contact-email">Email</Label>
+                <Input id="contact-email" name="email" type="email" placeholder="you@example.com" required />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="demo-facility-type">Facility Type</Label>
-                <select
-                  id="demo-facility-type"
-                  name="facilityType"
-                  required
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm"
-                  defaultValue=""
-                >
-                  <option value="" disabled>Select a facility type</option>
-                  <option value="Golf Simulators">Golf Simulators</option>
-                  <option value="Pickleball Courts">Pickleball Courts</option>
-                  <option value="Tennis Courts">Tennis Courts</option>
-                  <option value="Batting Cages">Batting Cages</option>
-                  <option value="Multi-Sport">Multi-Sport</option>
-                  <option value="Other">Other</option>
-                </select>
+                <Label htmlFor="contact-phone">Phone (optional)</Label>
+                <Input id="contact-phone" name="phone" type="tel" placeholder="(555) 123-4567" />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="demo-locations">Number of Locations</Label>
-                <select
-                  id="demo-locations"
-                  name="locations"
-                  required
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm"
-                  defaultValue=""
-                >
-                  <option value="" disabled>Select number of locations</option>
-                  <option value="1">1</option>
-                  <option value="2-5">2 - 5</option>
-                  <option value="6-10">6 - 10</option>
-                  <option value="10+">10+</option>
-                </select>
+                <Label htmlFor="contact-company">Company (optional)</Label>
+                <Input id="contact-company" name="company" placeholder="Your facility or company name" />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="demo-message">Message (optional)</Label>
+                <Label htmlFor="contact-message">Message</Label>
                 <textarea
-                  id="demo-message"
+                  id="contact-message"
                   name="message"
                   rows={3}
-                  placeholder="Tell us about your facility..."
+                  required
+                  placeholder="How can we help?"
                   className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm resize-none"
                 />
               </div>
@@ -149,7 +124,7 @@ export function DemoModal({ open, onOpenChange }: DemoModalProps) {
                     Sending...
                   </>
                 ) : (
-                  "Request Demo"
+                  "Send Message"
                 )}
               </Button>
             </form>

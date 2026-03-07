@@ -3,9 +3,10 @@ import { ScrollFadeIn } from "./scroll-fade-in";
 
 interface CtaBannerProps {
   onOpenDemo: () => void;
+  onOpenContact: () => void;
 }
 
-export function CtaBanner({ onOpenDemo }: CtaBannerProps) {
+export function CtaBanner({ onOpenDemo, onOpenContact }: CtaBannerProps) {
   return (
     <section className="bg-gray-900 text-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20 md:py-24">
@@ -25,15 +26,14 @@ export function CtaBanner({ onOpenDemo }: CtaBannerProps) {
               >
                 Book a Demo
               </Button>
-              <a href="mailto:hello@ezbooker.com">
-                <Button
-                  variant="outline"
-                  size="lg"
-                  className="px-8 py-3 text-base border-gray-600 text-white hover:bg-gray-800 hover:text-white"
-                >
-                  Contact Us
-                </Button>
-              </a>
+              <Button
+                variant="outline"
+                size="lg"
+                className="px-8 py-3 text-base border-gray-600 text-white hover:bg-gray-800 hover:text-white"
+                onClick={onOpenContact}
+              >
+                Contact Us
+              </Button>
             </div>
           </div>
         </ScrollFadeIn>
