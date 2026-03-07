@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { CalendarDays, AlertTriangle } from "lucide-react";
 
 type EventsSettingsProps = {
@@ -12,7 +13,9 @@ export function EventsSettings({
   initialEnabled,
   activeEventCount,
 }: EventsSettingsProps) {
+  const router = useRouter();
   const [enabled, setEnabled] = useState(initialEnabled);
+  const [baseEnabled, setBaseEnabled] = useState(initialEnabled);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,13 +49,27 @@ export function EventsSettings({
         body: JSON.stringify({ events_enabled: enabled }),
       });
 
+      // Guard against redirect responses (HTML instead of JSON)
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error("Session expired — please refresh the page and try again");
+      }
+
+      const data = await res.json();
+
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.error || "Failed to save");
       }
 
+      // Verify the persisted value matches what we sent
+      if (typeof data.events_enabled === "boolean" && data.events_enabled !== enabled) {
+        throw new Error("Save appeared to succeed but the value did not persist. Please try again.");
+      }
+
       setSaved(true);
-      setTimeout(() => window.location.reload(), 1000);
+      setBaseEnabled(enabled);
+      // Use Next.js router refresh to invalidate server component cache
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -60,7 +77,7 @@ export function EventsSettings({
     }
   }
 
-  const hasChanged = enabled !== initialEnabled;
+  const hasChanged = enabled !== baseEnabled;
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
