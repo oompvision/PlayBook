@@ -55,6 +55,8 @@ export default async function EventTemplatesPage({
     const supabase = await createClient();
 
     const name = formData.get("name") as string;
+    const startTime = (formData.get("start_time") as string) || null;
+    const endTime = (formData.get("end_time") as string) || null;
     const config = {
       capacity: parseInt(formData.get("capacity") as string, 10) || 12,
       price_cents: Math.round((parseFloat(formData.get("price") as string) || 0) * 100),
@@ -69,6 +71,8 @@ export default async function EventTemplatesPage({
         formData.get("waitlist_promotion_hours") as string, 10
       ) || 24,
       description: (formData.get("description") as string) || null,
+      start_time: startTime,
+      end_time: endTime,
     };
 
     const { error } = await supabase.from("event_templates").insert({
@@ -90,6 +94,8 @@ export default async function EventTemplatesPage({
     const supabase = await createClient();
     const id = formData.get("id") as string;
     const name = formData.get("name") as string;
+    const startTime = (formData.get("start_time") as string) || null;
+    const endTime = (formData.get("end_time") as string) || null;
     const config = {
       capacity: parseInt(formData.get("capacity") as string, 10) || 12,
       price_cents: Math.round((parseFloat(formData.get("price") as string) || 0) * 100),
@@ -104,6 +110,8 @@ export default async function EventTemplatesPage({
         formData.get("waitlist_promotion_hours") as string, 10
       ) || 24,
       description: (formData.get("description") as string) || null,
+      start_time: startTime,
+      end_time: endTime,
     };
 
     const { error } = await supabase
@@ -188,6 +196,14 @@ export default async function EventTemplatesPage({
                   <input name="description" defaultValue={editingTemplate.config?.description || ""} className={inputClass} />
                 </div>
                 <div className="space-y-1.5">
+                  <label className={labelClass}>Default Start Time</label>
+                  <input name="start_time" type="time" defaultValue={editingTemplate.config?.start_time || ""} className={inputClass} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={labelClass}>Default End Time</label>
+                  <input name="end_time" type="time" defaultValue={editingTemplate.config?.end_time || ""} className={inputClass} />
+                </div>
+                <div className="space-y-1.5">
                   <label className={labelClass}>Default Capacity</label>
                   <input name="capacity" type="number" min="1" defaultValue={editingTemplate.config?.capacity || 12} className={inputClass} />
                 </div>
@@ -240,6 +256,9 @@ export default async function EventTemplatesPage({
                     {tpl.name}
                   </p>
                   <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {tpl.config?.start_time && tpl.config?.end_time
+                      ? `${tpl.config.start_time} – ${tpl.config.end_time} · `
+                      : ""}
                     {tpl.config?.capacity || "?"} spots ·{" "}
                     {tpl.config?.price_cents
                       ? `$${(tpl.config.price_cents / 100).toFixed(2)}`
@@ -294,6 +313,14 @@ export default async function EventTemplatesPage({
                 <div className="space-y-1.5 sm:col-span-2">
                   <label className={labelClass}>Description</label>
                   <input name="description" placeholder="Optional default description" className={inputClass + " placeholder:text-gray-400 dark:placeholder:text-white/30"} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={labelClass}>Default Start Time</label>
+                  <input name="start_time" type="time" className={inputClass} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={labelClass}>Default End Time</label>
+                  <input name="end_time" type="time" className={inputClass} />
                 </div>
                 <div className="space-y-1.5">
                   <label className={labelClass}>Default Capacity</label>
