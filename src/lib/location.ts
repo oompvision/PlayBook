@@ -63,7 +63,19 @@ export async function resolveLocationId(
     .eq("is_default", true)
     .single();
 
-  return defaultLoc?.id || null;
+  if (defaultLoc) return defaultLoc.id;
+
+  // 4. If no default found (e.g. default flag lost), fall back to any active location
+  const { data: anyLoc } = await supabase
+    .from("locations")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("is_active", true)
+    .order("created_at")
+    .limit(1)
+    .single();
+
+  return anyLoc?.id || null;
 }
 
 /**
