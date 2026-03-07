@@ -65,7 +65,7 @@ export default async function RateOverridesPage({
           Your facility uses Slot-Based Scheduling. Rate overrides only
           apply to Dynamic Scheduling mode. Switch in{" "}
           <a
-            href="/admin/settings"
+            href="/admin/settings/scheduling"
             className="font-medium underline underline-offset-2"
           >
             Settings

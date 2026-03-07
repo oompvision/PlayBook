@@ -1,0 +1,271 @@
+export const dynamic = "force-dynamic";
+
+import { createClient } from "@/lib/supabase/server";
+import { getFacilitySlug } from "@/lib/facility";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { SchedulingModeSettings } from "../scheduling-mode-settings";
+import { EventsSettings } from "../events-settings";
+import {
+  Globe,
+  Clock,
+  CheckCircle2,
+} from "lucide-react";
+
+const TIMEZONES = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Anchorage",
+  "Pacific/Honolulu",
+  "America/Phoenix",
+  "America/Toronto",
+  "America/Vancouver",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Australia/Sydney",
+  "Australia/Melbourne",
+  "Asia/Tokyo",
+  "Asia/Dubai",
+];
+
+async function getOrg() {
+  const slug = await getFacilitySlug();
+  if (!slug) return null;
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("organizations")
+    .select("*")
+    .eq("slug", slug)
+    .single();
+  return data;
+}
+
+export default async function SchedulingSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ saved?: string; error?: string }>;
+}) {
+  const params = await searchParams;
+  const org = await getOrg();
+  if (!org) redirect("/");
+
+  async function updateSchedulingSettings(formData: FormData) {
+    "use server";
+    const org = await getOrg();
+    if (!org) return;
+    const supabase = await createClient();
+
+    const timezone = formData.get("timezone") as string;
+    const defaultDuration =
+      parseInt(formData.get("default_slot_duration_minutes") as string) || 60;
+    const minBookingLeadMinutes =
+      parseInt(formData.get("min_booking_lead_minutes") as string) ?? 15;
+
+    const updateData: Record<string, unknown> = {
+      timezone,
+      default_slot_duration_minutes: defaultDuration,
+      min_booking_lead_minutes: minBookingLeadMinutes,
+    };
+
+    if (!org.membership_tiers_enabled) {
+      const bookableWindowDays = Math.min(
+        365,
+        Math.max(1, parseInt(formData.get("bookable_window_days") as string) || 30)
+      );
+      updateData.bookable_window_days = bookableWindowDays;
+    }
+
+    const { error } = await supabase
+      .from("organizations")
+      .update(updateData)
+      .eq("id", org.id);
+
+    if (error) {
+      redirect(
+        `/admin/settings/scheduling?error=${encodeURIComponent(error.message)}`
+      );
+    }
+    revalidatePath("/admin/settings/scheduling");
+    revalidatePath("/admin");
+    redirect("/admin/settings/scheduling?saved=true");
+  }
+
+  // Fetch events data
+  const supabase = await createClient();
+
+  const { data: publishedEvents } = await supabase
+    .from("events")
+    .select("id")
+    .eq("org_id", org.id)
+    .eq("status", "published")
+    .gt("end_time", new Date().toISOString());
+
+  let activeEventCount = 0;
+  if (publishedEvents && publishedEvents.length > 0) {
+    const eventIds = publishedEvents.map((e) => e.id);
+    const { count } = await supabase
+      .from("event_registrations")
+      .select("id", { count: "exact", head: true })
+      .in("event_id", eventIds)
+      .in("status", ["confirmed", "pending_payment"]);
+    if (count && count > 0) activeEventCount = publishedEvents.length;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Page Header */}
+      <div>
+        <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
+          Scheduling Settings
+        </h1>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Configure scheduling mode, timezone, and booking rules.
+        </p>
+      </div>
+
+      {/* Alerts */}
+      {params.error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+          {params.error}
+        </div>
+      )}
+      {params.saved && (
+        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          Settings saved.
+        </div>
+      )}
+
+      {/* Scheduling Mode */}
+      <SchedulingModeSettings
+        initialMode={org.scheduling_type ?? "slot_based"}
+        initialBookableWindowDays={org.bookable_window_days ?? 30}
+      />
+
+      {/* Timezone & Booking Settings */}
+      <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+        <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
+          <div className="flex items-center gap-2">
+            <Globe className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+            <h2 className="font-semibold text-gray-800 dark:text-white/90">
+              Timezone & Scheduling
+            </h2>
+          </div>
+          <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+            Set your facility timezone and default slot duration.
+          </p>
+        </div>
+        <div className="p-6">
+          <form action={updateSchedulingSettings} className="space-y-6">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Timezone
+                </label>
+                <select
+                  name="timezone"
+                  defaultValue={org.timezone}
+                  className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                >
+                  {TIMEZONES.map((tz) => (
+                    <option key={tz} value={tz}>
+                      {tz.replace(/_/g, " ")}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 dark:text-gray-500">
+                  All schedule times are displayed in this timezone.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Default Slot Duration (minutes)
+                </label>
+                <input
+                  name="default_slot_duration_minutes"
+                  type="number"
+                  min="15"
+                  step="15"
+                  defaultValue={org.default_slot_duration_minutes}
+                  className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                />
+              </div>
+            </div>
+
+            {/* Booking Settings */}
+            <div className="border-t border-gray-200 pt-6 dark:border-white/[0.05]">
+              <div className="mb-4 flex items-center gap-2">
+                <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90">
+                  Booking Settings
+                </h3>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Minimum Booking Lead Time (minutes)
+                  </label>
+                  <input
+                    name="min_booking_lead_minutes"
+                    type="number"
+                    min="0"
+                    step="5"
+                    defaultValue={org.min_booking_lead_minutes ?? 15}
+                    className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                  />
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    Time slots starting within this many minutes from now will
+                    not be shown to customers. Set to 0 to show all slots until
+                    their start time.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Bookable Window (days)
+                  </label>
+                  {org.membership_tiers_enabled ? (
+                    <div className="flex h-10 items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-400">
+                      {org.guest_booking_window_days ?? org.bookable_window_days ?? 30} days (guest) / {org.member_booking_window_days ?? org.bookable_window_days ?? 30} days (member)
+                    </div>
+                  ) : (
+                    <input
+                      name="bookable_window_days"
+                      type="number"
+                      min="1"
+                      max="365"
+                      defaultValue={org.bookable_window_days ?? 30}
+                      className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                    />
+                  )}
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    {org.membership_tiers_enabled
+                      ? "Bookable Window is managed in the Membership Management settings."
+                      : "How many days into the future customers can book. Admins can still build schedules beyond this window."}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 border-t border-gray-200 pt-6 dark:border-white/[0.05]">
+              <button
+                type="submit"
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
+              >
+                Save Settings
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {/* Events Toggle */}
+      <EventsSettings
+        initialEnabled={org.events_enabled ?? false}
+        activeEventCount={activeEventCount}
+      />
+    </div>
+  );
+}

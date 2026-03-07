@@ -181,7 +181,7 @@ export function MembershipTierSettings({
         <div className="flex items-center gap-2">
           <Crown className="h-4 w-4 text-gray-500 dark:text-gray-400" />
           <h2 className="font-semibold text-gray-800 dark:text-white/90">
-            Membership Tiers
+            Membership Management
           </h2>
         </div>
         <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">

@@ -65,7 +65,7 @@ export default async function DynamicScheduleRulesPage({
           Your facility uses Slot-Based Scheduling. These rules won&apos;t take
           effect until you switch to Dynamic Scheduling in{" "}
           <a
-            href="/admin/settings"
+            href="/admin/settings/scheduling"
             className="font-medium underline underline-offset-2"
           >
             Settings

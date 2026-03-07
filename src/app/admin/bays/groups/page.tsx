@@ -76,7 +76,7 @@ export default async function FacilityGroupsPage({
           Facility groups are used with Dynamic Scheduling. Switch to Dynamic
           mode in{" "}
           <a
-            href="/admin/settings"
+            href="/admin/settings/scheduling"
             className="font-medium underline underline-offset-2"
           >
             Settings

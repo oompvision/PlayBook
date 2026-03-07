@@ -138,8 +138,8 @@ export async function POST(request: NextRequest) {
 
     // Build the return/refresh URLs
     const origin = request.headers.get("origin") || request.nextUrl.origin;
-    const returnUrl = `${origin}/admin/settings?stripe=complete`;
-    const refreshUrl = `${origin}/admin/settings?stripe=refresh`;
+    const returnUrl = `${origin}/admin/settings/payments?stripe=complete`;
+    const refreshUrl = `${origin}/admin/settings/payments?stripe=refresh`;
 
     // Generate an Account Link for onboarding
     const accountLink = await stripe.accountLinks.create({

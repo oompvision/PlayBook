@@ -19,6 +19,10 @@ import {
   Ban,
   BadgeDollarSign,
   CalendarDays,
+  ChevronDown,
+  CreditCard,
+  Bell,
+  CalendarClock,
 } from "lucide-react";
 
 const baseNavItems = [
@@ -42,7 +46,14 @@ const commonNavItems = [
   { label: "Bookings", href: "/admin/bookings", icon: CalendarCheck },
   { label: "Customers", href: "/admin/customers", icon: Users },
   { label: "Revenue", href: "/admin/revenue", icon: DollarSign },
-  { label: "Settings", href: "/admin/settings", icon: Settings },
+];
+
+const settingsSubItems = [
+  { label: "Business Details", href: "/admin/settings/business-details", icon: Building2 },
+  { label: "Scheduling Settings", href: "/admin/settings/scheduling", icon: CalendarClock },
+  { label: "Payment Settings", href: "/admin/settings/payments", icon: CreditCard },
+  { label: "Membership Management", href: "/admin/settings/membership", icon: Crown },
+  { label: "Notifications", href: "/admin/settings/notifications", icon: Bell },
 ];
 
 export function AdminSidebar({
@@ -72,6 +83,21 @@ export function AdminSidebar({
     return `${href}?location=${locationId}`;
   };
 
+  const isSettingsActive = pathname.startsWith("/admin/settings");
+
+  const navItems = [
+    ...baseNavItems,
+    ...(schedulingType === "dynamic" ? dynamicNavItems : slotBasedNavItems),
+    ...(eventsEnabled
+      ? [{ label: "Events", href: "/admin/events", icon: CalendarDays }]
+      : []),
+    ...commonNavItems.slice(0, 1),
+    ...(membershipEnabled
+      ? [{ label: "Members", href: "/admin/members", icon: Crown }]
+      : []),
+    ...commonNavItems.slice(1),
+  ];
+
   return (
     <aside
       className={`fixed top-0 left-0 z-50 flex h-screen w-[280px] flex-col bg-gray-900 transition-transform duration-300 ease-in-out ${
@@ -91,20 +117,7 @@ export function AdminSidebar({
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="space-y-1">
-          {[
-            ...baseNavItems,
-            ...(schedulingType === "dynamic"
-              ? dynamicNavItems
-              : slotBasedNavItems),
-            ...(eventsEnabled
-              ? [{ label: "Events", href: "/admin/events", icon: CalendarDays }]
-              : []),
-            ...commonNavItems.slice(0, 1),
-            ...(membershipEnabled
-              ? [{ label: "Members", href: "/admin/members", icon: Crown }]
-              : []),
-            ...commonNavItems.slice(1),
-          ].map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
             return (
@@ -128,6 +141,61 @@ export function AdminSidebar({
               </li>
             );
           })}
+
+          {/* Settings Dropdown */}
+          <li>
+            <Link
+              href={withLocation("/admin/settings/business-details")}
+              onClick={() => isMobileOpen && !isSettingsActive && toggleMobileSidebar()}
+              className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                isSettingsActive
+                  ? "bg-white/10 text-white"
+                  : "text-gray-400 hover:bg-white/5 hover:text-gray-200"
+              }`}
+            >
+              <Settings
+                className={`h-5 w-5 shrink-0 ${
+                  isSettingsActive ? "text-blue-400" : "text-gray-500 group-hover:text-gray-400"
+                }`}
+              />
+              Settings
+              <ChevronDown
+                className={`ml-auto h-4 w-4 shrink-0 transition-transform ${
+                  isSettingsActive ? "rotate-0 text-gray-400" : "-rotate-90 text-gray-600"
+                }`}
+              />
+            </Link>
+
+            {/* Sub-menu (always expanded when on any settings page) */}
+            {isSettingsActive && (
+              <ul className="mt-1 space-y-0.5 pl-4">
+                {settingsSubItems.map((sub) => {
+                  const SubIcon = sub.icon;
+                  const subActive = pathname.startsWith(sub.href);
+                  return (
+                    <li key={sub.href}>
+                      <Link
+                        href={withLocation(sub.href)}
+                        onClick={() => isMobileOpen && toggleMobileSidebar()}
+                        className={`group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                          subActive
+                            ? "bg-white/5 font-medium text-white"
+                            : "text-gray-500 hover:bg-white/5 hover:text-gray-300"
+                        }`}
+                      >
+                        <SubIcon
+                          className={`h-4 w-4 shrink-0 ${
+                            subActive ? "text-blue-400" : "text-gray-600 group-hover:text-gray-500"
+                          }`}
+                        />
+                        {sub.label}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </li>
         </ul>
       </nav>
 
