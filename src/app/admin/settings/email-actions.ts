@@ -28,6 +28,6 @@ export async function updateEmailSetting(
     return { error: error.message };
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/settings/notifications");
   return { success: true };
 }

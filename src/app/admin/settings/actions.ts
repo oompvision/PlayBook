@@ -27,7 +27,7 @@ export async function updateOrgImage(
 
   if (error) return { error: error.message };
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/settings/business-details");
   revalidatePath("/");
   revalidatePath("/my-bookings");
 

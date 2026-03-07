@@ -99,11 +99,11 @@ export function PaymentSettings({
         });
       });
       // Clean up the URL
-      router.replace("/admin/settings", { scroll: false });
+      router.replace("/admin/settings/payments", { scroll: false });
     } else if (stripeParam === "refresh") {
       // Onboarding link expired, auto-generate a new one
       handleConnect();
-      router.replace("/admin/settings", { scroll: false });
+      router.replace("/admin/settings/payments", { scroll: false });
     } else if (settings.stripe_account_id) {
       // Already has an account — check current status
       checkConnectStatus();
