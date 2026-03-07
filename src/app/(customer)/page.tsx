@@ -363,7 +363,7 @@ export default async function FacilityHomePage({
                 </p>
               </div>
             )}
-            {org && org.events_enabled && (
+            {org && (org.events_enabled ?? true) && (
               <EventsFeed
                 orgId={org.id}
                 timezone={timezone}
@@ -488,7 +488,7 @@ export default async function FacilityHomePage({
               </p>
             </div>
           )}
-          {org && org.events_enabled && (
+          {org && (org.events_enabled ?? true) && (
             <EventsFeed
               orgId={org.id}
               timezone={timezone}

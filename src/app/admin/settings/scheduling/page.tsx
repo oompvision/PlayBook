@@ -266,7 +266,7 @@ export default async function SchedulingSettingsPage({
 
       {/* Events Toggle */}
       <EventsSettings
-        initialEnabled={org.events_enabled ?? false}
+        initialEnabled={org.events_enabled ?? true}
         activeEventCount={activeEventCount}
       />
     </div>

@@ -1554,7 +1554,7 @@ Payment policy:
 - When confirming a booking, include this notice: "By confirming, you agree to the facility's terms and cancellation policy."${cancellationPolicyText ? `\n- Cancellation policy: ${cancellationPolicyText}` : ""}
 - Do NOT use start_checkout when no payment is required — use create_booking instead.
 `}
-${org.events_enabled ? `Event guidelines:
+${(org.events_enabled ?? true) ? `Event guidelines:
 - Use get_events when the customer asks about events, classes, clinics, or group activities.
 - When showing events, include: name, date, time, price, spots remaining, and which facilities are used.
 - For members, show both the regular price and their discounted member price.
@@ -1590,7 +1590,7 @@ Quick reply buttons:
 
     // Filter out event tools if events are disabled for this org
     const eventToolNames = new Set(["get_events", "register_for_event"]);
-    const activeToolDeclarations = org.events_enabled
+    const activeToolDeclarations = (org.events_enabled ?? true)
       ? toolDeclarations
       : toolDeclarations.filter((t) => !eventToolNames.has(t.name!));
 
