@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { resolveLocationId } from "@/lib/location";
+import { toTimestamp } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { EventForm } from "@/components/admin/event-form";
@@ -65,11 +66,17 @@ export default async function CreateEventPage({
 
     if (tpl?.config) {
       const c = tpl.config as Record<string, unknown>;
+      // Build proper timestamptz from template times so toLocalDatetime() in EventForm
+      // correctly round-trips them back to the original HH:MM values
+      const today = new Date().toISOString().slice(0, 10);
+      const tz = org.timezone || "America/New_York";
+      const tplStartTime = (c.start_time as string) || "";
+      const tplEndTime = (c.end_time as string) || "";
       templateEvent = {
         name: "",
         description: (c.description as string) || null,
-        start_time: "",
-        end_time: "",
+        start_time: tplStartTime ? toTimestamp(today, tplStartTime, tz) : "",
+        end_time: tplEndTime ? toTimestamp(today, tplEndTime, tz) : "",
         capacity: (c.capacity as number) || 12,
         price_cents: (c.price_cents as number) || 0,
         members_only: (c.members_only as boolean) || false,
@@ -123,14 +130,14 @@ export default async function CreateEventPage({
 
     // Build timestamptz from date + time + timezone
     // If end time <= start time, assume event crosses midnight → bump end date +1
-    const startTimestamp = `${date}T${startTime}:00`;
+    const startTimestamp = toTimestamp(date, startTime, tz);
     let endDate = date;
     if (endTime <= startTime) {
       const d = new Date(date);
       d.setDate(d.getDate() + 1);
       endDate = d.toISOString().slice(0, 10);
     }
-    const endTimestamp = `${endDate}T${endTime}:00`;
+    const endTimestamp = toTimestamp(endDate, endTime, tz);
 
     // Resolve location for insert
     const locationId = loc
@@ -221,6 +228,8 @@ export default async function CreateEventPage({
           guest_enrollment_days_before: guestEnrollmentDays,
           waitlist_promotion_hours: waitlistHours,
           description,
+          start_time: startTime,
+          end_time: endTime,
         },
       });
     }

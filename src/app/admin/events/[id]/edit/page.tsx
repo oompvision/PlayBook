@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { resolveLocationId } from "@/lib/location";
+import { toTimestamp } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { EventForm } from "@/components/admin/event-form";
@@ -86,17 +87,18 @@ export default async function EditEventPage({
     const bayIds: string[] = JSON.parse(
       (formData.get("bay_ids") as string) || "[]"
     );
+    const tz = (formData.get("timezone") as string) || org.timezone || "America/New_York";
 
-    // Build timestamptz from date + time
+    // Build timestamptz from date + time + timezone
     // If end time <= start time, assume event crosses midnight → bump end date +1
-    const startTimestamp = `${date}T${startTime}:00`;
+    const startTimestamp = toTimestamp(date, startTime, tz);
     let endDate = date;
     if (endTime <= startTime) {
       const d = new Date(date);
       d.setDate(d.getDate() + 1);
       endDate = d.toISOString().slice(0, 10);
     }
-    const endTimestamp = `${endDate}T${endTime}:00`;
+    const endTimestamp = toTimestamp(endDate, endTime, tz);
 
     const { error } = await supabase
       .from("events")
