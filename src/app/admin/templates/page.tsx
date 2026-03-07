@@ -90,9 +90,14 @@ export default async function TemplatesPage({
 
     const name = formData.get("name") as string;
     const description = (formData.get("description") as string) || null;
-    const locId = (formData.get("location_id") as string) || null;
+    let locId = (formData.get("location_id") as string) || null;
     const loc = formData.get("location") as string | null;
     const locParam = loc ? `&location=${loc}` : "";
+
+    // If no location_id from form (e.g. locations_enabled is off), resolve the default
+    if (!locId) {
+      locId = await resolveLocationId(org.id);
+    }
 
     const { data: template, error } = await supabase
       .from("schedule_templates")
