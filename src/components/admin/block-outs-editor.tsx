@@ -113,11 +113,13 @@ function toTimestamp(dateStr: string, timeStr: string, timezone: string): string
 
 export function BlockOutsEditor({
   orgId,
+  locationId,
   timezone,
   bays,
   existingBlockOuts,
 }: {
   orgId: string;
+  locationId: string | null;
   timezone: string;
   bays: Bay[];
   existingBlockOuts: BlockOut[];
@@ -189,6 +191,7 @@ export function BlockOutsEditor({
       const rows = newBlockOut.bay_ids.map((bayId) => ({
         bay_id: bayId,
         org_id: orgId,
+        ...(locationId ? { location_id: locationId } : {}),
         date: newBlockOut.date,
         start_time: toTimestamp(newBlockOut.date, newBlockOut.start_time, timezone),
         end_time: toTimestamp(newBlockOut.date, newBlockOut.end_time, timezone),
@@ -217,7 +220,7 @@ export function BlockOutsEditor({
       setSuccess(`Block-out created for ${newBlockOut.bay_ids.length} facilit${newBlockOut.bay_ids.length === 1 ? "y" : "ies"}`);
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create block-out");
+      setError(err instanceof Error ? err.message : err && typeof err === "object" && "message" in err ? String((err as { message: unknown }).message) : "Failed to create block-out");
     } finally {
       setSaving(false);
     }
@@ -238,7 +241,7 @@ export function BlockOutsEditor({
 
       setBlockOuts((prev) => prev.filter((bo) => bo.id !== id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete block-out");
+      setError(err instanceof Error ? err.message : err && typeof err === "object" && "message" in err ? String((err as { message: unknown }).message) : "Failed to delete block-out");
     } finally {
       setDeleting(null);
     }

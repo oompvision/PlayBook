@@ -45,12 +45,14 @@ type Rule = {
 
 export function FacilityGroupsEditor({
   orgId,
+  locationId,
   bays,
   existingGroups,
   existingMembers,
   existingRules,
 }: {
   orgId: string;
+  locationId: string | null;
   bays: Bay[];
   existingGroups: Group[];
   existingMembers: Member[];
@@ -167,6 +169,7 @@ export function FacilityGroupsEditor({
         .from("facility_groups")
         .insert({
           org_id: orgId,
+          ...(locationId ? { location_id: locationId } : {}),
           name: newGroupName.trim(),
           description: newGroupDesc.trim() || null,
         })
@@ -181,7 +184,7 @@ export function FacilityGroupsEditor({
       setNewGroupDesc("");
       setSuccessMsg(`Group "${data.name}" created`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create group");
+      setError(err instanceof Error ? err.message : err && typeof err === "object" && "message" in err ? String((err as { message: unknown }).message) : "Failed to create group");
     } finally {
       setCreating(false);
     }
@@ -210,7 +213,7 @@ export function FacilityGroupsEditor({
       });
       setSuccessMsg("Group deleted");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete group");
+      setError(err instanceof Error ? err.message : err && typeof err === "object" && "message" in err ? String((err as { message: unknown }).message) : "Failed to delete group");
     }
   }
 
@@ -244,7 +247,7 @@ export function FacilityGroupsEditor({
         return next;
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add facility");
+      setError(err instanceof Error ? err.message : err && typeof err === "object" && "message" in err ? String((err as { message: unknown }).message) : "Failed to add facility");
     }
   }
 
@@ -275,7 +278,7 @@ export function FacilityGroupsEditor({
       });
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to remove facility"
+        err instanceof Error ? err.message : err && typeof err === "object" && "message" in err ? String((err as { message: unknown }).message) : "Failed to remove facility"
       );
     }
   }

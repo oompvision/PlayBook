@@ -93,6 +93,7 @@ export default async function RateOverridesPage({
       ) : (
         <RateOverridesEditor
           orgId={org.id}
+          locationId={locationId}
           timezone={org.timezone}
           bays={bays}
           existingOverrides={overrides || []}

@@ -93,6 +93,7 @@ export default async function BlockOutsPage({
       ) : (
         <BlockOutsEditor
           orgId={org.id}
+          locationId={locationId}
           timezone={org.timezone}
           bays={bays}
           existingBlockOuts={blockOuts || []}
