@@ -60,11 +60,13 @@ function formatTimeStr(time: string): string {
 
 export function RateOverridesEditor({
   orgId,
+  locationId,
   timezone,
   bays,
   existingOverrides,
 }: {
   orgId: string;
+  locationId: string | null;
   timezone: string;
   bays: Bay[];
   existingOverrides: RateOverride[];
@@ -145,6 +147,7 @@ export function RateOverridesEditor({
         .insert({
           bay_id: newOverride.bay_id,
           org_id: orgId,
+          ...(locationId ? { location_id: locationId } : {}),
           date: newOverride.date,
           start_time: newOverride.start_time,
           end_time: newOverride.end_time,
@@ -172,7 +175,7 @@ export function RateOverridesEditor({
       setSuccess("Rate override created");
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create rate override");
+      setError(err instanceof Error ? err.message : err && typeof err === "object" && "message" in err ? String((err as { message: unknown }).message) : "Failed to create rate override");
     } finally {
       setSaving(false);
     }
@@ -193,7 +196,7 @@ export function RateOverridesEditor({
 
       setOverrides((prev) => prev.filter((o) => o.id !== id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete override");
+      setError(err instanceof Error ? err.message : err && typeof err === "object" && "message" in err ? String((err as { message: unknown }).message) : "Failed to delete override");
     } finally {
       setDeleting(null);
     }

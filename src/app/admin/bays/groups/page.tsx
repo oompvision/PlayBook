@@ -104,6 +104,7 @@ export default async function FacilityGroupsPage({
       ) : (
         <FacilityGroupsEditor
           orgId={org.id}
+          locationId={locationId}
           bays={bays}
           existingGroups={groups || []}
           existingMembers={members || []}
