@@ -137,6 +137,31 @@ export interface FacilityEvent {
   registered_count?: number;
 }
 
+export interface EventRegistration {
+  id: string;
+  event_id: string;
+  org_id: string;
+  status: 'confirmed' | 'waitlisted' | 'cancelled' | 'pending_payment';
+  waitlist_position: number | null;
+  payment_status: string | null;
+  registered_at: string;
+  cancelled_at: string | null;
+  promoted_at: string | null;
+  events: {
+    name: string;
+    description: string | null;
+    start_time: string;
+    end_time: string;
+    price_cents: number;
+    capacity: number;
+    status: string;
+    event_bays: Array<{
+      bay_id: string;
+      bays: { name: string } | { name: string }[];
+    }>;
+  } | null;
+}
+
 export interface MembershipTier {
   id: string;
   org_id: string;
