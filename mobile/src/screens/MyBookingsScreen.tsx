@@ -8,6 +8,8 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useFacility } from '../lib/facility-context';
 import { useAuth } from '../lib/auth-context';
 import { supabase } from '../lib/supabase';
@@ -18,6 +20,7 @@ import { EmptyState } from '../components/EmptyState';
 import { formatPrice, formatTimeInZone, formatDateLong } from '../lib/format';
 import { colors, spacing, typography } from '../theme';
 import type { Booking, EventRegistration } from '../types';
+import type { MainTabParamList, ModifyBookingParams } from '../navigation/types';
 
 type FeedItem =
   | { kind: 'booking'; sortDate: string; booking: Booking }
@@ -26,15 +29,19 @@ type FeedItem =
 export function MyBookingsScreen() {
   const { organization } = useFacility();
   const { user } = useAuth();
+  const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [eventRegistrations, setEventRegistrations] = useState<EventRegistration[]>([]);
+  const [bookingSlotIds, setBookingSlotIds] = useState<Record<string, string[]>>({});
+  const [cancellationWindowHours, setCancellationWindowHours] = useState<number | null>(null);
+  const [hasPaymentMode, setHasPaymentMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!user || !organization) return;
 
-    const [bookingsResult, eventsResult] = await Promise.all([
+    const [bookingsResult, eventsResult, paymentSettingsResult] = await Promise.all([
       supabase
         .from('bookings')
         .select('*, bays(*), organizations(*)')
@@ -68,10 +75,46 @@ export function MyBookingsScreen() {
         .eq('org_id', organization.id)
         .eq('user_id', user.id)
         .order('registered_at', { ascending: false }),
+      // Fetch payment settings for cancellation window
+      supabase
+        .from('org_payment_settings')
+        .select('payment_mode, cancellation_window_hours, stripe_onboarding_complete')
+        .eq('org_id', organization.id)
+        .single(),
     ]);
 
     if (bookingsResult.data) setBookings(bookingsResult.data as Booking[]);
     if (eventsResult.data) setEventRegistrations(eventsResult.data as unknown as EventRegistration[]);
+
+    // Fetch booking_slots for confirmed upcoming bookings (needed for modify flow)
+    if (bookingsResult.data) {
+      const confirmedIds = bookingsResult.data
+        .filter((b: Booking) => b.status === 'confirmed')
+        .map((b: Booking) => b.id);
+      if (confirmedIds.length > 0) {
+        const { data: slotsData } = await supabase
+          .from('booking_slots')
+          .select('booking_id, bay_schedule_slot_id')
+          .in('booking_id', confirmedIds);
+        if (slotsData) {
+          const slotMap: Record<string, string[]> = {};
+          for (const row of slotsData) {
+            if (!slotMap[row.booking_id]) slotMap[row.booking_id] = [];
+            slotMap[row.booking_id].push(row.bay_schedule_slot_id);
+          }
+          setBookingSlotIds(slotMap);
+        }
+      }
+    }
+
+    // Set cancellation window info
+    if (paymentSettingsResult.data) {
+      const ps = paymentSettingsResult.data;
+      const active = ps.payment_mode !== 'none' && ps.stripe_onboarding_complete;
+      setHasPaymentMode(active);
+      setCancellationWindowHours(active ? (ps.cancellation_window_hours ?? 24) : null);
+    }
+
     setLoading(false);
   }, [user, organization]);
 
@@ -83,6 +126,37 @@ export function MyBookingsScreen() {
     setRefreshing(true);
     await fetchData();
     setRefreshing(false);
+  };
+
+  const canModifyBooking = (booking: Booking): boolean => {
+    if (booking.status !== 'confirmed') return false;
+    const bookingStart = new Date(booking.start_time).getTime();
+    // Check min_booking_lead_minutes
+    const minLeadMinutes = organization?.min_booking_lead_minutes ?? 15;
+    if (bookingStart <= Date.now() + minLeadMinutes * 60_000) return false;
+    // Check cancellation window (only if payment mode is active)
+    if (hasPaymentMode && cancellationWindowHours !== null) {
+      const windowCutoff = bookingStart - cancellationWindowHours * 60 * 60 * 1000;
+      if (Date.now() >= windowCutoff) return false;
+    }
+    return true;
+  };
+
+  const handleModifyBooking = (booking: Booking) => {
+    const slotIds = bookingSlotIds[booking.id] ?? [];
+    const params: ModifyBookingParams = {
+      id: booking.id,
+      confirmationCode: booking.confirmation_code,
+      bayId: booking.bay_id,
+      bayName: booking.bays?.name ?? 'Unknown',
+      date: booking.date,
+      startTime: booking.start_time,
+      endTime: booking.end_time,
+      totalPriceCents: booking.total_price_cents,
+      notes: booking.notes ?? undefined,
+      slotIds,
+    };
+    navigation.navigate('Book', { modifyBooking: params });
   };
 
   const handleCancelBooking = (booking: Booking) => {
@@ -230,12 +304,22 @@ export function MyBookingsScreen() {
           <View style={styles.bookingFooter}>
             <Text style={styles.bookingPrice}>{formatPrice(booking.total_price_cents)}</Text>
             {isUpcoming && (
-              <Button
-                title="Cancel"
-                variant="destructive"
-                size="sm"
-                onPress={() => handleCancelBooking(booking)}
-              />
+              <View style={styles.bookingActions}>
+                {canModifyBooking(booking) && (
+                  <Button
+                    title="Modify"
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => handleModifyBooking(booking)}
+                  />
+                )}
+                <Button
+                  title="Cancel"
+                  variant="destructive"
+                  size="sm"
+                  onPress={() => handleCancelBooking(booking)}
+                />
+              </View>
             )}
           </View>
 
@@ -387,6 +471,10 @@ const styles = StyleSheet.create({
   bookingPrice: {
     ...typography.h3,
     color: colors.foreground,
+  },
+  bookingActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
   bookingNotes: {
     ...typography.caption,
