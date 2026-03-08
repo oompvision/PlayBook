@@ -78,6 +78,7 @@ export function FacilityProvider({ profile, children }: FacilityProviderProps) {
       return;
     }
 
+    console.log('[FacilityContext] org scheduling_type:', orgData.scheduling_type);
     setOrganization(orgData as Organization);
 
     // Fetch active locations for this org
@@ -133,7 +134,10 @@ export function FacilityProvider({ profile, children }: FacilityProviderProps) {
     const allBays = (bayData as Bay[]) || [];
     setBays(allBays);
 
+    console.log('[FacilityContext] fetchBaysAndGroups schedulingType:', schedulingType, 'bays:', allBays.length);
+
     if (schedulingType !== 'dynamic' || allBays.length === 0) {
+      console.log('[FacilityContext] Not dynamic or no bays, skipping groups fetch');
       setFacilityGroups([]);
       setStandaloneBays([]);
       setAvailableDurations([60]);
@@ -161,6 +165,7 @@ export function FacilityProvider({ profile, children }: FacilityProviderProps) {
 
     const groups = groupsResult.data || [];
     const members = membersResult.data || [];
+    console.log('[FacilityContext] groups:', groups.length, 'members:', members.length, 'groupsError:', groupsResult.error?.message, 'membersError:', membersResult.error?.message);
 
     // Build bay → group mapping
     const bayGroupMap = new Map<string, string>();
