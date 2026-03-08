@@ -551,23 +551,47 @@ export function BookingScreen({ route, navigation }: Props) {
       targetBayId = selectedOption.bay.id;
     }
 
-    const { data, error } = await supabase.rpc('modify_booking', {
+    // Dynamic bookings don't use slot IDs, so modify_booking RPC won't work.
+    // Instead: cancel old booking, then create a new dynamic booking.
+
+    // Step 1: Cancel the old booking
+    const { error: cancelError } = await supabase.rpc('cancel_booking', {
       p_booking_id: modifyBooking.id,
-      p_new_bay_id: targetBayId,
-      p_new_date: selectedDate,
-      p_new_slot_ids: [], // dynamic bookings don't use slot IDs
-      p_notes: notes || null,
     });
 
-    if (error) {
+    if (cancelError) {
       setBooking(false);
-      Alert.alert('Modification Failed', error.message);
+      Alert.alert('Modification Failed', cancelError.message);
       return;
     }
 
-    const result = Array.isArray(data) ? data[0] : data;
+    // Step 2: Create the new dynamic booking
+    const { data: newData, error: createError } = await supabase.rpc('create_dynamic_booking', {
+      p_org_id: organization.id,
+      p_customer_id: user.id,
+      p_bay_id: targetBayId,
+      p_date: selectedDate,
+      p_start_time: selectedDynamicSlot.start_time,
+      p_end_time: selectedDynamicSlot.end_time,
+      p_price_cents: selectedDynamicSlot.price_cents,
+      p_notes: notes || null,
+    });
 
+    if (createError) {
+      setBooking(false);
+      Alert.alert('Modification Failed', `Old booking cancelled but new booking failed: ${createError.message}`);
+      return;
+    }
+
+    const result = Array.isArray(newData) ? newData[0] : newData;
+
+    // Step 3: Link new booking to old via modified_from
     if (result?.booking_id) {
+      await supabase
+        .from('bookings')
+        .update({ modified_from: modifyBooking.id })
+        .eq('id', result.booking_id);
+
       await handleModifyPayment(modifyBooking.id, result.booking_id, selectedDynamicSlot.price_cents);
     }
 
@@ -640,6 +664,7 @@ export function BookingScreen({ route, navigation }: Props) {
           <View style={styles.modifyBanner}>
             <Text style={styles.modifyBannerText}>
               Modifying {modifyBooking.confirmationCode} — {modifyBooking.bayName},{' '}
+              {formatDate(modifyBooking.date)},{' '}
               {formatTimeInZone(modifyBooking.startTime, organization.timezone)} –{' '}
               {formatTimeInZone(modifyBooking.endTime, organization.timezone)}
             </Text>
