@@ -42,11 +42,21 @@ export function useMembership(): MembershipState {
 
     setIsLoading(true);
 
+    console.log('[useMembership] fetching for org:', orgId, 'user:', user?.id, 'membershipEnabled:', membershipEnabled);
+    console.log('[useMembership] org fields:', {
+      bookable_window_days: organization?.bookable_window_days,
+      membership_tiers_enabled: organization?.membership_tiers_enabled,
+      guest_booking_window_days: organization?.guest_booking_window_days,
+      member_booking_window_days: organization?.member_booking_window_days,
+    });
+
     // Always fetch the effective bookable window (works for both member and guest)
-    const { data: windowData } = await supabase.rpc('get_effective_bookable_window', {
+    const { data: windowData, error: windowError } = await supabase.rpc('get_effective_bookable_window', {
       p_org_id: orgId,
       p_user_id: user?.id ?? null,
     });
+
+    console.log('[useMembership] RPC result:', { windowData, windowError: windowError?.message, type: typeof windowData });
 
     if (typeof windowData === 'number') {
       setBookableWindowDays(windowData);

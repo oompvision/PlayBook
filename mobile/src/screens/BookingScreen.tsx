@@ -104,8 +104,10 @@ export function BookingScreen({ route, navigation }: Props) {
   }, [availableDurations]);
 
   // Generate date options based on effective bookable window (membership-aware)
+  console.log('[BookingScreen] bookableWindowDays:', bookableWindowDays);
   const dateOptions = React.useMemo(() => {
     if (!organization) return [];
+    console.log('[BookingScreen] computing dateOptions with window:', bookableWindowDays);
     const dates: string[] = [];
     const now = new Date();
     for (let i = 0; i < bookableWindowDays; i++) {
