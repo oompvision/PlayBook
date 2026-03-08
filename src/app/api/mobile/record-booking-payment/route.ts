@@ -166,7 +166,6 @@ export async function POST(request: NextRequest) {
       .from("booking_payments")
       .insert({
         booking_id: body.booking_id || null,
-        event_registration_id: body.event_registration_id || null,
         org_id: org.id,
         customer_email: auth.profile.email,
         stripe_customer_id: body.stripe_customer_id,
