@@ -10,14 +10,14 @@ import {
 import { useFacility } from '../lib/facility-context';
 import { Card } from '../components/Card';
 import { colors, spacing, typography } from '../theme';
-import type { Organization } from '../types';
+import type { Location } from '../types';
 
 /**
- * Shown on first launch if user hasn't selected a facility yet,
- * or if there are multiple locations to choose from.
+ * Shown when the org has multiple locations and the user
+ * hasn't selected one yet. Lists locations within their org.
  */
 export function FacilityPickerScreen() {
-  const { locations, selectFacility, isLoading } = useFacility();
+  const { organization, locations, selectLocation, isLoading } = useFacility();
 
   if (isLoading) {
     return (
@@ -27,12 +27,11 @@ export function FacilityPickerScreen() {
     );
   }
 
-  const renderItem = ({ item }: { item: Organization }) => (
-    <TouchableOpacity onPress={() => selectFacility(item)} activeOpacity={0.7}>
+  const renderItem = ({ item }: { item: Location }) => (
+    <TouchableOpacity onPress={() => selectLocation(item)} activeOpacity={0.7}>
       <Card style={styles.facilityCard}>
         <Text style={styles.facilityName}>{item.name}</Text>
         {item.address && <Text style={styles.facilityAddress}>{item.address}</Text>}
-        {item.phone && <Text style={styles.facilityPhone}>{item.phone}</Text>}
       </Card>
     </TouchableOpacity>
   );
@@ -42,7 +41,9 @@ export function FacilityPickerScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Choose Your Location</Text>
         <Text style={styles.subtitle}>
-          Select a facility to browse availability and book.
+          {organization?.name
+            ? `${organization.name} has multiple locations. Select one to continue.`
+            : 'Select a location to browse availability and book.'}
         </Text>
       </View>
       <FlatList
@@ -92,10 +93,5 @@ const styles = StyleSheet.create({
   facilityAddress: {
     ...typography.bodySmall,
     color: colors.mutedForeground,
-  },
-  facilityPhone: {
-    ...typography.bodySmall,
-    color: colors.mutedForeground,
-    marginTop: 2,
   },
 });

@@ -14,7 +14,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
   const { user, isLoading: authLoading } = useAuth();
-  const { organization, isLoading: facilityLoading } = useFacility();
+  const { organization, selectedLocation, hasMultipleLocations, isLoading: facilityLoading } = useFacility();
 
   if (authLoading || facilityLoading) {
     return (
@@ -24,11 +24,16 @@ export function RootNavigator() {
     );
   }
 
+  // Show location picker only if org has multiple locations and none selected yet
+  const needsLocationPicker = user && organization && hasMultipleLocations && !selectedLocation;
+
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!user ? (
           <Stack.Screen name="Auth" component={AuthStack} />
+        ) : needsLocationPicker ? (
+          <Stack.Screen name="FacilityPicker" component={FacilityPickerScreen} />
         ) : !organization ? (
           <Stack.Screen name="FacilityPicker" component={FacilityPickerScreen} />
         ) : (

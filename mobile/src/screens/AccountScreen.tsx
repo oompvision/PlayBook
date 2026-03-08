@@ -14,11 +14,11 @@ import { Card } from '../components/Card';
 import { Input } from '../components/Input';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, typography } from '../theme';
-import type { Organization } from '../types';
+import type { Location } from '../types';
 
 export function AccountScreen() {
   const { user, profile, signOut, refreshProfile } = useAuth();
-  const { organization, locations, selectFacility } = useFacility();
+  const { organization, selectedLocation, locations, hasMultipleLocations, selectLocation } = useFacility();
   const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [saving, setSaving] = useState(false);
@@ -47,8 +47,8 @@ export function AccountScreen() {
     ]);
   };
 
-  const handleSelectLocation = (loc: Organization) => {
-    selectFacility(loc);
+  const handleSelectLocation = (loc: Location) => {
+    selectLocation(loc);
   };
 
   return (
@@ -98,12 +98,12 @@ export function AccountScreen() {
         )}
       </Card>
 
-      {/* Location Selector */}
-      {locations.length > 1 && (
+      {/* Location Selector — only shown if org has multiple locations */}
+      {hasMultipleLocations && (
         <>
           <Text style={styles.sectionTitle}>Location</Text>
           {locations.map((loc) => {
-            const isSelected = organization?.id === loc.id;
+            const isSelected = selectedLocation?.id === loc.id;
             return (
               <TouchableOpacity
                 key={loc.id}
@@ -136,10 +136,18 @@ export function AccountScreen() {
               <Text style={styles.label}>Name</Text>
               <Text style={styles.value}>{organization.name}</Text>
             </View>
-            {organization.address && (
+            {selectedLocation && selectedLocation.name !== organization.name && (
+              <View style={styles.profileRow}>
+                <Text style={styles.label}>Location</Text>
+                <Text style={styles.value}>{selectedLocation.name}</Text>
+              </View>
+            )}
+            {(selectedLocation?.address || organization.address) && (
               <View style={styles.profileRow}>
                 <Text style={styles.label}>Address</Text>
-                <Text style={styles.value}>{organization.address}</Text>
+                <Text style={styles.value}>
+                  {selectedLocation?.address || organization.address}
+                </Text>
               </View>
             )}
             {organization.phone && (
