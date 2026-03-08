@@ -25,6 +25,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { EnterAsAdminButton } from "@/components/super-admin/enter-as-admin-button";
+import { LocationCard } from "@/components/super-admin/location-card";
 
 export default async function OrgDetailPage({
   params,
@@ -341,6 +342,36 @@ export default async function OrgDetailPage({
     redirect(`/super-admin/orgs/${id}`);
   }
 
+  async function updateLocation(formData: FormData) {
+    "use server";
+    await requireSuperAdmin();
+    const supabase = await createClient();
+    const locationId = formData.get("location_id") as string;
+    const name = (formData.get("location_name") as string)?.trim();
+    const address =
+      (formData.get("location_address") as string)?.trim() || null;
+
+    if (!name) {
+      redirect(
+        `/super-admin/orgs/${id}?location_error=${encodeURIComponent("Location name is required")}`
+      );
+    }
+
+    const { error } = await supabase
+      .from("locations")
+      .update({ name, address })
+      .eq("id", locationId)
+      .eq("org_id", id);
+
+    if (error) {
+      redirect(
+        `/super-admin/orgs/${id}?location_error=${encodeURIComponent(error.message)}`
+      );
+    }
+
+    redirect(`/super-admin/orgs/${id}?saved=true`);
+  }
+
   return (
     <div className="max-w-3xl space-y-8">
       {/* Header */}
@@ -643,101 +674,15 @@ export default async function OrgDetailPage({
         locations.map((loc) => {
           const locationBays = baysByLocation[loc.id] || [];
           return (
-            <Card key={loc.id}>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="min-w-0 flex-1">
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{loc.name}</span>
-                      {loc.is_default && (
-                        <Badge variant="outline" className="shrink-0 text-xs">
-                          Default
-                        </Badge>
-                      )}
-                      <Badge
-                        variant={loc.is_active ? "default" : "secondary"}
-                        className="shrink-0"
-                      >
-                        {loc.is_active ? "Active" : "Inactive"}
-                      </Badge>
-                    </CardTitle>
-                    {loc.address && (
-                      <CardDescription className="mt-1 pl-6">
-                        {loc.address}
-                      </CardDescription>
-                    )}
-                  </div>
-                  {/* Location actions */}
-                  {!loc.is_default && (
-                    <div className="ml-3 flex items-center gap-2 shrink-0">
-                      <form action={toggleLocation}>
-                        <input
-                          type="hidden"
-                          name="location_id"
-                          value={loc.id}
-                        />
-                        <input
-                          type="hidden"
-                          name="new_active"
-                          value={String(!loc.is_active)}
-                        />
-                        <Button
-                          type="submit"
-                          variant="outline"
-                          size="sm"
-                          className="text-xs"
-                        >
-                          {loc.is_active ? "Deactivate" : "Activate"}
-                        </Button>
-                      </form>
-                      <form action={deleteLocation}>
-                        <input
-                          type="hidden"
-                          name="location_id"
-                          value={loc.id}
-                        />
-                        <Button
-                          type="submit"
-                          variant="outline"
-                          size="sm"
-                          className="text-xs text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </form>
-                    </div>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Facilities ({locationBays.length})
-                </p>
-                {locationBays.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No facilities at this location yet.
-                  </p>
-                ) : (
-                  <ul className="space-y-1.5">
-                    {locationBays.map((bay) => (
-                      <li
-                        key={bay.id}
-                        className="flex items-center justify-between text-sm"
-                      >
-                        <span>{bay.name}</span>
-                        <Badge
-                          variant={bay.is_active ? "default" : "secondary"}
-                          className="text-xs"
-                        >
-                          {bay.is_active ? "Active" : "Inactive"}
-                        </Badge>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </CardContent>
-            </Card>
+            <LocationCard
+              key={loc.id}
+              location={loc}
+              bays={locationBays}
+              orgId={id}
+              toggleAction={toggleLocation}
+              deleteAction={deleteLocation}
+              updateAction={updateLocation}
+            />
           );
         })
       )}
