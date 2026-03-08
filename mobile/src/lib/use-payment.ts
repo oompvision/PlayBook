@@ -53,6 +53,7 @@ interface IntentResponse {
   intent_id?: string;
   stripe_customer_id?: string;
   stripe_account_id?: string;
+  ephemeral_key_secret?: string;
   publishable_key?: string;
   amount_cents?: number;
   cancellation_policy_text?: string;
@@ -126,6 +127,8 @@ export function usePayment() {
           data.intent_type === 'setup' ? data.client_secret! : undefined,
         merchantDisplayName: 'EZ Booker',
         customerId: data.stripe_customer_id,
+        // Ephemeral key authenticates the customer on the connected account
+        customerEphemeralKeySecret: data.ephemeral_key_secret,
         // Use connected account's Stripe account ID
         ...(data.stripe_account_id
           ? { stripeAccountId: data.stripe_account_id }
