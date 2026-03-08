@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Alert } from 'react-native';
 import { supabase } from './supabase';
+import { useStripeAccount } from './stripe-context';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || '';
 
@@ -62,6 +63,7 @@ interface IntentResponse {
 
 export function usePayment() {
   const { initPaymentSheet, presentPaymentSheet } = useStripeHook();
+  const { setStripeAccountId } = useStripeAccount();
   const [isProcessing, setIsProcessing] = useState(false);
 
   const collectPayment = async (params: PaymentParams): Promise<PaymentResult> => {
@@ -119,6 +121,15 @@ export function usePayment() {
 
       console.log('[collectPayment] Payment required! intent_type:', data.intent_type, 'amount:', data.amount_cents);
 
+      // Set the connected account on the StripeProvider so the SDK
+      // authenticates against the correct Stripe account
+      if (data.stripe_account_id) {
+        console.log('[collectPayment] Setting stripeAccountId on provider:', data.stripe_account_id);
+        setStripeAccountId(data.stripe_account_id);
+        // Allow StripeProvider to re-render with the new account ID
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
       // Initialize the Payment Sheet
       const { error: initError } = await initPaymentSheet({
         paymentIntentClientSecret:
@@ -129,12 +140,9 @@ export function usePayment() {
         customerId: data.stripe_customer_id,
         // Ephemeral key authenticates the customer on the connected account
         customerEphemeralKeySecret: data.ephemeral_key_secret,
-        // Use connected account's Stripe account ID
-        ...(data.stripe_account_id
-          ? { stripeAccountId: data.stripe_account_id }
-          : {}),
         defaultBillingDetails: {},
         allowsDelayedPaymentMethods: false,
+        returnURL: 'ezbooker://stripe-redirect',
       });
 
       if (initError) {
