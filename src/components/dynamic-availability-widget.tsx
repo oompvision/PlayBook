@@ -28,9 +28,11 @@ import {
   type BookingDetailData,
 } from "@/components/booking-details-modal";
 import { LocationSwitcher } from "@/components/location-switcher";
+import { EventRegistrationPanel, type EventForPanel } from "@/components/events/event-registration-panel";
 import {
   CalendarIcon,
   CalendarCheck,
+  CalendarDays,
   Clock,
   CreditCard,
   Loader2,
@@ -50,6 +52,7 @@ import {
   AlertTriangle,
   Sparkles,
   Crown,
+  Users,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -85,6 +88,19 @@ type Booking = {
   total_price_cents: number;
   status: string;
   notes: string | null;
+};
+
+type DayEvent = {
+  id: string;
+  name: string;
+  description: string | null;
+  start_time: string;
+  end_time: string;
+  capacity: number;
+  price_cents: number;
+  members_only: boolean;
+  bay_names: string[];
+  registered_count: number;
 };
 
 type ToastData = {
@@ -325,6 +341,11 @@ export function DynamicAvailabilityWidget(
   // Calendar popover
   const [calendarOpen, setCalendarOpen] = useState(false);
 
+  // Events for the selected date/facility
+  const [dayEvents, setDayEvents] = useState<DayEvent[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+  const [selectedEventForPanel, setSelectedEventForPanel] = useState<EventForPanel | null>(null);
+
   // Sidebar: confirmed bookings + chat
   const [chatExpanded, setChatExpanded] = useState(false);
   const pendingBookingAction = useRef<BookingAction | null>(null);
@@ -459,6 +480,114 @@ export function DynamicAvailabilityWidget(
   useEffect(() => {
     fetchAvailability();
   }, [fetchAvailability]);
+
+  // ─── Fetch events for the selected date + facility ──────
+
+  const fetchEvents = useCallback(async () => {
+    if (!selectedDate) return;
+
+    // Determine which bay IDs to filter by
+    let bayIdsToCheck: string[] = [];
+    if (selectedGroupId) {
+      const group = facilityGroups.find((g) => g.id === selectedGroupId);
+      if (group) bayIdsToCheck = group.bays.map((b) => b.id);
+    } else if (selectedBayId) {
+      bayIdsToCheck = [selectedBayId];
+    } else if (!hasMultipleOptions) {
+      bayIdsToCheck = bays.map((b) => b.id);
+    } else {
+      setDayEvents([]);
+      return;
+    }
+
+    if (bayIdsToCheck.length === 0) {
+      setDayEvents([]);
+      return;
+    }
+
+    setLoadingEvents(true);
+    const supabase = createClient();
+
+    // Day boundaries in facility timezone
+    const nextDayStr = addDays(selectedDate, 1);
+    const dayStart = new Date(
+      new Date(selectedDate + "T00:00:00").toLocaleString("en-US", { timeZone: timezone })
+    ).toISOString();
+    // Use simple date range: events starting on this date
+    const { data: events } = await supabase
+      .from("events")
+      .select(`
+        id, name, description, start_time, end_time, capacity, price_cents,
+        members_only, event_bays(bay_id, bays:bay_id(name))
+      `)
+      .eq("org_id", orgId)
+      .eq("status", "published")
+      .gte("start_time", selectedDate + "T00:00:00")
+      .lt("start_time", nextDayStr + "T00:00:00")
+      .order("start_time");
+
+    if (!events || events.length === 0) {
+      setDayEvents([]);
+      setLoadingEvents(false);
+      return;
+    }
+
+    // Filter to events that involve at least one bay in the selected group/bay
+    const bayIdSet = new Set(bayIdsToCheck);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const filtered = events.filter((evt: any) => {
+      const eventBayIds = (evt.event_bays as { bay_id: string }[])?.map((eb) => eb.bay_id) || [];
+      return eventBayIds.some((id) => bayIdSet.has(id));
+    });
+
+    if (filtered.length === 0) {
+      setDayEvents([]);
+      setLoadingEvents(false);
+      return;
+    }
+
+    // Fetch registration counts
+    const countMap: Record<string, number> = {};
+    await Promise.all(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      filtered.map(async (evt: any) => {
+        const { data } = await supabase.rpc("get_event_registration_count", {
+          p_event_id: evt.id,
+        });
+        countMap[evt.id] = data ?? 0;
+      })
+    );
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result: DayEvent[] = filtered.map((evt: any) => {
+      const bayNames = (evt.event_bays as { bay_id: string; bays: { name: string } | { name: string }[] }[])
+        ?.map((eb) => {
+          if (Array.isArray(eb.bays)) return eb.bays[0]?.name;
+          return eb.bays?.name;
+        })
+        .filter(Boolean) as string[] || [];
+
+      return {
+        id: evt.id,
+        name: evt.name,
+        description: evt.description,
+        start_time: evt.start_time,
+        end_time: evt.end_time,
+        capacity: evt.capacity,
+        price_cents: evt.price_cents,
+        members_only: evt.members_only,
+        bay_names: bayNames,
+        registered_count: countMap[evt.id] || 0,
+      };
+    });
+
+    setDayEvents(result);
+    setLoadingEvents(false);
+  }, [orgId, selectedDate, selectedGroupId, selectedBayId, facilityGroups, bays, hasMultipleOptions, timezone]);
+
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
 
   // ─── Stripe: Create checkout intent ─────────────────────
 
@@ -1206,6 +1335,98 @@ export function DynamicAvailabilityWidget(
         )}
       </div>
 
+      {/* Step 4: Events on this date for the selected facility */}
+      {(dayEvents.length > 0 || loadingEvents) && (
+        <div className="rounded-xl border bg-card p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-green-600 dark:text-green-400" />
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Events
+              {selectedOption && (
+                <span className="ml-1.5">
+                  &middot; {selectedOption}
+                </span>
+              )}
+            </h3>
+          </div>
+
+          {loadingEvents ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {dayEvents.map((evt) => {
+                const spotsLeft = evt.capacity - evt.registered_count;
+                const priceLabel = evt.price_cents === 0
+                  ? "Free"
+                  : `$${(evt.price_cents / 100).toFixed(2)}`;
+
+                return (
+                  <button
+                    key={evt.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedEventForPanel({
+                        id: evt.id,
+                        name: evt.name,
+                        description: evt.description,
+                        startTime: evt.start_time,
+                        endTime: evt.end_time,
+                        capacity: evt.capacity,
+                        registeredCount: evt.registered_count,
+                        priceCents: evt.price_cents,
+                        membersOnly: evt.members_only,
+                        bayNames: evt.bay_names.join(", "),
+                      });
+                    }}
+                    className="flex w-full items-center justify-between rounded-lg border border-green-200 bg-green-50/50 px-4 py-3 text-left transition-colors hover:bg-green-100/70 dark:border-green-900/30 dark:bg-green-950/20 dark:hover:bg-green-950/40"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40">
+                        <CalendarDays className="h-4 w-4 text-green-700 dark:text-green-400" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium">{evt.name}</p>
+                          {evt.members_only && (
+                            <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                              Members Only
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {formatTime(evt.start_time, timezone)} &ndash; {formatTime(evt.end_time, timezone)}
+                        </p>
+                        {evt.bay_names.length > 0 && (
+                          <div className="mt-0.5 flex flex-wrap gap-1.5">
+                            {evt.bay_names.map((name) => (
+                              <span
+                                key={name}
+                                className="inline-block rounded-full bg-green-100/80 px-2 py-0.5 text-[11px] font-medium text-green-700 dark:bg-green-900/20 dark:text-green-400"
+                              >
+                                {name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="text-sm font-semibold">{priceLabel}</span>
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Users className="h-3 w-3" />
+                        {spotsLeft > 0 ? `${spotsLeft} spot${spotsLeft !== 1 ? "s" : ""} left` : "Full"}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ─── Toast ─── */}
       {toast && (
         <Toast
@@ -1932,6 +2153,23 @@ export function DynamicAvailabilityWidget(
         cancellationWindowHours={cancellationWindowHours}
         paymentMode={paymentMode}
       />
+
+      {/* Event registration panel */}
+      {selectedEventForPanel && (
+        <EventRegistrationPanel
+          event={selectedEventForPanel}
+          timezone={timezone}
+          isAuthenticated={isAuthenticated}
+          isMember={membership?.isMember ?? false}
+          paymentMode={paymentMode}
+          onClose={() => setSelectedEventForPanel(null)}
+          onRegistered={() => {
+            setSelectedEventForPanel(null);
+            fetchEvents();
+            setToast({ message: "Registration successful!" });
+          }}
+        />
+      )}
     </div>
   );
 }
