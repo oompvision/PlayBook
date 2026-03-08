@@ -1,11 +1,26 @@
 import { useState } from 'react';
 import { Alert } from 'react-native';
-import { useStripe } from '@stripe/stripe-react-native';
 import { supabase } from './supabase';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || '';
 
 console.log('[usePayment] API_URL:', API_URL || '(empty)');
+
+// Stripe native module may not be available in Expo Go
+let useStripeHook: () => {
+  initPaymentSheet: (params: any) => Promise<{ error?: any }>;
+  presentPaymentSheet: () => Promise<{ error?: any }>;
+};
+try {
+  const stripeMod = require('@stripe/stripe-react-native');
+  useStripeHook = stripeMod.useStripe;
+} catch {
+  console.warn('[usePayment] Stripe native module not available');
+  useStripeHook = () => ({
+    initPaymentSheet: async () => ({ error: { message: 'Stripe not available in Expo Go. Use a custom dev build for payments.' } }),
+    presentPaymentSheet: async () => ({ error: { message: 'Stripe not available in Expo Go.' } }),
+  });
+}
 
 export type PaymentType = 'slot_booking' | 'dynamic_booking' | 'event';
 
@@ -45,7 +60,7 @@ interface IntentResponse {
 }
 
 export function usePayment() {
-  const { initPaymentSheet, presentPaymentSheet } = useStripe();
+  const { initPaymentSheet, presentPaymentSheet } = useStripeHook();
   const [isProcessing, setIsProcessing] = useState(false);
 
   const collectPayment = async (params: PaymentParams): Promise<PaymentResult> => {
