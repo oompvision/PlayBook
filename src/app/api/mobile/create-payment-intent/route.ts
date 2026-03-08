@@ -218,6 +218,16 @@ export async function POST(request: NextRequest) {
       stripeCustomerId = customer.id;
     }
 
+    // Create ephemeral key for the customer on the connected account
+    // Required for PaymentSheet to authenticate against the connected account
+    const ephemeralKey = await stripe.ephemeralKeys.create(
+      { customer: stripeCustomerId },
+      {
+        stripeAccount: settings.stripe_account_id,
+        apiVersion: "2026-02-25.clover",
+      }
+    );
+
     // Build cancellation policy text
     const cancellationPolicyText =
       settings.cancellation_policy_text ||
@@ -258,6 +268,7 @@ export async function POST(request: NextRequest) {
         intent_id: paymentIntent.id,
         stripe_customer_id: stripeCustomerId,
         stripe_account_id: stripeAccountId,
+        ephemeral_key_secret: ephemeralKey.secret,
         publishable_key: publishableKey,
         amount_cents: totalCents,
         cancellation_policy_text: cancellationPolicyText,
@@ -282,6 +293,7 @@ export async function POST(request: NextRequest) {
         intent_id: setupIntent.id,
         stripe_customer_id: stripeCustomerId,
         stripe_account_id: stripeAccountId,
+        ephemeral_key_secret: ephemeralKey.secret,
         publishable_key: publishableKey,
         amount_cents: totalCents,
         cancellation_policy_text: cancellationPolicyText,
