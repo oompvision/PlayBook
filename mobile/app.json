@@ -37,13 +37,7 @@
           "color": "#1a1a1a"
         }
       ],
-      [
-        "@stripe/stripe-react-native",
-        {
-          "merchantIdentifier": "merchant.app.ezbooker",
-          "enableGooglePay": true
-        }
-      ]
+      "./plugins/withStripeConfig"
     ],
     "extra": {
       "eas": {
