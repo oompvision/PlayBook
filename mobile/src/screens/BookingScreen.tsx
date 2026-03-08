@@ -21,6 +21,7 @@ import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { Input } from '../components/Input';
 import { formatPrice, formatTimeInZone, getTodayInTimezone, formatDate } from '../lib/format';
+import { usePayment } from '../lib/use-payment';
 import { colors, spacing, typography, borderRadius } from '../theme';
 import type { MainTabParamList } from '../navigation/types';
 import type { Bay, BayScheduleSlot, FacilityGroup, AvailableTimeSlot, FacilityEvent } from '../types';
@@ -48,6 +49,7 @@ export function BookingScreen({ route, navigation }: Props) {
   } = useFacility();
   const { user, profile } = useAuth();
   const { bookableWindowDays } = useMembership();
+  const { collectPayment, recordPayment, isProcessing: paymentProcessing } = usePayment();
 
   // Set dynamic header title based on selected location
   useEffect(() => {
@@ -281,6 +283,27 @@ export function BookingScreen({ route, navigation }: Props) {
     if (!user || !organization || !selectedBay || selectedSlots.length === 0) return;
 
     setBooking(true);
+
+    // Collect payment first (skips if org has no Stripe or $0 total)
+    const paymentResult = await collectPayment({
+      orgId: organization.id,
+      type: 'slot_booking',
+      slotIds: selectedSlots.map((s) => s.id),
+      locationId: selectedLocation?.id,
+    });
+
+    if (paymentResult.cancelled) {
+      setBooking(false);
+      return;
+    }
+
+    if (!paymentResult.success) {
+      setBooking(false);
+      Alert.alert('Payment Failed', paymentResult.error || 'Unable to process payment.');
+      return;
+    }
+
+    // Create the booking
     const { data, error } = await supabase.rpc('create_booking', {
       p_org_id: organization.id,
       p_customer_id: user.id,
@@ -290,14 +313,29 @@ export function BookingScreen({ route, navigation }: Props) {
       p_notes: notes || null,
       p_location_id: selectedLocation?.id || null,
     });
-    setBooking(false);
 
     if (error) {
+      setBooking(false);
       Alert.alert('Booking Failed', error.message);
       return;
     }
 
     const result = Array.isArray(data) ? data[0] : data;
+
+    // Record the payment if one was collected
+    if (paymentResult.intentId && result?.booking_id) {
+      await recordPayment({
+        orgId: organization.id,
+        bookingId: result.booking_id,
+        intentId: paymentResult.intentId,
+        intentType: paymentResult.intentType!,
+        stripeCustomerId: paymentResult.stripeCustomerId!,
+        amountCents: paymentResult.amountCents!,
+        cancellationPolicyText: paymentResult.cancellationPolicyText,
+      });
+    }
+
+    setBooking(false);
     showBookingSuccess(result?.confirmation_code);
   };
 
@@ -306,10 +344,28 @@ export function BookingScreen({ route, navigation }: Props) {
 
     setBooking(true);
 
+    // Collect payment first (skips if org has no Stripe or $0 total)
+    const paymentResult = await collectPayment({
+      orgId: organization.id,
+      type: 'dynamic_booking',
+      priceCents: selectedDynamicSlot.price_cents,
+      locationId: selectedLocation?.id,
+    });
+
+    if (paymentResult.cancelled) {
+      setBooking(false);
+      return;
+    }
+
+    if (!paymentResult.success) {
+      setBooking(false);
+      Alert.alert('Payment Failed', paymentResult.error || 'Unable to process payment.');
+      return;
+    }
+
     let targetBayId: string | null = null;
 
     if (selectedOption.type === 'group') {
-      // Consolidation: pick the best bay from the group
       targetBayId = await pickBayForGroupBooking({
         bayIds: selectedOption.group.bays.map((b) => b.id),
         date: selectedDate,
@@ -338,14 +394,29 @@ export function BookingScreen({ route, navigation }: Props) {
       p_notes: notes || null,
       p_location_id: selectedLocation?.id || null,
     });
-    setBooking(false);
 
     if (error) {
+      setBooking(false);
       Alert.alert('Booking Failed', error.message);
       return;
     }
 
     const result = typeof data === 'object' && data !== null ? data : {};
+
+    // Record the payment if one was collected
+    if (paymentResult.intentId && (result as any)?.booking_id) {
+      await recordPayment({
+        orgId: organization.id,
+        bookingId: (result as any).booking_id,
+        intentId: paymentResult.intentId,
+        intentType: paymentResult.intentType!,
+        stripeCustomerId: paymentResult.stripeCustomerId!,
+        amountCents: paymentResult.amountCents!,
+        cancellationPolicyText: paymentResult.cancellationPolicyText,
+      });
+    }
+
+    setBooking(false);
     showBookingSuccess((result as any)?.confirmation_code);
   };
 
@@ -751,7 +822,7 @@ export function BookingScreen({ route, navigation }: Props) {
             <Button
               title="Confirm Booking"
               onPress={handleBook}
-              loading={booking}
+              loading={booking || paymentProcessing}
               size="lg"
             />
           </View>
@@ -888,27 +959,65 @@ export function BookingScreen({ route, navigation }: Props) {
                   <Button
                     title={selectedEvent.price_cents === 0 ? 'Confirm Registration' : `Pay ${formatPrice(selectedEvent.price_cents)} & Register`}
                     onPress={async () => {
-                      if (!user) return;
-                      if (selectedEvent.price_cents > 0) {
-                        // TODO: Integrate Stripe payment before registering
-                        Alert.alert('Payment Required', 'Payment integration is coming soon. Free events can be registered now.');
-                        return;
-                      }
+                      if (!user || !organization) return;
                       setRegisteringEvent(true);
+
+                      // Collect payment for paid events
+                      let paymentResult: { success: boolean; cancelled?: boolean; error?: string; intentId?: string; intentType?: 'payment' | 'setup'; stripeCustomerId?: string; amountCents?: number; cancellationPolicyText?: string } | null = null;
+
+                      if (selectedEvent.price_cents > 0) {
+                        paymentResult = await collectPayment({
+                          orgId: organization.id,
+                          type: 'event',
+                          eventId: selectedEvent.id,
+                          priceCents: selectedEvent.price_cents,
+                        });
+
+                        if (paymentResult.cancelled) {
+                          setRegisteringEvent(false);
+                          return;
+                        }
+
+                        if (!paymentResult.success) {
+                          setRegisteringEvent(false);
+                          Alert.alert('Payment Failed', paymentResult.error || 'Unable to process payment.');
+                          return;
+                        }
+                      }
+
+                      // Register for the event
                       const { data, error } = await supabase.rpc('register_for_event', {
                         p_event_id: selectedEvent.id,
                         p_user_id: user.id,
                       });
-                      setRegisteringEvent(false);
+
                       if (error) {
+                        setRegisteringEvent(false);
                         Alert.alert('Registration Failed', error.message);
                         return;
                       }
+
                       const result = typeof data === 'object' && data !== null ? data : {};
-                      const status = (result as any)?.status || 'confirmed';
+                      const regStatus = (result as any)?.status || 'confirmed';
+                      const registrationId = (result as any)?.registration_id;
+
+                      // Record the payment if one was collected
+                      if (paymentResult?.intentId && registrationId) {
+                        await recordPayment({
+                          orgId: organization.id,
+                          eventRegistrationId: registrationId,
+                          intentId: paymentResult.intentId,
+                          intentType: paymentResult.intentType!,
+                          stripeCustomerId: paymentResult.stripeCustomerId!,
+                          amountCents: paymentResult.amountCents!,
+                          cancellationPolicyText: paymentResult.cancellationPolicyText,
+                        });
+                      }
+
+                      setRegisteringEvent(false);
                       Alert.alert(
-                        status === 'waitlisted' ? 'Added to Waitlist' : 'Registered!',
-                        status === 'waitlisted'
+                        regStatus === 'waitlisted' ? 'Added to Waitlist' : 'Registered!',
+                        regStatus === 'waitlisted'
                           ? "You've been added to the waitlist. We'll notify you if a spot opens up."
                           : `You're registered for ${selectedEvent.name}.`,
                       );
@@ -916,7 +1025,7 @@ export function BookingScreen({ route, navigation }: Props) {
                       setEventConfirmStep(false);
                       fetchDateEvents();
                     }}
-                    loading={registeringEvent}
+                    loading={registeringEvent || paymentProcessing}
                     size="lg"
                   />
                 </View>
