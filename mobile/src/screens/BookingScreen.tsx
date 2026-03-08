@@ -48,6 +48,14 @@ export function BookingScreen({ route, navigation }: Props) {
   } = useFacility();
   const { user, profile } = useAuth();
   const { bookableWindowDays } = useMembership();
+
+  // Set dynamic header title based on selected location
+  useEffect(() => {
+    if (selectedLocation) {
+      navigation.setOptions({ title: `Book for ${selectedLocation.name}` });
+    }
+  }, [navigation, selectedLocation]);
+
   const initialDate = (route.params as any)?.date;
   const initialBayId = (route.params as any)?.bayId;
 
