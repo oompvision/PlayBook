@@ -703,13 +703,26 @@ export function BookingScreen({ route, navigation }: Props) {
         {/* Modify mode banner */}
         {isModifyMode && modifyBooking && (
           <View style={styles.modifyBanner}>
-            <Text style={styles.modifyBannerText}>
-              Modifying {modifyBooking.confirmationCode} — {modifyBooking.bayName},{' '}
-              {formatDate(modifyBooking.date)},{' '}
-              {formatTimeInZone(modifyBooking.startTime, organization.timezone)} –{' '}
-              {formatTimeInZone(modifyBooking.endTime, organization.timezone)}
-            </Text>
-            <Text style={styles.modifyBannerHint}>Select new date, bay, and time slots below</Text>
+            <View style={styles.modifyBannerHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modifyBannerText}>
+                  Modifying {modifyBooking.confirmationCode} — {modifyBooking.bayName},{' '}
+                  {formatDate(modifyBooking.date)},{' '}
+                  {formatTimeInZone(modifyBooking.startTime, organization.timezone)} –{' '}
+                  {formatTimeInZone(modifyBooking.endTime, organization.timezone)}
+                </Text>
+                <Text style={styles.modifyBannerHint}>Select new date, bay, and time slots below</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  navigation.setParams({ modifyBooking: undefined } as any);
+                  (navigation as any).navigate('Bookings');
+                }}
+                style={styles.modifyCancelButton}
+              >
+                <Text style={styles.modifyCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -1369,6 +1382,11 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.sm,
   },
+  modifyBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
   modifyBannerText: {
     ...typography.bodySmall,
     color: '#1d4ed8',
@@ -1378,6 +1396,18 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: '#3b82f6',
     marginTop: 4,
+  },
+  modifyCancelButton: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: '#93c5fd',
+  },
+  modifyCancelText: {
+    ...typography.caption,
+    color: '#1d4ed8',
+    fontWeight: '600',
   },
   priceDiff: {
     flexDirection: 'row',
