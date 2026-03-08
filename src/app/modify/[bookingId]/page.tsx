@@ -127,13 +127,15 @@ export default async function ModifyBookingPage({
     }
   }
 
-  // Fetch payment mode (uses service client to bypass RLS for customers)
+  // Fetch payment mode + old booking's card info (uses service client to bypass RLS for customers)
   let paymentMode = "none";
+  let oldPaymentCardBrand: string | null = null;
+  let oldPaymentCardLast4: string | null = null;
   {
     const serviceClient = createServiceClient();
     const { data: paymentSettings } = await serviceClient
       .from("org_payment_settings")
-      .select("payment_mode, stripe_onboarding_complete")
+      .select("payment_mode, stripe_onboarding_complete, stripe_account_id")
       .eq("org_id", org.id)
       .single();
 
@@ -143,6 +145,28 @@ export default async function ModifyBookingPage({
       paymentSettings.stripe_onboarding_complete
     ) {
       paymentMode = paymentSettings.payment_mode;
+
+      // Fetch the old booking's payment record to get card details
+      const { data: oldPayment } = await serviceClient
+        .from("booking_payments")
+        .select("stripe_payment_method_id")
+        .eq("booking_id", bookingId)
+        .eq("org_id", org.id)
+        .single();
+
+      if (oldPayment?.stripe_payment_method_id && paymentSettings.stripe_account_id) {
+        try {
+          const { stripe } = await import("@/lib/stripe");
+          const pm = await stripe.paymentMethods.retrieve(
+            oldPayment.stripe_payment_method_id,
+            { stripeAccount: paymentSettings.stripe_account_id }
+          );
+          oldPaymentCardBrand = pm.card?.brand || null;
+          oldPaymentCardLast4 = pm.card?.last4 || null;
+        } catch {
+          // Non-critical — payment summary will show without card details
+        }
+      }
     }
   }
 
@@ -226,6 +250,8 @@ export default async function ModifyBookingPage({
               notes: booking.notes,
               isGuest: booking.is_guest,
               slotIds: slotIds,
+              cardBrand: oldPaymentCardBrand,
+              cardLast4: oldPaymentCardLast4,
             }}
             modifyRedirectBase={redirectBase}
           />

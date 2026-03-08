@@ -113,6 +113,10 @@ export type OriginalBookingInfo = {
   notes: string | null;
   isGuest: boolean;
   slotIds: string[];
+  /** Card brand from original payment (e.g. "visa") */
+  cardBrand?: string | null;
+  /** Card last 4 digits from original payment */
+  cardLast4?: string | null;
 };
 
 type AvailabilityWidgetProps = {
@@ -2215,20 +2219,58 @@ export function AvailabilityWidget({
                         </div>
                       </div>
 
-                      {/* Price difference */}
-                      {totalCents !== originalBooking.totalPriceCents && (
-                        <div className={`mb-4 rounded-lg border px-3 py-2 text-sm ${
-                          totalCents > originalBooking.totalPriceCents
-                            ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400"
-                            : "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400"
-                        }`}>
-                          Price {totalCents > originalBooking.totalPriceCents ? "increase" : "decrease"}:{" "}
-                          <span className="font-semibold">
-                            {totalCents > originalBooking.totalPriceCents ? "+" : "-"}$
-                            {(Math.abs(totalCents - originalBooking.totalPriceCents) / 100).toFixed(2)}
-                          </span>
-                        </div>
-                      )}
+                      {/* Payment action summary */}
+                      {(() => {
+                        const diff = totalCents - originalBooking.totalPriceCents;
+                        const absDiff = Math.abs(diff);
+                        const cardLabel = originalBooking.cardBrand && originalBooking.cardLast4
+                          ? `${originalBooking.cardBrand.charAt(0).toUpperCase() + originalBooking.cardBrand.slice(1)} •••• ${originalBooking.cardLast4}`
+                          : "your card on file";
+                        const hasPayment = paymentMode !== "none";
+
+                        if (diff > 0 && hasPayment) {
+                          return (
+                            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                              {paymentMode === "charge_upfront" ? (
+                                <>{cardLabel} will be charged an additional <span className="font-semibold">${(absDiff / 100).toFixed(2)}</span></>
+                              ) : (
+                                <>Price increase: <span className="font-semibold">+${(absDiff / 100).toFixed(2)}</span> — no charge now, card on file updated</>
+                              )}
+                            </div>
+                          );
+                        } else if (diff < 0 && hasPayment) {
+                          return (
+                            <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
+                              {paymentMode === "charge_upfront" ? (
+                                <><span className="font-semibold">${(absDiff / 100).toFixed(2)}</span> will be refunded to {cardLabel}</>
+                              ) : (
+                                <>Price decrease: <span className="font-semibold">-${(absDiff / 100).toFixed(2)}</span> — no refund needed, card on file updated</>
+                              )}
+                            </div>
+                          );
+                        } else if (diff === 0 && hasPayment) {
+                          return (
+                            <div className="mb-4 rounded-lg border border-muted px-3 py-2 text-sm text-muted-foreground">
+                              No price change — no additional charge or refund
+                            </div>
+                          );
+                        } else if (diff !== 0) {
+                          // No payment mode but price changed
+                          return (
+                            <div className={`mb-4 rounded-lg border px-3 py-2 text-sm ${
+                              diff > 0
+                                ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400"
+                                : "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400"
+                            }`}>
+                              Price {diff > 0 ? "increase" : "decrease"}:{" "}
+                              <span className="font-semibold">
+                                {diff > 0 ? "+" : "-"}${(absDiff / 100).toFixed(2)}
+                              </span>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
 
                       {/* Notes */}
                       <div className="mb-4 space-y-2">

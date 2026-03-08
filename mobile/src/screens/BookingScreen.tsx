@@ -99,6 +99,67 @@ export function BookingScreen({ route, navigation }: Props) {
   const [notes, setNotes] = useState(modifyBooking?.notes ?? '');
   const [showConfirm, setShowConfirm] = useState(false);
 
+  // Payment info for modify mode
+  const [modifyPaymentMode, setModifyPaymentMode] = useState<string>('none');
+  const [modifyCardBrand, setModifyCardBrand] = useState<string | null>(null);
+  const [modifyCardLast4, setModifyCardLast4] = useState<string | null>(null);
+
+  // Fetch payment mode and old booking's card details when entering modify mode
+  useEffect(() => {
+    if (!isModifyMode || !modifyBooking || !organization) return;
+    let cancelled = false;
+
+    (async () => {
+      // 1. Get payment mode for this org
+      const { data: settings } = await supabase
+        .from('org_payment_settings')
+        .select('payment_mode, stripe_onboarding_complete')
+        .eq('org_id', organization.id)
+        .single();
+
+      if (cancelled) return;
+
+      if (!settings || settings.payment_mode === 'none' || !settings.stripe_onboarding_complete) {
+        setModifyPaymentMode('none');
+        return;
+      }
+      setModifyPaymentMode(settings.payment_mode);
+
+      // 2. Try to get card brand/last4 via mobile API
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+      if (!apiUrl) return;
+
+      const { data: oldPayment } = await supabase
+        .from('booking_payments')
+        .select('stripe_payment_method_id')
+        .eq('booking_id', modifyBooking.id)
+        .single();
+
+      if (cancelled || !oldPayment?.stripe_payment_method_id) return;
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token || cancelled) return;
+
+        const res = await fetch(
+          `${apiUrl}/api/stripe/card-details?pm=${oldPayment.stripe_payment_method_id}`,
+          { headers: { Authorization: `Bearer ${session.access_token}` } }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) {
+            setModifyCardBrand(data.brand || null);
+            setModifyCardLast4(data.last4 || null);
+          }
+        }
+      } catch {
+        // Non-critical — summary will show without card details
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [isModifyMode, modifyBooking?.id, organization?.id]);
+
   // Build bookable options for dynamic scheduling
   const bookableOptions: BookableOption[] = React.useMemo(() => {
     if (!isDynamic) return [];
@@ -971,20 +1032,65 @@ export function BookingScreen({ route, navigation }: Props) {
                 <Text style={styles.totalLabel}>Total</Text>
                 <Text style={styles.totalPrice}>{formatPrice(totalCents)}</Text>
               </View>
-              {isModifyMode && modifyBooking && totalCents !== modifyBooking.totalPriceCents && (
-                <View style={styles.priceDiff}>
-                  <Text style={styles.priceDiffLabel}>
-                    {totalCents > modifyBooking.totalPriceCents ? 'Additional charge' : 'Refund'}
-                  </Text>
-                  <Text style={[
-                    styles.priceDiffAmount,
-                    { color: totalCents > modifyBooking.totalPriceCents ? colors.destructive : '#16a34a' },
-                  ]}>
-                    {totalCents > modifyBooking.totalPriceCents ? '+' : '-'}
-                    {formatPrice(Math.abs(totalCents - modifyBooking.totalPriceCents))}
-                  </Text>
-                </View>
-              )}
+              {isModifyMode && modifyBooking && (() => {
+                const diff = totalCents - modifyBooking.totalPriceCents;
+                const absDiff = Math.abs(diff);
+                const cardLabel = modifyCardBrand && modifyCardLast4
+                  ? `${modifyCardBrand.charAt(0).toUpperCase() + modifyCardBrand.slice(1)} •••• ${modifyCardLast4}`
+                  : 'your card on file';
+                const hasPayment = modifyPaymentMode !== 'none';
+
+                if (diff > 0 && hasPayment) {
+                  return (
+                    <View style={[styles.priceDiff, { backgroundColor: '#fffbeb', borderColor: '#fde68a', borderWidth: 1, borderRadius: borderRadius.md, padding: spacing.sm, marginTop: spacing.sm }]}>
+                      <Text style={[styles.priceDiffLabel, { color: '#b45309', flex: 1 }]}>
+                        {modifyPaymentMode === 'charge_upfront'
+                          ? `${cardLabel} will be charged`
+                          : 'Price increase — no charge now'}
+                      </Text>
+                      <Text style={[styles.priceDiffAmount, { color: '#b45309' }]}>
+                        +{formatPrice(absDiff)}
+                      </Text>
+                    </View>
+                  );
+                } else if (diff < 0 && hasPayment) {
+                  return (
+                    <View style={[styles.priceDiff, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', borderWidth: 1, borderRadius: borderRadius.md, padding: spacing.sm, marginTop: spacing.sm }]}>
+                      <Text style={[styles.priceDiffLabel, { color: '#15803d', flex: 1 }]}>
+                        {modifyPaymentMode === 'charge_upfront'
+                          ? `Refund to ${cardLabel}`
+                          : 'Price decrease — no refund needed'}
+                      </Text>
+                      <Text style={[styles.priceDiffAmount, { color: '#15803d' }]}>
+                        -{formatPrice(absDiff)}
+                      </Text>
+                    </View>
+                  );
+                } else if (diff === 0 && hasPayment) {
+                  return (
+                    <View style={[styles.priceDiff, { backgroundColor: colors.muted, borderRadius: borderRadius.md, padding: spacing.sm, marginTop: spacing.sm }]}>
+                      <Text style={[styles.priceDiffLabel, { color: colors.mutedForeground }]}>
+                        No price change — no additional charge or refund
+                      </Text>
+                    </View>
+                  );
+                } else if (diff !== 0) {
+                  return (
+                    <View style={styles.priceDiff}>
+                      <Text style={styles.priceDiffLabel}>
+                        {diff > 0 ? 'Price increase' : 'Price decrease'}
+                      </Text>
+                      <Text style={[
+                        styles.priceDiffAmount,
+                        { color: diff > 0 ? colors.destructive : '#16a34a' },
+                      ]}>
+                        {diff > 0 ? '+' : '-'}{formatPrice(absDiff)}
+                      </Text>
+                    </View>
+                  );
+                }
+                return null;
+              })()}
             </Card>
 
             <Input
