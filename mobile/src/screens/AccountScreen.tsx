@@ -9,8 +9,10 @@ import {
 } from 'react-native';
 import { useAuth } from '../lib/auth-context';
 import { useFacility } from '../lib/facility-context';
+import { useMembership } from '../lib/use-membership';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
+import { Badge } from '../components/Badge';
 import { Input } from '../components/Input';
 import { supabase } from '../lib/supabase';
 import { colors, spacing, typography } from '../theme';
@@ -19,6 +21,7 @@ import type { Location } from '../types';
 export function AccountScreen() {
   const { user, profile, signOut, refreshProfile } = useAuth();
   const { organization, selectedLocation, locations, hasMultipleLocations, selectLocation } = useFacility();
+  const { isMember, tier, membershipEnabled, bookableWindowDays } = useMembership();
   const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || '');
   const [saving, setSaving] = useState(false);
@@ -97,6 +100,29 @@ export function AccountScreen() {
           </>
         )}
       </Card>
+
+      {/* Membership Summary */}
+      {membershipEnabled && (
+        <>
+          <Text style={styles.sectionTitle}>Membership</Text>
+          <Card>
+            <View style={styles.membershipRow}>
+              <View>
+                <Text style={styles.membershipStatus}>
+                  {isMember ? (tier?.name ?? 'Member') : 'Guest'}
+                </Text>
+                <Text style={styles.membershipDetail}>
+                  Book up to {bookableWindowDays} days ahead
+                </Text>
+              </View>
+              <Badge
+                label={isMember ? 'Active' : 'Guest'}
+                variant={isMember ? 'success' : 'muted'}
+              />
+            </View>
+          </Card>
+        </>
+      )}
 
       {/* Location Selector — only shown if org has multiple locations */}
       {hasMultipleLocations && (
@@ -238,6 +264,20 @@ const styles = StyleSheet.create({
   checkmark: {
     ...typography.h2,
     color: colors.primary,
+  },
+  membershipRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  membershipStatus: {
+    ...typography.label,
+    color: colors.foreground,
+  },
+  membershipDetail: {
+    ...typography.bodySmall,
+    color: colors.mutedForeground,
+    marginTop: 2,
   },
   signOutButton: {
     marginTop: spacing['3xl'],

@@ -12,6 +12,7 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFacility } from '../lib/facility-context';
 import { useAuth } from '../lib/auth-context';
+import { useMembership } from '../lib/use-membership';
 import { supabase } from '../lib/supabase';
 import { fetchDynamicAvailability, pickBayForGroupBooking } from '../lib/availability';
 import { Button } from '../components/Button';
@@ -45,6 +46,7 @@ export function BookingScreen({ route, navigation }: Props) {
     availableDurations,
   } = useFacility();
   const { user, profile } = useAuth();
+  const { bookableWindowDays } = useMembership();
   const initialDate = (route.params as any)?.date;
   const initialBayId = (route.params as any)?.bayId;
 
@@ -101,13 +103,12 @@ export function BookingScreen({ route, navigation }: Props) {
     }
   }, [availableDurations]);
 
-  // Generate date options (today + next 6 days)
+  // Generate date options based on effective bookable window (membership-aware)
   const dateOptions = React.useMemo(() => {
     if (!organization) return [];
     const dates: string[] = [];
     const now = new Date();
-    const windowDays = Math.min(organization.bookable_window_days ?? 30, 30);
-    for (let i = 0; i < Math.min(windowDays, 7); i++) {
+    for (let i = 0; i < bookableWindowDays; i++) {
       const d = new Date(now);
       d.setDate(d.getDate() + i);
       dates.push(
@@ -120,7 +121,7 @@ export function BookingScreen({ route, navigation }: Props) {
       );
     }
     return dates;
-  }, [organization]);
+  }, [organization, bookableWindowDays]);
 
   useEffect(() => {
     if (!selectedDate && dateOptions.length > 0) {

@@ -4,6 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { HomeScreen } from '../screens/HomeScreen';
 import { BookingScreen } from '../screens/BookingScreen';
 import { MyBookingsScreen } from '../screens/MyBookingsScreen';
+import { MembershipScreen } from '../screens/MembershipScreen';
 import { AccountScreen } from '../screens/AccountScreen';
 import { colors } from '../theme/colors';
 import type { MainTabParamList } from './types';
@@ -14,6 +15,7 @@ const TAB_ICONS: Record<string, string> = {
   Home: '⌂',
   Book: '▦',
   Bookings: '☰',
+  Membership: '★',
   Account: '⊙',
 };
 
@@ -54,6 +56,11 @@ export function MainTabs() {
         name="Bookings"
         component={MyBookingsScreen}
         options={{ title: 'My Bookings' }}
+      />
+      <Tab.Screen
+        name="Membership"
+        component={MembershipScreen}
+        options={{ title: 'Membership' }}
       />
       <Tab.Screen
         name="Account"

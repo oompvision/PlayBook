@@ -12,6 +12,9 @@ export interface Organization {
   min_booking_lead_minutes: number;
   scheduling_type: 'slot_based' | 'dynamic';
   bookable_window_days: number | null;
+  membership_tiers_enabled: boolean;
+  guest_booking_window_days: number | null;
+  member_booking_window_days: number | null;
 }
 
 export interface FacilityGroup {
@@ -115,4 +118,34 @@ export interface SlotGroup {
   bay: Bay;
   slots: BayScheduleSlot[];
   totalCents: number;
+}
+
+export interface MembershipTier {
+  id: string;
+  org_id: string;
+  name: string;
+  benefit_description: string | null;
+  discount_type: 'flat' | 'percent';
+  discount_value: number;
+  price_monthly_cents: number | null;
+  price_yearly_cents: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserMembership {
+  id: string;
+  org_id: string;
+  user_id: string;
+  tier_id: string;
+  status: 'active' | 'past_due' | 'cancelled' | 'admin_granted';
+  source: 'stripe' | 'admin';
+  stripe_subscription_id: string | null;
+  stripe_customer_id: string | null;
+  current_period_end: string | null;
+  expires_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+  membership_tiers?: MembershipTier;
 }
