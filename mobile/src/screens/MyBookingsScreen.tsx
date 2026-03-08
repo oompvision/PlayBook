@@ -20,7 +20,7 @@ import { colors, spacing, typography } from '../theme';
 import type { Booking } from '../types';
 
 export function MyBookingsScreen() {
-  const { organization } = useFacility();
+  const { organization, selectedLocation } = useFacility();
   const { user } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);

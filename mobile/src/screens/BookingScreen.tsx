@@ -29,7 +29,7 @@ interface SlotWithSchedule extends BayScheduleSlot {
 }
 
 export function BookingScreen({ route, navigation }: Props) {
-  const { organization, bays } = useFacility();
+  const { organization, selectedLocation, bays } = useFacility();
   const { user, profile } = useAuth();
   const initialDate = (route.params as any)?.date;
   const initialBayId = (route.params as any)?.bayId;
@@ -74,7 +74,7 @@ export function BookingScreen({ route, navigation }: Props) {
   }, [dateOptions, selectedDate]);
 
   const fetchSlots = useCallback(async () => {
-    if (!organization || !selectedBay || !selectedDate) return;
+    if (!organization || !selectedLocation || !selectedBay || !selectedDate) return;
 
     setLoading(true);
     setSelectedSlotIds(new Set());
@@ -83,6 +83,7 @@ export function BookingScreen({ route, navigation }: Props) {
       .from('bay_schedule_slots')
       .select('*, bay_schedules!inner(bay_id, date)')
       .eq('org_id', organization.id)
+      .eq('location_id', selectedLocation.id)
       .eq('bay_schedules.bay_id', selectedBay.id)
       .eq('bay_schedules.date', selectedDate)
       .eq('status', 'available')
@@ -90,7 +91,7 @@ export function BookingScreen({ route, navigation }: Props) {
 
     setSlots((data as unknown as SlotWithSchedule[]) || []);
     setLoading(false);
-  }, [organization, selectedBay, selectedDate]);
+  }, [organization, selectedLocation, selectedBay, selectedDate]);
 
   useEffect(() => {
     fetchSlots();
@@ -122,6 +123,7 @@ export function BookingScreen({ route, navigation }: Props) {
       p_date: selectedDate,
       p_slot_ids: selectedSlots.map((s) => s.id),
       p_notes: notes || null,
+      p_location_id: selectedLocation?.id || null,
     });
     setBooking(false);
 

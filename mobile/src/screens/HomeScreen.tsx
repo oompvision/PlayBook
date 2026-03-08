@@ -30,17 +30,17 @@ interface SlotWithBay extends BayScheduleSlot {
 }
 
 export function HomeScreen({ navigation }: Props) {
-  const { organization, bays } = useFacility();
+  const { organization, selectedLocation, bays } = useFacility();
   const { profile } = useAuth();
   const [todaySlots, setTodaySlots] = useState<SlotWithBay[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchTodaySlots = useCallback(async () => {
-    if (!organization) return;
+    if (!organization || !selectedLocation) return;
 
     const today = getTodayInTimezone(organization.timezone);
-    const { data } = await supabase
+    let query = supabase
       .from('bay_schedule_slots')
       .select(`
         *,
@@ -51,16 +51,19 @@ export function HomeScreen({ navigation }: Props) {
         )
       `)
       .eq('org_id', organization.id)
+      .eq('location_id', selectedLocation.id)
       .eq('status', 'available')
       .eq('bay_schedules.date', today)
       .order('start_time')
       .limit(20);
 
+    const { data } = await query;
+
     if (data) {
       setTodaySlots(data as unknown as SlotWithBay[]);
     }
     setLoading(false);
-  }, [organization]);
+  }, [organization, selectedLocation]);
 
   useEffect(() => {
     fetchTodaySlots();
@@ -93,9 +96,13 @@ export function HomeScreen({ navigation }: Props) {
         <Text style={styles.greeting}>
           {profile?.full_name ? `Hi, ${profile.full_name.split(' ')[0]}` : 'Welcome'}
         </Text>
-        <Text style={styles.facilityName}>{organization.name}</Text>
-        {organization.address && (
-          <Text style={styles.address}>{organization.address}</Text>
+        <Text style={styles.facilityName}>
+          {selectedLocation && selectedLocation.name !== organization.name
+            ? `${organization.name} — ${selectedLocation.name}`
+            : organization.name}
+        </Text>
+        {(selectedLocation?.address || organization.address) && (
+          <Text style={styles.address}>{selectedLocation?.address || organization.address}</Text>
         )}
       </View>
 

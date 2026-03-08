@@ -65,6 +65,16 @@ export interface Booking {
   organizations?: Organization;
 }
 
+export interface Location {
+  id: string;
+  org_id: string;
+  name: string;
+  address: string | null;
+  is_active: boolean;
+  is_default: boolean;
+  created_at: string;
+}
+
 export interface FacilityLocation {
   org: Organization;
   bays: Bay[];

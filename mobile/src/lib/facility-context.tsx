@@ -1,92 +1,147 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
-import type { Organization, Bay } from '../types';
+import type { Organization, Bay, Location, Profile } from '../types';
 
-const FACILITY_STORAGE_KEY = 'ezbooker_selected_facility';
+const LOCATION_STORAGE_KEY = 'ezbooker_selected_location';
 
 interface FacilityState {
   organization: Organization | null;
+  /** Currently selected location within the org */
+  selectedLocation: Location | null;
+  /** All active locations for the org */
+  locations: Location[];
+  /** Bays for the selected location */
   bays: Bay[];
   isLoading: boolean;
-  /** All locations for the org */
-  locations: Organization[];
-  selectFacility: (org: Organization) => Promise<void>;
+  /** Whether the org has multiple locations */
+  hasMultipleLocations: boolean;
+  selectLocation: (location: Location) => Promise<void>;
   refreshBays: () => Promise<void>;
 }
 
 const FacilityContext = createContext<FacilityState | undefined>(undefined);
 
-export function FacilityProvider({ children }: { children: React.ReactNode }) {
+interface FacilityProviderProps {
+  profile: Profile | null;
+  children: React.ReactNode;
+}
+
+export function FacilityProvider({ profile, children }: FacilityProviderProps) {
   const [organization, setOrganization] = useState<Organization | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
+  const [locations, setLocations] = useState<Location[]>([]);
   const [bays, setBays] = useState<Bay[]>([]);
-  const [locations, setLocations] = useState<Organization[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load saved facility on mount
-  useEffect(() => {
-    loadSavedFacility();
-    loadLocations();
-  }, []);
+  const orgId = profile?.org_id ?? null;
 
-  const loadLocations = async () => {
-    const { data } = await supabase
+  // Load org and locations when profile changes
+  useEffect(() => {
+    if (!orgId) {
+      setOrganization(null);
+      setSelectedLocation(null);
+      setLocations([]);
+      setBays([]);
+      setIsLoading(false);
+      return;
+    }
+
+    loadOrgAndLocations(orgId);
+  }, [orgId]);
+
+  const loadOrgAndLocations = async (oid: string) => {
+    setIsLoading(true);
+
+    // Fetch the user's organization
+    const { data: orgData } = await supabase
       .from('organizations')
       .select('*')
-      .order('name');
-    if (data) {
-      setLocations(data);
-      // If no saved facility, auto-select first
-      if (data.length > 0) {
-        const saved = await AsyncStorage.getItem(FACILITY_STORAGE_KEY);
-        if (!saved) {
-          await selectFacility(data[0]);
-        }
-      }
+      .eq('id', oid)
+      .single();
+
+    if (!orgData) {
+      setIsLoading(false);
+      return;
     }
+
+    setOrganization(orgData as Organization);
+
+    // Fetch active locations for this org
+    const { data: locData } = await supabase
+      .from('locations')
+      .select('*')
+      .eq('org_id', oid)
+      .eq('is_active', true)
+      .order('is_default', { ascending: false })
+      .order('name');
+
+    const locs = (locData || []) as Location[];
+    setLocations(locs);
+
+    // Try to restore saved location
+    let selected: Location | null = null;
+    try {
+      const savedId = await AsyncStorage.getItem(LOCATION_STORAGE_KEY);
+      if (savedId) {
+        selected = locs.find((l) => l.id === savedId) || null;
+      }
+    } catch {
+      // ignore
+    }
+
+    // Fall back to default location, then first location
+    if (!selected) {
+      selected = locs.find((l) => l.is_default) || locs[0] || null;
+    }
+
+    if (selected) {
+      setSelectedLocation(selected);
+      await fetchBays(oid, selected.id);
+    }
+
     setIsLoading(false);
   };
 
-  const loadSavedFacility = async () => {
-    try {
-      const saved = await AsyncStorage.getItem(FACILITY_STORAGE_KEY);
-      if (saved) {
-        const org = JSON.parse(saved) as Organization;
-        setOrganization(org);
-        await fetchBays(org.id);
-      }
-    } catch {
-      // No saved facility — will be set when locations load
-    }
-  };
-
-  const fetchBays = async (orgId: string) => {
+  const fetchBays = async (oid: string, locationId: string) => {
     const { data } = await supabase
       .from('bays')
       .select('*')
-      .eq('org_id', orgId)
+      .eq('org_id', oid)
+      .eq('location_id', locationId)
       .eq('is_active', true)
       .order('sort_order');
-    if (data) {
-      setBays(data);
+    setBays((data as Bay[]) || []);
+  };
+
+  const selectLocation = async (location: Location) => {
+    setSelectedLocation(location);
+    await AsyncStorage.setItem(LOCATION_STORAGE_KEY, location.id);
+    if (orgId) {
+      await fetchBays(orgId, location.id);
     }
   };
 
-  const selectFacility = async (org: Organization) => {
-    setOrganization(org);
-    await AsyncStorage.setItem(FACILITY_STORAGE_KEY, JSON.stringify(org));
-    await fetchBays(org.id);
-  };
-
-  const refreshBays = async () => {
-    if (organization) {
-      await fetchBays(organization.id);
+  const refreshBays = useCallback(async () => {
+    if (orgId && selectedLocation) {
+      await fetchBays(orgId, selectedLocation.id);
     }
-  };
+  }, [orgId, selectedLocation]);
+
+  const hasMultipleLocations = locations.length > 1;
 
   return (
     <FacilityContext.Provider
-      value={{ organization, bays, isLoading, locations, selectFacility, refreshBays }}
+      value={{
+        organization,
+        selectedLocation,
+        locations,
+        bays,
+        isLoading,
+        hasMultipleLocations,
+        selectLocation,
+        refreshBays,
+      }}
     >
       {children}
     </FacilityContext.Provider>
