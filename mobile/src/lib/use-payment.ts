@@ -5,6 +5,8 @@ import { supabase } from './supabase';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || '';
 
+console.log('[usePayment] API_URL:', API_URL || '(empty)');
+
 export type PaymentType = 'slot_booking' | 'dynamic_booking' | 'event';
 
 export interface PaymentParams {
@@ -48,21 +50,26 @@ export function usePayment() {
 
   const collectPayment = async (params: PaymentParams): Promise<PaymentResult> => {
     if (!API_URL) {
+      console.log('[collectPayment] No API_URL — skipping payment');
       return { success: true }; // No API URL configured — skip payment
     }
 
     setIsProcessing(true);
+    console.log('[collectPayment] Starting payment collection:', JSON.stringify(params));
 
     try {
       // Get the current session token
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
+        console.log('[collectPayment] No session token');
         setIsProcessing(false);
         return { success: false, error: 'Not authenticated' };
       }
 
       // Call backend to create payment intent
-      const response = await fetch(`${API_URL}/api/mobile/create-payment-intent`, {
+      const url = `${API_URL}/api/mobile/create-payment-intent`;
+      console.log('[collectPayment] Calling:', url);
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -80,6 +87,7 @@ export function usePayment() {
       });
 
       const data: IntentResponse = await response.json();
+      console.log('[collectPayment] Response status:', response.status, 'data:', JSON.stringify(data));
 
       if (!response.ok) {
         setIsProcessing(false);
@@ -88,9 +96,12 @@ export function usePayment() {
 
       // No payment required — proceed directly
       if (!data.payment_required) {
+        console.log('[collectPayment] Backend says payment NOT required');
         setIsProcessing(false);
         return { success: true };
       }
+
+      console.log('[collectPayment] Payment required! intent_type:', data.intent_type, 'amount:', data.amount_cents);
 
       // Initialize the Payment Sheet
       const { error: initError } = await initPaymentSheet({
@@ -138,6 +149,7 @@ export function usePayment() {
     } catch (err: unknown) {
       setIsProcessing(false);
       const message = err instanceof Error ? err.message : 'Payment failed';
+      console.error('[collectPayment] CAUGHT ERROR:', message, err);
       return { success: false, error: message };
     }
   };
