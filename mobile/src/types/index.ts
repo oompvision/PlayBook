@@ -120,6 +120,23 @@ export interface SlotGroup {
   totalCents: number;
 }
 
+export interface FacilityEvent {
+  id: string;
+  name: string;
+  description: string | null;
+  start_time: string;
+  end_time: string;
+  capacity: number;
+  price_cents: number;
+  members_only: boolean;
+  event_bays: Array<{
+    bay_id: string;
+    bays: { name: string } | { name: string }[];
+  }>;
+  // Computed client-side
+  registered_count?: number;
+}
+
 export interface MembershipTier {
   id: string;
   org_id: string;

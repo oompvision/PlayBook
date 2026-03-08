@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  Modal,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFacility } from '../lib/facility-context';
@@ -22,7 +23,7 @@ import { Input } from '../components/Input';
 import { formatPrice, formatTimeInZone, getTodayInTimezone, formatDate } from '../lib/format';
 import { colors, spacing, typography, borderRadius } from '../theme';
 import type { MainTabParamList } from '../navigation/types';
-import type { Bay, BayScheduleSlot, FacilityGroup, AvailableTimeSlot } from '../types';
+import type { Bay, BayScheduleSlot, FacilityGroup, AvailableTimeSlot, FacilityEvent } from '../types';
 
 type Props = NativeStackScreenProps<MainTabParamList, 'Book'>;
 
@@ -70,6 +71,11 @@ export function BookingScreen({ route, navigation }: Props) {
   // Slot-based state
   const [slots, setSlots] = useState<SlotWithSchedule[]>([]);
   const [selectedSlotIds, setSelectedSlotIds] = useState<Set<string>>(new Set());
+
+  // Event state
+  const [dateEvents, setDateEvents] = useState<(FacilityEvent & { registered_count: number; bay_names: string[] })[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<(FacilityEvent & { registered_count: number; bay_names: string[] }) | null>(null);
+  const [registeringEvent, setRegisteringEvent] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [booking, setBooking] = useState(false);
@@ -177,6 +183,61 @@ export function BookingScreen({ route, navigation }: Props) {
     setLoading(false);
   }, [organization, selectedOption, selectedDate, selectedDuration]);
 
+  // ─── Fetch date-specific events ──────────────────────
+  const fetchDateEvents = useCallback(async () => {
+    if (!organization || !selectedDate) {
+      setDateEvents([]);
+      return;
+    }
+
+    // Build day boundaries in facility timezone
+    const dayStart = new Date(`${selectedDate}T00:00:00`);
+    const dayEnd = new Date(`${selectedDate}T23:59:59`);
+    // Convert to ISO using timezone offset for accurate filtering
+    const startISO = new Intl.DateTimeFormat('en-CA', {
+      timeZone: organization.timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(dayStart);
+    const dayStartUTC = new Date(`${startISO}T00:00:00`);
+    const dayEndUTC = new Date(dayStartUTC.getTime() + 24 * 60 * 60 * 1000);
+
+    const { data: events } = await supabase
+      .from('events')
+      .select(`
+        id, name, description, start_time, end_time, capacity, price_cents,
+        members_only, event_bays(bay_id, bays:bay_id(name))
+      `)
+      .eq('org_id', organization.id)
+      .eq('status', 'published')
+      .gte('start_time', dayStartUTC.toISOString())
+      .lt('start_time', dayEndUTC.toISOString())
+      .order('start_time');
+
+    if (!events || events.length === 0) {
+      setDateEvents([]);
+      return;
+    }
+
+    // Fetch registration counts
+    const enriched = await Promise.all(
+      events.map(async (evt: any) => {
+        const { data: count } = await supabase.rpc('get_event_registration_count', {
+          p_event_id: evt.id,
+        });
+        const bayNames = (evt.event_bays as any[])
+          ?.map((eb: any) => eb.bays?.name ?? eb.bays?.[0]?.name)
+          .filter(Boolean) || [];
+        return {
+          ...evt,
+          registered_count: count ?? 0,
+          bay_names: bayNames,
+        };
+      })
+    );
+
+    setDateEvents(enriched);
+  }, [organization, selectedDate]);
+
   // Fetch on changes
   useEffect(() => {
     if (isDynamic) {
@@ -184,7 +245,8 @@ export function BookingScreen({ route, navigation }: Props) {
     } else {
       fetchSlotBasedSlots();
     }
-  }, [isDynamic, fetchDynamicSlots, fetchSlotBasedSlots]);
+    fetchDateEvents();
+  }, [isDynamic, fetchDynamicSlots, fetchSlotBasedSlots, fetchDateEvents]);
 
   // ─── Slot-based toggle ─────────────────────────────────
   const toggleSlot = (slotId: string) => {
@@ -475,6 +537,57 @@ export function BookingScreen({ route, navigation }: Props) {
           </>
         )}
 
+        {/* Date-specific events */}
+        {dateEvents.length > 0 && (
+          <View style={{ marginTop: spacing.lg }}>
+            {dateEvents.map((evt) => {
+              const spotsLeft = (evt.capacity || 0) - (evt.registered_count || 0);
+              const priceLabel = evt.price_cents === 0 ? 'Free' : formatPrice(evt.price_cents);
+              return (
+                <TouchableOpacity
+                  key={evt.id}
+                  onPress={() => setSelectedEvent(evt)}
+                  style={eventStyles.card}
+                  activeOpacity={0.7}
+                >
+                  <View style={eventStyles.cardLeft}>
+                    <View style={eventStyles.iconCircle}>
+                      <Text style={eventStyles.iconText}>📅</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={eventStyles.nameRow}>
+                        <Text style={eventStyles.eventName} numberOfLines={1}>
+                          {evt.name}
+                        </Text>
+                        <Badge label="Event" variant="success" />
+                      </View>
+                      <Text style={eventStyles.eventTime}>
+                        {formatTimeInZone(evt.start_time, organization!.timezone)} –{' '}
+                        {formatTimeInZone(evt.end_time, organization!.timezone)}
+                      </Text>
+                      {evt.bay_names.length > 0 && (
+                        <View style={eventStyles.bayRow}>
+                          {evt.bay_names.map((name: string) => (
+                            <View key={name} style={eventStyles.bayPill}>
+                              <Text style={eventStyles.bayPillText}>{name}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                  <View style={eventStyles.cardRight}>
+                    <Text style={eventStyles.price}>{priceLabel}</Text>
+                    <Text style={eventStyles.spots}>
+                      {spotsLeft > 0 ? `${spotsLeft} spot${spotsLeft !== 1 ? 's' : ''} left` : 'Full'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
         {/* Time Slots */}
         {isDynamic ? (
           selectedOption ? (
@@ -614,6 +727,114 @@ export function BookingScreen({ route, navigation }: Props) {
           </View>
         )}
       </ScrollView>
+
+      {/* Event Detail Modal */}
+      <Modal
+        visible={!!selectedEvent}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setSelectedEvent(null)}
+      >
+        {selectedEvent && (
+          <View style={eventStyles.modalContainer}>
+            <View style={eventStyles.modalHeader}>
+              <Text style={eventStyles.modalTitle}>{selectedEvent.name}</Text>
+              <TouchableOpacity onPress={() => setSelectedEvent(null)}>
+                <Text style={eventStyles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={eventStyles.modalContent}>
+              <Badge label="Event" variant="success" />
+
+              {selectedEvent.description && (
+                <Text style={eventStyles.modalDescription}>{selectedEvent.description}</Text>
+              )}
+
+              <View style={eventStyles.detailRow}>
+                <Text style={eventStyles.detailLabel}>Date</Text>
+                <Text style={eventStyles.detailValue}>{formatDate(selectedDate)}</Text>
+              </View>
+              <View style={eventStyles.detailRow}>
+                <Text style={eventStyles.detailLabel}>Time</Text>
+                <Text style={eventStyles.detailValue}>
+                  {formatTimeInZone(selectedEvent.start_time, organization!.timezone)} –{' '}
+                  {formatTimeInZone(selectedEvent.end_time, organization!.timezone)}
+                </Text>
+              </View>
+              {selectedEvent.bay_names.length > 0 && (
+                <View style={eventStyles.detailRow}>
+                  <Text style={eventStyles.detailLabel}>Location</Text>
+                  <Text style={eventStyles.detailValue}>{selectedEvent.bay_names.join(', ')}</Text>
+                </View>
+              )}
+              <View style={eventStyles.detailRow}>
+                <Text style={eventStyles.detailLabel}>Price</Text>
+                <Text style={eventStyles.detailValue}>
+                  {selectedEvent.price_cents === 0 ? 'Free' : formatPrice(selectedEvent.price_cents)}
+                </Text>
+              </View>
+              <View style={eventStyles.detailRow}>
+                <Text style={eventStyles.detailLabel}>Spots</Text>
+                <Text style={eventStyles.detailValue}>
+                  {(selectedEvent.capacity - selectedEvent.registered_count) > 0
+                    ? `${selectedEvent.capacity - selectedEvent.registered_count} of ${selectedEvent.capacity} remaining`
+                    : 'Full'}
+                </Text>
+              </View>
+              {selectedEvent.members_only && (
+                <View style={eventStyles.membersOnlyBanner}>
+                  <Text style={eventStyles.membersOnlyText}>Members only</Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <View style={eventStyles.modalFooter}>
+              {!user ? (
+                <Button
+                  title="Sign in to Register"
+                  onPress={() => {
+                    setSelectedEvent(null);
+                    (navigation as any).navigate('Auth');
+                  }}
+                  size="lg"
+                />
+              ) : (selectedEvent.capacity - selectedEvent.registered_count) <= 0 ? (
+                <Button title="Event Full" disabled onPress={() => {}} size="lg" />
+              ) : (
+                <Button
+                  title="Register"
+                  onPress={async () => {
+                    if (!user) return;
+                    setRegisteringEvent(true);
+                    const { data, error } = await supabase.rpc('register_for_event', {
+                      p_event_id: selectedEvent.id,
+                      p_user_id: user.id,
+                    });
+                    setRegisteringEvent(false);
+                    if (error) {
+                      Alert.alert('Registration Failed', error.message);
+                      return;
+                    }
+                    const result = typeof data === 'object' && data !== null ? data : {};
+                    const status = (result as any)?.status || 'confirmed';
+                    Alert.alert(
+                      status === 'waitlisted' ? 'Added to Waitlist' : 'Registered!',
+                      status === 'waitlisted'
+                        ? "You've been added to the waitlist. We'll notify you if a spot opens up."
+                        : `You're registered for ${selectedEvent.name}.`,
+                    );
+                    setSelectedEvent(null);
+                    fetchDateEvents(); // Refresh counts
+                  }}
+                  loading={registeringEvent}
+                  size="lg"
+                />
+              )}
+            </View>
+          </View>
+        )}
+      </Modal>
 
       {/* Bottom CTA bar */}
       {hasSelection && !showConfirm && (
@@ -847,5 +1068,151 @@ const styles = StyleSheet.create({
   ctaTotal: {
     ...typography.h3,
     color: colors.foreground,
+  },
+});
+
+const eventStyles = StyleSheet.create({
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#bbf7d0', // green-200
+    backgroundColor: '#f0fdf4', // green-50
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  cardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  iconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#dcfce7', // green-100
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconText: {
+    fontSize: 16,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flexWrap: 'wrap',
+  },
+  eventName: {
+    ...typography.label,
+    color: colors.foreground,
+    flexShrink: 1,
+  },
+  eventTime: {
+    ...typography.caption,
+    color: colors.mutedForeground,
+    marginTop: 2,
+  },
+  bayRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 4,
+  },
+  bayPill: {
+    backgroundColor: '#dcfce7',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  bayPillText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#15803d', // green-700
+  },
+  cardRight: {
+    alignItems: 'flex-end',
+    marginLeft: spacing.sm,
+  },
+  price: {
+    ...typography.label,
+    color: colors.foreground,
+  },
+  spots: {
+    ...typography.caption,
+    color: colors.mutedForeground,
+    marginTop: 2,
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: Platform.OS === 'ios' ? spacing.xl : spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  modalTitle: {
+    ...typography.h2,
+    color: colors.foreground,
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  modalClose: {
+    fontSize: 20,
+    color: colors.mutedForeground,
+    padding: spacing.sm,
+  },
+  modalContent: {
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  modalDescription: {
+    ...typography.body,
+    color: colors.foreground,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  detailLabel: {
+    ...typography.label,
+    color: colors.mutedForeground,
+  },
+  detailValue: {
+    ...typography.body,
+    color: colors.foreground,
+    textAlign: 'right',
+    flex: 1,
+    marginLeft: spacing.md,
+  },
+  membersOnlyBanner: {
+    backgroundColor: '#fef3c7', // amber-100
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    alignItems: 'center',
+  },
+  membersOnlyText: {
+    ...typography.label,
+    color: '#92400e', // amber-800
+  },
+  modalFooter: {
+    padding: spacing.lg,
+    paddingBottom: Platform.OS === 'ios' ? spacing['3xl'] : spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
 });
