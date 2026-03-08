@@ -23,7 +23,7 @@ import { Input } from '../components/Input';
 import { formatPrice, formatTimeInZone, getTodayInTimezone, formatDate } from '../lib/format';
 import { usePayment } from '../lib/use-payment';
 import { colors, spacing, typography, borderRadius } from '../theme';
-import type { MainTabParamList } from '../navigation/types';
+import type { MainTabParamList, ModifyBookingParams } from '../navigation/types';
 import type { Bay, BayScheduleSlot, FacilityGroup, AvailableTimeSlot, FacilityEvent } from '../types';
 
 type Props = NativeStackScreenProps<MainTabParamList, 'Book'>;
@@ -51,15 +51,21 @@ export function BookingScreen({ route, navigation }: Props) {
   const { bookableWindowDays } = useMembership();
   const { collectPayment, recordPayment, isProcessing: paymentProcessing } = usePayment();
 
-  // Set dynamic header title based on selected location
+  // Modify mode
+  const modifyBooking: ModifyBookingParams | undefined = (route.params as any)?.modifyBooking;
+  const isModifyMode = !!modifyBooking;
+
+  // Set dynamic header title based on mode and selected location
   useEffect(() => {
-    if (selectedLocation) {
+    if (isModifyMode) {
+      navigation.setOptions({ title: 'Modify Booking' });
+    } else if (selectedLocation) {
       navigation.setOptions({ title: `Book for ${selectedLocation.name}` });
     }
-  }, [navigation, selectedLocation]);
+  }, [navigation, selectedLocation, isModifyMode]);
 
-  const initialDate = (route.params as any)?.date;
-  const initialBayId = (route.params as any)?.bayId;
+  const initialDate = modifyBooking?.date || (route.params as any)?.date;
+  const initialBayId = modifyBooking?.bayId || (route.params as any)?.bayId;
 
   const [selectedDate, setSelectedDate] = useState<string>(
     initialDate || (organization ? getTodayInTimezone(organization.timezone) : '')
@@ -90,7 +96,7 @@ export function BookingScreen({ route, navigation }: Props) {
 
   const [loading, setLoading] = useState(false);
   const [booking, setBooking] = useState(false);
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(modifyBooking?.notes ?? '');
   const [showConfirm, setShowConfirm] = useState(false);
 
   // Build bookable options for dynamic scheduling
@@ -448,7 +454,145 @@ export function BookingScreen({ route, navigation }: Props) {
     setNotes('');
   };
 
-  const handleBook = isDynamic ? handleDynamicBook : handleSlotBasedBook;
+  // ─── Modify booking handlers ─────────────────────────
+  const API_URL = process.env.EXPO_PUBLIC_API_URL || '';
+
+  const handleModifyPayment = async (oldBookingId: string, newBookingId: string, newAmountCents: number) => {
+    if (!API_URL) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+      const res = await fetch(`${API_URL}/api/stripe/modify-booking-payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          old_booking_id: oldBookingId,
+          new_booking_id: newBookingId,
+          new_amount_cents: newAmountCents,
+        }),
+      });
+      const data = await res.json();
+      if (data.status === 'requires_action') {
+        console.warn('[ModifyBooking] 3DS required — admin will handle manually');
+      }
+    } catch (err) {
+      console.error('[ModifyBooking] Payment adjustment error:', err);
+    }
+  };
+
+  const handleSlotBasedModify = async () => {
+    if (!user || !organization || !selectedBay || selectedSlots.length === 0 || !modifyBooking) return;
+    setBooking(true);
+
+    const { data, error } = await supabase.rpc('modify_booking', {
+      p_booking_id: modifyBooking.id,
+      p_new_bay_id: selectedBay.id,
+      p_new_date: selectedDate,
+      p_new_slot_ids: selectedSlots.map((s) => s.id),
+      p_notes: notes || null,
+    });
+
+    if (error) {
+      setBooking(false);
+      Alert.alert('Modification Failed', error.message);
+      return;
+    }
+
+    const result = Array.isArray(data) ? data[0] : data;
+
+    // Handle payment difference
+    if (result?.booking_id) {
+      const newTotal = selectedSlots.reduce((sum, s) => sum + s.price_cents, 0);
+      await handleModifyPayment(modifyBooking.id, result.booking_id, newTotal);
+    }
+
+    setBooking(false);
+    const newCode = result?.confirmation_code || 'Confirmed';
+    const oldCode = modifyBooking.confirmationCode;
+    Alert.alert(
+      'Booking Modified!',
+      `Your new confirmation code is ${newCode} (was ${oldCode})`,
+      [
+        {
+          text: 'View My Bookings',
+          onPress: () => {
+            resetSelection();
+            // Clear modify params
+            navigation.setParams({ modifyBooking: undefined } as any);
+            (navigation as any).navigate('Bookings');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDynamicModify = async () => {
+    if (!user || !organization || !selectedOption || !selectedDynamicSlot || !modifyBooking) return;
+    setBooking(true);
+
+    let targetBayId: string | null = null;
+    if (selectedOption.type === 'group') {
+      targetBayId = await pickBayForGroupBooking({
+        bayIds: selectedOption.group.bays.map((b) => b.id),
+        date: selectedDate,
+        startTime: selectedDynamicSlot.start_time,
+        endTime: selectedDynamicSlot.end_time,
+        timezone: organization.timezone,
+      });
+      if (!targetBayId) {
+        setBooking(false);
+        Alert.alert('Modification Failed', 'No facility available for this time slot.');
+        return;
+      }
+    } else {
+      targetBayId = selectedOption.bay.id;
+    }
+
+    const { data, error } = await supabase.rpc('modify_booking', {
+      p_booking_id: modifyBooking.id,
+      p_new_bay_id: targetBayId,
+      p_new_date: selectedDate,
+      p_new_slot_ids: [], // dynamic bookings don't use slot IDs
+      p_notes: notes || null,
+    });
+
+    if (error) {
+      setBooking(false);
+      Alert.alert('Modification Failed', error.message);
+      return;
+    }
+
+    const result = Array.isArray(data) ? data[0] : data;
+
+    if (result?.booking_id) {
+      await handleModifyPayment(modifyBooking.id, result.booking_id, selectedDynamicSlot.price_cents);
+    }
+
+    setBooking(false);
+    const newCode = result?.confirmation_code || 'Confirmed';
+    const oldCode = modifyBooking.confirmationCode;
+    Alert.alert(
+      'Booking Modified!',
+      `Your new confirmation code is ${newCode} (was ${oldCode})`,
+      [
+        {
+          text: 'View My Bookings',
+          onPress: () => {
+            resetSelection();
+            navigation.setParams({ modifyBooking: undefined } as any);
+            (navigation as any).navigate('Bookings');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleBook = isModifyMode
+    ? (isDynamic ? handleDynamicModify : handleSlotBasedModify)
+    : (isDynamic ? handleDynamicBook : handleSlotBasedBook);
   const hasSelection = isDynamic ? !!selectedDynamicSlot : selectedSlots.length > 0;
 
   // ─── Option display name ──────────────────────────────
@@ -491,6 +635,18 @@ export function BookingScreen({ route, navigation }: Props) {
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Modify mode banner */}
+        {isModifyMode && modifyBooking && (
+          <View style={styles.modifyBanner}>
+            <Text style={styles.modifyBannerText}>
+              Modifying {modifyBooking.confirmationCode} — {modifyBooking.bayName},{' '}
+              {formatTimeInZone(modifyBooking.startTime, organization.timezone)} –{' '}
+              {formatTimeInZone(modifyBooking.endTime, organization.timezone)}
+            </Text>
+            <Text style={styles.modifyBannerHint}>Select new date, bay, and time slots below</Text>
+          </View>
+        )}
+
         {/* Date Picker */}
         <Text style={styles.sectionTitle}>Select Date</Text>
         <ScrollView
@@ -773,7 +929,9 @@ export function BookingScreen({ route, navigation }: Props) {
         {/* Booking confirmation panel */}
         {showConfirm && hasSelection && (
           <View style={styles.confirmPanel}>
-            <Text style={styles.sectionTitle}>Booking Summary</Text>
+            <Text style={styles.sectionTitle}>
+              {isModifyMode ? 'Modification Summary' : 'Booking Summary'}
+            </Text>
             <Card>
               <Text style={styles.summaryBay}>{summaryLabel}</Text>
               <Text style={styles.summaryDate}>{formatDate(selectedDate)}</Text>
@@ -808,6 +966,20 @@ export function BookingScreen({ route, navigation }: Props) {
                 <Text style={styles.totalLabel}>Total</Text>
                 <Text style={styles.totalPrice}>{formatPrice(totalCents)}</Text>
               </View>
+              {isModifyMode && modifyBooking && totalCents !== modifyBooking.totalPriceCents && (
+                <View style={styles.priceDiff}>
+                  <Text style={styles.priceDiffLabel}>
+                    {totalCents > modifyBooking.totalPriceCents ? 'Additional charge' : 'Refund'}
+                  </Text>
+                  <Text style={[
+                    styles.priceDiffAmount,
+                    { color: totalCents > modifyBooking.totalPriceCents ? colors.destructive : '#16a34a' },
+                  ]}>
+                    {totalCents > modifyBooking.totalPriceCents ? '+' : '-'}
+                    {formatPrice(Math.abs(totalCents - modifyBooking.totalPriceCents))}
+                  </Text>
+                </View>
+              )}
             </Card>
 
             <Input
@@ -820,7 +992,7 @@ export function BookingScreen({ route, navigation }: Props) {
             />
 
             <Button
-              title="Confirm Booking"
+              title={isModifyMode ? 'Confirm Modification' : 'Confirm Booking'}
               onPress={handleBook}
               loading={booking || paymentProcessing}
               size="lg"
@@ -1053,7 +1225,10 @@ export function BookingScreen({ route, navigation }: Props) {
             <Text style={styles.ctaTotal}>{formatPrice(totalCents)}</Text>
           </View>
           {user ? (
-            <Button title="Continue to Book" onPress={() => setShowConfirm(true)} />
+            <Button
+              title={isModifyMode ? 'Continue to Modify' : 'Continue to Book'}
+              onPress={() => setShowConfirm(true)}
+            />
           ) : (
             <Button
               title="Sign in to Book"
@@ -1074,6 +1249,41 @@ const styles = StyleSheet.create({
   content: {
     padding: spacing.lg,
     paddingBottom: 120,
+  },
+  modifyBanner: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  modifyBannerText: {
+    ...typography.bodySmall,
+    color: '#1d4ed8',
+    fontWeight: '600',
+  },
+  modifyBannerHint: {
+    ...typography.caption,
+    color: '#3b82f6',
+    marginTop: 4,
+  },
+  priceDiff: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  priceDiffLabel: {
+    ...typography.bodySmall,
+    color: colors.mutedForeground,
+  },
+  priceDiffAmount: {
+    ...typography.label,
+    fontWeight: '600',
   },
   centered: {
     flex: 1,
