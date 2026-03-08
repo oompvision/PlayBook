@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
       .from("booking_payments")
       .insert({
         booking_id: body.booking_id || null,
+        event_registration_id: body.event_registration_id || null,
         org_id: org.id,
         customer_email: auth.profile.email,
         stripe_customer_id: body.stripe_customer_id,
@@ -190,6 +191,14 @@ export async function POST(request: NextRequest) {
         { error: `Failed to record payment: ${insertError.message}` },
         { status: 500 }
       );
+    }
+
+    // For event registrations: update status to confirmed and payment_status to paid
+    if (body.event_registration_id && isUpfront) {
+      await supabase
+        .from("event_registrations")
+        .update({ status: "confirmed", payment_status: "paid" })
+        .eq("id", body.event_registration_id);
     }
 
     return NextResponse.json(payment);
