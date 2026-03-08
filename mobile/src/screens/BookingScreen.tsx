@@ -537,10 +537,30 @@ export function BookingScreen({ route, navigation }: Props) {
           </>
         )}
 
-        {/* Date-specific events */}
-        {dateEvents.length > 0 && (
+        {/* Date-specific events — filtered to selected facility/group */}
+        {(() => {
+          // Determine which bay IDs are relevant for the current selection
+          let selectedBayIds: Set<string> | null = null;
+          if (isDynamic && selectedOption) {
+            if (selectedOption.type === 'group') {
+              selectedBayIds = new Set(selectedOption.group.bays.map((b) => b.id));
+            } else {
+              selectedBayIds = new Set([selectedOption.bay.id]);
+            }
+          } else if (!isDynamic && selectedBay) {
+            selectedBayIds = new Set([selectedBay.id]);
+          }
+
+          // Filter events: only show if at least one event bay matches the selection
+          const filteredEvents = selectedBayIds
+            ? dateEvents.filter((evt) =>
+                (evt.event_bays as any[])?.some((eb: any) => selectedBayIds!.has(eb.bay_id))
+              )
+            : dateEvents;
+
+          return filteredEvents.length > 0 ? (
           <View style={{ marginTop: spacing.lg }}>
-            {dateEvents.map((evt) => {
+            {filteredEvents.map((evt) => {
               const spotsLeft = (evt.capacity || 0) - (evt.registered_count || 0);
               const priceLabel = evt.price_cents === 0 ? 'Free' : formatPrice(evt.price_cents);
               return (
@@ -586,7 +606,8 @@ export function BookingScreen({ route, navigation }: Props) {
               );
             })}
           </View>
-        )}
+          ) : null;
+        })()}
 
         {/* Time Slots */}
         {isDynamic ? (
