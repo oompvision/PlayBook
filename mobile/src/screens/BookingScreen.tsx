@@ -954,7 +954,7 @@ export function BookingScreen({ route, navigation }: Props) {
                     onPress={() => setEventConfirmStep(false)}
                     style={{ alignItems: 'center', marginBottom: spacing.sm }}
                   >
-                    <Text style={{ color: colors.primary, fontSize: typography.sizes.md }}>Back</Text>
+                    <Text style={{ color: colors.primary, fontSize: 16 }}>Back</Text>
                   </TouchableOpacity>
                   <Button
                     title={selectedEvent.price_cents === 0 ? 'Confirm Registration' : `Pay ${formatPrice(selectedEvent.price_cents)} & Register`}
