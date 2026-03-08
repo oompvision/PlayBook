@@ -30,7 +30,7 @@ interface SlotWithBay extends BayScheduleSlot {
 }
 
 export function HomeScreen({ navigation }: Props) {
-  const { organization, selectedLocation, bays } = useFacility();
+  const { organization, selectedLocation, bays, facilityGroups, standaloneBays, isDynamic } = useFacility();
   const { profile } = useAuth();
   const [todaySlots, setTodaySlots] = useState<SlotWithBay[]>([]);
   const [loading, setLoading] = useState(true);
@@ -167,24 +167,59 @@ export function HomeScreen({ navigation }: Props) {
         )}
       </View>
 
-      {/* Bays Info */}
+      {/* Facilities Info */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Our Bays</Text>
-        {bays.map((bay) => (
-          <Card key={bay.id} style={styles.bayCard}>
-            <Text style={styles.bayName}>{bay.name}</Text>
-            <View style={styles.bayMeta}>
-              {bay.resource_type && (
-                <Badge label={bay.resource_type} variant="muted" />
-              )}
-              {bay.hourly_rate_cents && (
-                <Text style={styles.bayRate}>
-                  {formatPrice(bay.hourly_rate_cents)}/hr
-                </Text>
-              )}
-            </View>
-          </Card>
-        ))}
+        <Text style={styles.sectionTitle}>
+          {isDynamic && facilityGroups.length > 0 ? 'Our Facilities' : 'Our Bays'}
+        </Text>
+        {isDynamic ? (
+          <>
+            {facilityGroups.map((group) => (
+              <Card key={group.id} style={styles.bayCard}>
+                <Text style={styles.bayName}>{group.name}</Text>
+                <View style={styles.bayMeta}>
+                  <Badge label={`${group.bays.length} available`} variant="muted" />
+                  {group.bays[0]?.hourly_rate_cents && (
+                    <Text style={styles.bayRate}>
+                      from {formatPrice(group.bays[0].hourly_rate_cents)}/hr
+                    </Text>
+                  )}
+                </View>
+              </Card>
+            ))}
+            {standaloneBays.map((bay) => (
+              <Card key={bay.id} style={styles.bayCard}>
+                <Text style={styles.bayName}>{bay.name}</Text>
+                <View style={styles.bayMeta}>
+                  {bay.resource_type && (
+                    <Badge label={bay.resource_type} variant="muted" />
+                  )}
+                  {bay.hourly_rate_cents && (
+                    <Text style={styles.bayRate}>
+                      {formatPrice(bay.hourly_rate_cents)}/hr
+                    </Text>
+                  )}
+                </View>
+              </Card>
+            ))}
+          </>
+        ) : (
+          bays.map((bay) => (
+            <Card key={bay.id} style={styles.bayCard}>
+              <Text style={styles.bayName}>{bay.name}</Text>
+              <View style={styles.bayMeta}>
+                {bay.resource_type && (
+                  <Badge label={bay.resource_type} variant="muted" />
+                )}
+                {bay.hourly_rate_cents && (
+                  <Text style={styles.bayRate}>
+                    {formatPrice(bay.hourly_rate_cents)}/hr
+                  </Text>
+                )}
+              </View>
+            </Card>
+          ))
+        )}
       </View>
     </ScrollView>
   );

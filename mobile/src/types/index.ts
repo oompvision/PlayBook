@@ -10,6 +10,37 @@ export interface Organization {
   address: string | null;
   phone: string | null;
   min_booking_lead_minutes: number;
+  scheduling_type: 'slot_based' | 'dynamic';
+  bookable_window_days: number | null;
+}
+
+export interface FacilityGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  bays: Bay[];
+}
+
+export interface DynamicScheduleRule {
+  id: string;
+  bay_id: string;
+  org_id: string;
+  day_of_week: number;
+  open_time: string;    // HH:MM:SS
+  close_time: string;
+  available_durations: number[];
+  buffer_minutes: number;
+  start_time_granularity: number;
+  rate_tiers: Array<{ start_time: string; end_time: string; hourly_rate_cents: number }> | null;
+}
+
+export interface AvailableTimeSlot {
+  bay_id: string;
+  bay_name: string;
+  start_time: string;  // ISO timestamp
+  end_time: string;
+  price_cents: number;
+  duration_minutes: number;
 }
 
 export interface Profile {
