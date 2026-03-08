@@ -75,6 +75,7 @@ export function BookingScreen({ route, navigation }: Props) {
   // Event state
   const [dateEvents, setDateEvents] = useState<(FacilityEvent & { registered_count: number; bay_names: string[] })[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<(FacilityEvent & { registered_count: number; bay_names: string[] }) | null>(null);
+  const [eventConfirmStep, setEventConfirmStep] = useState(false);
   const [registeringEvent, setRegisteringEvent] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -754,105 +755,165 @@ export function BookingScreen({ route, navigation }: Props) {
         visible={!!selectedEvent}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setSelectedEvent(null)}
+        onRequestClose={() => { setSelectedEvent(null); setEventConfirmStep(false); }}
       >
         {selectedEvent && (
           <View style={eventStyles.modalContainer}>
             <View style={eventStyles.modalHeader}>
-              <Text style={eventStyles.modalTitle}>{selectedEvent.name}</Text>
-              <TouchableOpacity onPress={() => setSelectedEvent(null)}>
+              <Text style={eventStyles.modalTitle}>
+                {eventConfirmStep ? 'Confirm Registration' : selectedEvent.name}
+              </Text>
+              <TouchableOpacity onPress={() => { setSelectedEvent(null); setEventConfirmStep(false); }}>
                 <Text style={eventStyles.modalClose}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={eventStyles.modalContent}>
-              <Badge label="Event" variant="success" />
+            {!eventConfirmStep ? (
+              /* ── Step 1: Event Details ── */
+              <>
+                <ScrollView contentContainerStyle={eventStyles.modalContent}>
+                  <Badge label="Event" variant="success" />
 
-              {selectedEvent.description && (
-                <Text style={eventStyles.modalDescription}>{selectedEvent.description}</Text>
-              )}
+                  {selectedEvent.description && (
+                    <Text style={eventStyles.modalDescription}>{selectedEvent.description}</Text>
+                  )}
 
-              <View style={eventStyles.detailRow}>
-                <Text style={eventStyles.detailLabel}>Date</Text>
-                <Text style={eventStyles.detailValue}>{formatDate(selectedDate)}</Text>
-              </View>
-              <View style={eventStyles.detailRow}>
-                <Text style={eventStyles.detailLabel}>Time</Text>
-                <Text style={eventStyles.detailValue}>
-                  {formatTimeInZone(selectedEvent.start_time, organization!.timezone)} –{' '}
-                  {formatTimeInZone(selectedEvent.end_time, organization!.timezone)}
-                </Text>
-              </View>
-              {selectedEvent.bay_names.length > 0 && (
-                <View style={eventStyles.detailRow}>
-                  <Text style={eventStyles.detailLabel}>Location</Text>
-                  <Text style={eventStyles.detailValue}>{selectedEvent.bay_names.join(', ')}</Text>
+                  <View style={eventStyles.detailRow}>
+                    <Text style={eventStyles.detailLabel}>Date</Text>
+                    <Text style={eventStyles.detailValue}>{formatDate(selectedDate)}</Text>
+                  </View>
+                  <View style={eventStyles.detailRow}>
+                    <Text style={eventStyles.detailLabel}>Time</Text>
+                    <Text style={eventStyles.detailValue}>
+                      {formatTimeInZone(selectedEvent.start_time, organization!.timezone)} –{' '}
+                      {formatTimeInZone(selectedEvent.end_time, organization!.timezone)}
+                    </Text>
+                  </View>
+                  {selectedEvent.bay_names.length > 0 && (
+                    <View style={eventStyles.detailRow}>
+                      <Text style={eventStyles.detailLabel}>Location</Text>
+                      <Text style={eventStyles.detailValue}>{selectedEvent.bay_names.join(', ')}</Text>
+                    </View>
+                  )}
+                  <View style={eventStyles.detailRow}>
+                    <Text style={eventStyles.detailLabel}>Price</Text>
+                    <Text style={eventStyles.detailValue}>
+                      {selectedEvent.price_cents === 0 ? 'Free' : formatPrice(selectedEvent.price_cents)}
+                    </Text>
+                  </View>
+                  <View style={eventStyles.detailRow}>
+                    <Text style={eventStyles.detailLabel}>Spots</Text>
+                    <Text style={eventStyles.detailValue}>
+                      {(selectedEvent.capacity - selectedEvent.registered_count) > 0
+                        ? `${selectedEvent.capacity - selectedEvent.registered_count} of ${selectedEvent.capacity} remaining`
+                        : 'Full'}
+                    </Text>
+                  </View>
+                  {selectedEvent.members_only && (
+                    <View style={eventStyles.membersOnlyBanner}>
+                      <Text style={eventStyles.membersOnlyText}>Members only</Text>
+                    </View>
+                  )}
+                </ScrollView>
+
+                <View style={eventStyles.modalFooter}>
+                  {!user ? (
+                    <Button
+                      title="Sign in to Register"
+                      onPress={() => {
+                        setSelectedEvent(null);
+                        setEventConfirmStep(false);
+                        (navigation as any).navigate('Auth');
+                      }}
+                      size="lg"
+                    />
+                  ) : (selectedEvent.capacity - selectedEvent.registered_count) <= 0 ? (
+                    <Button title="Event Full" disabled onPress={() => {}} size="lg" />
+                  ) : (
+                    <Button
+                      title="Continue to Register"
+                      onPress={() => setEventConfirmStep(true)}
+                      size="lg"
+                    />
+                  )}
                 </View>
-              )}
-              <View style={eventStyles.detailRow}>
-                <Text style={eventStyles.detailLabel}>Price</Text>
-                <Text style={eventStyles.detailValue}>
-                  {selectedEvent.price_cents === 0 ? 'Free' : formatPrice(selectedEvent.price_cents)}
-                </Text>
-              </View>
-              <View style={eventStyles.detailRow}>
-                <Text style={eventStyles.detailLabel}>Spots</Text>
-                <Text style={eventStyles.detailValue}>
-                  {(selectedEvent.capacity - selectedEvent.registered_count) > 0
-                    ? `${selectedEvent.capacity - selectedEvent.registered_count} of ${selectedEvent.capacity} remaining`
-                    : 'Full'}
-                </Text>
-              </View>
-              {selectedEvent.members_only && (
-                <View style={eventStyles.membersOnlyBanner}>
-                  <Text style={eventStyles.membersOnlyText}>Members only</Text>
-                </View>
-              )}
-            </ScrollView>
+              </>
+            ) : (
+              /* ── Step 2: Confirmation ── */
+              <>
+                <ScrollView contentContainerStyle={eventStyles.modalContent}>
+                  <Card>
+                    <Text style={styles.summaryBay}>{selectedEvent.name}</Text>
+                    <Text style={styles.summaryDate}>{formatDate(selectedDate)}</Text>
+                    <View style={styles.summarySlots}>
+                      <View style={styles.summarySlotRow}>
+                        <Text style={styles.summarySlotTime}>
+                          {formatTimeInZone(selectedEvent.start_time, organization!.timezone)} –{' '}
+                          {formatTimeInZone(selectedEvent.end_time, organization!.timezone)}
+                        </Text>
+                        <Text style={styles.summarySlotPrice}>
+                          {selectedEvent.price_cents === 0 ? 'Free' : formatPrice(selectedEvent.price_cents)}
+                        </Text>
+                      </View>
+                    </View>
+                    {selectedEvent.bay_names.length > 0 && (
+                      <Text style={{ color: colors.textSecondary, fontSize: typography.sizes.sm, marginTop: spacing.xs }}>
+                        {selectedEvent.bay_names.join(', ')}
+                      </Text>
+                    )}
+                    <View style={styles.summaryTotal}>
+                      <Text style={styles.totalLabel}>Total</Text>
+                      <Text style={styles.totalPrice}>
+                        {selectedEvent.price_cents === 0 ? 'Free' : formatPrice(selectedEvent.price_cents)}
+                      </Text>
+                    </View>
+                  </Card>
+                </ScrollView>
 
-            <View style={eventStyles.modalFooter}>
-              {!user ? (
-                <Button
-                  title="Sign in to Register"
-                  onPress={() => {
-                    setSelectedEvent(null);
-                    (navigation as any).navigate('Auth');
-                  }}
-                  size="lg"
-                />
-              ) : (selectedEvent.capacity - selectedEvent.registered_count) <= 0 ? (
-                <Button title="Event Full" disabled onPress={() => {}} size="lg" />
-              ) : (
-                <Button
-                  title="Register"
-                  onPress={async () => {
-                    if (!user) return;
-                    setRegisteringEvent(true);
-                    const { data, error } = await supabase.rpc('register_for_event', {
-                      p_event_id: selectedEvent.id,
-                      p_user_id: user.id,
-                    });
-                    setRegisteringEvent(false);
-                    if (error) {
-                      Alert.alert('Registration Failed', error.message);
-                      return;
-                    }
-                    const result = typeof data === 'object' && data !== null ? data : {};
-                    const status = (result as any)?.status || 'confirmed';
-                    Alert.alert(
-                      status === 'waitlisted' ? 'Added to Waitlist' : 'Registered!',
-                      status === 'waitlisted'
-                        ? "You've been added to the waitlist. We'll notify you if a spot opens up."
-                        : `You're registered for ${selectedEvent.name}.`,
-                    );
-                    setSelectedEvent(null);
-                    fetchDateEvents(); // Refresh counts
-                  }}
-                  loading={registeringEvent}
-                  size="lg"
-                />
-              )}
-            </View>
+                <View style={eventStyles.modalFooter}>
+                  <TouchableOpacity
+                    onPress={() => setEventConfirmStep(false)}
+                    style={{ alignItems: 'center', marginBottom: spacing.sm }}
+                  >
+                    <Text style={{ color: colors.primary, fontSize: typography.sizes.md }}>Back</Text>
+                  </TouchableOpacity>
+                  <Button
+                    title={selectedEvent.price_cents === 0 ? 'Confirm Registration' : `Pay ${formatPrice(selectedEvent.price_cents)} & Register`}
+                    onPress={async () => {
+                      if (!user) return;
+                      if (selectedEvent.price_cents > 0) {
+                        // TODO: Integrate Stripe payment before registering
+                        Alert.alert('Payment Required', 'Payment integration is coming soon. Free events can be registered now.');
+                        return;
+                      }
+                      setRegisteringEvent(true);
+                      const { data, error } = await supabase.rpc('register_for_event', {
+                        p_event_id: selectedEvent.id,
+                        p_user_id: user.id,
+                      });
+                      setRegisteringEvent(false);
+                      if (error) {
+                        Alert.alert('Registration Failed', error.message);
+                        return;
+                      }
+                      const result = typeof data === 'object' && data !== null ? data : {};
+                      const status = (result as any)?.status || 'confirmed';
+                      Alert.alert(
+                        status === 'waitlisted' ? 'Added to Waitlist' : 'Registered!',
+                        status === 'waitlisted'
+                          ? "You've been added to the waitlist. We'll notify you if a spot opens up."
+                          : `You're registered for ${selectedEvent.name}.`,
+                      );
+                      setSelectedEvent(null);
+                      setEventConfirmStep(false);
+                      fetchDateEvents();
+                    }}
+                    loading={registeringEvent}
+                    size="lg"
+                  />
+                </View>
+              </>
+            )}
           </View>
         )}
       </Modal>
