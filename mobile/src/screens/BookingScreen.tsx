@@ -936,7 +936,7 @@ export function BookingScreen({ route, navigation }: Props) {
                       </View>
                     </View>
                     {selectedEvent.bay_names.length > 0 && (
-                      <Text style={{ color: colors.textSecondary, fontSize: typography.sizes.sm, marginTop: spacing.xs }}>
+                      <Text style={{ color: colors.mutedForeground, fontSize: 14, marginTop: spacing.xs }}>
                         {selectedEvent.bay_names.join(', ')}
                       </Text>
                     )}
