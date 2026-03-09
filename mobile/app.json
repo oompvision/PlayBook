@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.ezbooker.mobile",
+      "bundleIdentifier": "com.apiazza.ezbooker.dev",
       "infoPlist": {
         "UIBackgroundModes": ["remote-notification"]
       }
