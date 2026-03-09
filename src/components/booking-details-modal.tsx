@@ -1272,16 +1272,6 @@ export function BookingDetailsModal({
                   </p>
                 );
               }
-              if (insideWindow && variant === "customer") {
-                return (
-                  <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/50">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                    <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-300">
-                      Booking is less than {cancellationWindowHours}h away and cannot be refunded or modified.
-                    </p>
-                  </div>
-                );
-              }
               return null;
             })()}
 
