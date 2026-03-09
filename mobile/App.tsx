@@ -18,6 +18,7 @@ try {
       <StripeProvider
         publishableKey={STRIPE_PUBLISHABLE_KEY}
         stripeAccountId={stripeAccountId}
+        merchantIdentifier="merchant.com.ezbooker"
       >
         {children}
       </StripeProvider>
