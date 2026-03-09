@@ -25,7 +25,7 @@ export default async function ModifyBookingPage({
   const { data: booking } = await supabase
     .from("bookings")
     .select(
-      "id, org_id, customer_id, bay_id, date, start_time, end_time, total_price_cents, discount_cents, status, confirmation_code, notes, is_guest, guest_name, modified_from"
+      "id, org_id, customer_id, bay_id, date, start_time, end_time, total_price_cents, discount_cents, status, confirmation_code, notes, is_guest, guest_name, modified_from, location_id"
     )
     .eq("id", bookingId)
     .single();
@@ -98,14 +98,20 @@ export default async function ModifyBookingPage({
 
   const slotIds = bookingSlots?.map((s) => s.bay_schedule_slot_id) ?? [];
 
-  // Fetch bays
-  const { data: bays } = await supabase
+  // Fetch bays — scoped to the booking's location when locations are enabled
+  let baysQuery = supabase
     .from("bays")
     .select("id, name, resource_type")
     .eq("org_id", org.id)
     .eq("is_active", true)
     .order("sort_order")
     .order("created_at");
+
+  if (org.locations_enabled && booking.location_id) {
+    baysQuery = baysQuery.eq("location_id", booking.location_id);
+  }
+
+  const { data: bays } = await baysQuery;
 
   // Get bay name for original booking
   const bayName =
@@ -191,16 +197,24 @@ export default async function ModifyBookingPage({
   let bookableWindowDays = org.bookable_window_days ?? 30;
 
   if (isDynamic && bays && bays.length > 0) {
+    let groupsQuery = supabase
+      .from("facility_groups")
+      .select("id, name, description")
+      .eq("org_id", org.id);
+    let rulesQuery = supabase
+      .from("dynamic_schedule_rules")
+      .select("available_durations")
+      .eq("org_id", org.id)
+      .limit(1);
+
+    if (org.locations_enabled && booking.location_id) {
+      groupsQuery = groupsQuery.eq("location_id", booking.location_id);
+      rulesQuery = rulesQuery.eq("location_id", booking.location_id);
+    }
+
     const [groupsResult, rulesResult] = await Promise.all([
-      supabase
-        .from("facility_groups")
-        .select("id, name, description")
-        .eq("org_id", org.id),
-      supabase
-        .from("dynamic_schedule_rules")
-        .select("available_durations")
-        .eq("org_id", org.id)
-        .limit(1),
+      groupsQuery,
+      rulesQuery,
     ]);
 
     const groups = groupsResult.data || [];
@@ -315,6 +329,7 @@ export default async function ModifyBookingPage({
               userFullName={auth.profile.full_name}
               userProfileId={auth.profile.id}
               paymentMode={paymentMode}
+              locationId={booking.location_id}
               mode="modify"
               originalBooking={{
                 id: booking.id,
@@ -347,6 +362,7 @@ export default async function ModifyBookingPage({
               userProfileId={auth.profile.id}
               mode="modify"
               paymentMode={paymentMode}
+              locationId={booking.location_id}
               originalBooking={{
                 id: booking.id,
                 confirmationCode: booking.confirmation_code,
