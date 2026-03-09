@@ -143,8 +143,6 @@ export function usePayment() {
         defaultBillingDetails: {},
         allowsDelayedPaymentMethods: false,
         returnURL: 'ezbooker://stripe-redirect',
-        // Only show card + Apple/Google Pay (hide Klarna, Affirm, Cash App, etc.)
-        paymentMethodTypes: ['Card'],
         // Enable Apple Pay
         applePay: {
           merchantCountryCode: 'US',

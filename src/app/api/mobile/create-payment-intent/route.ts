@@ -249,7 +249,7 @@ export async function POST(request: NextRequest) {
           amount: totalCents,
           currency: "usd",
           customer: stripeCustomerId,
-          automatic_payment_methods: { enabled: true },
+          payment_method_types: ['card'],
           ...(applicationFeeAmount
             ? { application_fee_amount: applicationFeeAmount }
             : {}),
@@ -280,7 +280,7 @@ export async function POST(request: NextRequest) {
       const setupIntent = await stripe.setupIntents.create(
         {
           customer: stripeCustomerId,
-          automatic_payment_methods: { enabled: true },
+          payment_method_types: ['card'],
           metadata,
         },
         { stripeAccount: stripeAccountId }
