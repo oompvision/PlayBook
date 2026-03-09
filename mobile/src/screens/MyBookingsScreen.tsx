@@ -192,7 +192,7 @@ export function MyBookingsScreen() {
       date: booking.date,
       startTime: booking.start_time,
       endTime: booking.end_time,
-      totalPriceCents: booking.total_price_cents,
+      totalPriceCents: booking.total_price_cents - (booking.discount_cents || 0),
       notes: booking.notes ?? undefined,
       slotIds,
     };
