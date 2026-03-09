@@ -159,7 +159,23 @@ export function CancelBookingModal({
             )}
 
             {/* Refund info */}
-            {!loadingPayment && hasPaidBooking && !insideWindow && (
+            {!loadingPayment && insideWindow && (
+              <View style={styles.refundBannerAmber}>
+                <Text style={styles.refundTitleAmber}>No refund will be issued</Text>
+                <Text style={styles.refundDescAmber}>
+                  This booking is within the {cancellationWindowHours}-hour
+                  cancellation window. If you believe you should receive a refund,
+                  please contact the facility after cancelling.
+                </Text>
+                {policyText && (
+                  <TouchableOpacity onPress={() => setShowPolicy(!showPolicy)}>
+                    <Text style={styles.policyLinkAmber}>View Cancellation Policy</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {!loadingPayment && !insideWindow && hasPaidBooking && (
               <View style={styles.refundBannerGreen}>
                 <Text style={styles.refundTitleGreen}>Full refund will be issued</Text>
                 <Text style={styles.refundDescGreen}>
@@ -176,24 +192,8 @@ export function CancelBookingModal({
               </View>
             )}
 
-            {!loadingPayment && hasPaidBooking && insideWindow && (
-              <View style={styles.refundBannerAmber}>
-                <Text style={styles.refundTitleAmber}>No refund will be issued</Text>
-                <Text style={styles.refundDescAmber}>
-                  This booking is within the {cancellationWindowHours}-hour
-                  cancellation window. If you believe you should receive a refund,
-                  please contact the facility after cancelling.
-                </Text>
-                {policyText && (
-                  <TouchableOpacity onPress={() => setShowPolicy(!showPolicy)}>
-                    <Text style={styles.policyLinkAmber}>View Cancellation Policy</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-
-            {/* No payment mode — simple confirmation */}
-            {!loadingPayment && !hasPaidBooking && (
+            {/* No payment or outside window with no payment — simple confirmation */}
+            {!loadingPayment && !insideWindow && !hasPaidBooking && (
               <View style={styles.simpleMessage}>
                 <Text style={styles.simpleMessageText}>
                   Are you sure you want to cancel this booking? This action cannot be

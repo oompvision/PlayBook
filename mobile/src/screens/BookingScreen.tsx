@@ -104,6 +104,12 @@ export function BookingScreen({ route, navigation }: Props) {
   const [modifyCardBrand, setModifyCardBrand] = useState<string | null>(null);
   const [modifyCardLast4, setModifyCardLast4] = useState<string | null>(null);
 
+  // Cancellation policy state (for all booking flows)
+  const [cancellationWindowHours, setCancellationWindowHours] = useState<number | null>(null);
+  const [cancellationPolicyText, setCancellationPolicyText] = useState<string | null>(null);
+  const [orgPaymentMode, setOrgPaymentMode] = useState<string>('none');
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+
   // Fetch payment mode and old booking's card details when entering modify mode
   useEffect(() => {
     if (!isModifyMode || !modifyBooking || !organization) return;
@@ -159,6 +165,35 @@ export function BookingScreen({ route, navigation }: Props) {
 
     return () => { cancelled = true; };
   }, [isModifyMode, modifyBooking?.id, organization?.id]);
+
+  // Fetch cancellation policy and window hours for all booking flows
+  useEffect(() => {
+    if (!organization) return;
+    let cancelled = false;
+
+    (async () => {
+      const { data: settings } = await supabase
+        .from('org_payment_settings')
+        .select('payment_mode, stripe_onboarding_complete, cancellation_window_hours, cancellation_policy_text')
+        .eq('org_id', organization.id)
+        .single();
+
+      if (cancelled) return;
+
+      if (!settings || settings.payment_mode === 'none' || !settings.stripe_onboarding_complete) {
+        setOrgPaymentMode('none');
+        setCancellationWindowHours(null);
+        setCancellationPolicyText(null);
+        return;
+      }
+
+      setOrgPaymentMode(settings.payment_mode);
+      setCancellationWindowHours(settings.cancellation_window_hours ?? 24);
+      setCancellationPolicyText(settings.cancellation_policy_text || null);
+    })();
+
+    return () => { cancelled = true; };
+  }, [organization?.id]);
 
   // Build bookable options for dynamic scheduling
   const bookableOptions: BookableOption[] = React.useMemo(() => {
@@ -689,6 +724,21 @@ export function BookingScreen({ route, navigation }: Props) {
       : ''
     : selectedBay?.name ?? '';
 
+  // Check if selected slot(s) are within the cancellation window
+  const isWithinCancellationWindow = (() => {
+    if (orgPaymentMode === 'none' || cancellationWindowHours === null) return false;
+    let earliestStart: string | null = null;
+    if (isDynamic && selectedDynamicSlot) {
+      earliestStart = selectedDynamicSlot.start_time;
+    } else if (selectedSlots.length > 0) {
+      earliestStart = selectedSlots[0].start_time;
+    }
+    if (!earliestStart) return false;
+    const startMs = new Date(earliestStart).getTime();
+    const cutoff = startMs - cancellationWindowHours * 60 * 60 * 1000;
+    return Date.now() >= cutoff;
+  })();
+
   if (!organization) {
     return (
       <View style={styles.centered}>
@@ -1115,12 +1165,63 @@ export function BookingScreen({ route, navigation }: Props) {
               numberOfLines={2}
             />
 
+            {/* Within cancellation window warning */}
+            {isWithinCancellationWindow && (
+              <View style={styles.windowWarningBanner}>
+                <Text style={styles.windowWarningText}>
+                  ⚠ Booking is less than {cancellationWindowHours}h away and cannot be refunded or modified.
+                </Text>
+              </View>
+            )}
+
+            {/* Terms + cancellation policy agreement */}
+            {orgPaymentMode !== 'none' && (
+              <Text style={styles.policyAgreementText}>
+                By booking you agree to the terms and{' '}
+                {cancellationPolicyText ? (
+                  <Text
+                    style={styles.policyAgreementLink}
+                    onPress={() => setShowPolicyModal(true)}
+                  >
+                    cancellation policy
+                  </Text>
+                ) : (
+                  'cancellation policy'
+                )}
+              </Text>
+            )}
+
             <Button
               title={isModifyMode ? 'Confirm Modification' : 'Confirm Booking'}
               onPress={handleBook}
               loading={booking || paymentProcessing}
               size="lg"
             />
+
+            {/* Cancellation policy modal */}
+            {cancellationPolicyText && (
+              <Modal
+                visible={showPolicyModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowPolicyModal(false)}
+              >
+                <View style={styles.policyModalOverlay}>
+                  <View style={styles.policyModalContent}>
+                    <Text style={styles.policyModalTitle}>Cancellation Policy</Text>
+                    <View style={styles.policyModalBox}>
+                      <Text style={styles.policyModalText}>{cancellationPolicyText}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.policyModalClose}
+                      onPress={() => setShowPolicyModal(false)}
+                    >
+                      <Text style={styles.policyModalCloseText}>Close</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </Modal>
+            )}
           </View>
         )}
       </ScrollView>
@@ -1618,6 +1719,73 @@ const styles = StyleSheet.create({
   ctaTotal: {
     ...typography.h3,
     color: colors.foreground,
+  },
+  windowWarningBanner: {
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  windowWarningText: {
+    ...typography.caption,
+    color: '#b45309',
+    lineHeight: 18,
+  },
+  policyAgreementText: {
+    ...typography.caption,
+    color: colors.mutedForeground,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  policyAgreementLink: {
+    color: colors.mutedForeground,
+    textDecorationLine: 'underline',
+  },
+  policyModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+  },
+  policyModalContent: {
+    backgroundColor: colors.card,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
+    width: '100%',
+    maxWidth: 400,
+  },
+  policyModalTitle: {
+    ...typography.h3,
+    color: colors.foreground,
+    marginBottom: spacing.md,
+  },
+  policyModalBox: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  policyModalText: {
+    ...typography.bodySmall,
+    color: '#1d4ed8',
+    lineHeight: 20,
+  },
+  policyModalClose: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary,
+  },
+  policyModalCloseText: {
+    ...typography.bodySmall,
+    color: colors.primaryForeground,
+    fontWeight: '600',
   },
 });
 
