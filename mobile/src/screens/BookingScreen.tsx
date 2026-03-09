@@ -171,22 +171,28 @@ export function BookingScreen({ route, navigation }: Props) {
     if (!organization) return;
     let cancelled = false;
 
+    console.log('[BookingScreen] Fetching payment settings for org:', organization.id);
+
     (async () => {
-      const { data: settings } = await supabase
+      const { data: settings, error } = await supabase
         .from('org_payment_settings')
         .select('payment_mode, stripe_onboarding_complete, cancellation_window_hours, cancellation_policy_text')
         .eq('org_id', organization.id)
         .single();
 
+      console.log('[BookingScreen] Payment settings result:', JSON.stringify(settings), 'error:', error?.message);
+
       if (cancelled) return;
 
       if (!settings || settings.payment_mode === 'none' || !settings.stripe_onboarding_complete) {
+        console.log('[BookingScreen] No payment mode or not onboarded — skipping policy');
         setOrgPaymentMode('none');
         setCancellationWindowHours(null);
         setCancellationPolicyText(null);
         return;
       }
 
+      console.log('[BookingScreen] Setting orgPaymentMode:', settings.payment_mode, 'windowHours:', settings.cancellation_window_hours);
       setOrgPaymentMode(settings.payment_mode);
       setCancellationWindowHours(settings.cancellation_window_hours ?? 24);
       setCancellationPolicyText(settings.cancellation_policy_text || null);
