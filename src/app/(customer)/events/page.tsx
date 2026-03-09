@@ -2,7 +2,7 @@ import { getFacilitySlug } from "@/lib/facility";
 import { getAuthUser, ensureCustomerOrg } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { resolveLocationId, getOrgLocations } from "@/lib/location";
+import { resolveLocationId } from "@/lib/location";
 import { EventsFeed } from "@/components/events/events-feed";
 
 export default async function EventsPage({
@@ -76,11 +76,10 @@ export default async function EventsPage({
   const searchParams = searchParamsPromise ? await searchParamsPromise : {};
   let activeLocationId: string | null = null;
   if (org.locations_enabled) {
-    const locations = await getOrgLocations(org.id);
     activeLocationId = await resolveLocationId(
       org.id,
       searchParams?.location,
-      locations
+      auth?.profile.id
     );
   }
 
