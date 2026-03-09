@@ -48,6 +48,7 @@ type CheckoutFormProps = {
 type StripeCheckoutWrapperProps = {
   stripeAccountId: string;
   clientSecret: string;
+  customerSessionClientSecret?: string;
   children: React.ReactNode;
 };
 
@@ -84,6 +85,7 @@ const appearance: Appearance = {
 export function StripeCheckoutWrapper({
   stripeAccountId,
   clientSecret,
+  customerSessionClientSecret,
   children,
 }: StripeCheckoutWrapperProps) {
   const stripePromise = useMemo(
@@ -91,10 +93,21 @@ export function StripeCheckoutWrapper({
     [stripeAccountId]
   );
 
+  const elementsOptions = useMemo(
+    () => ({
+      clientSecret,
+      appearance,
+      ...(customerSessionClientSecret
+        ? { customerSessionClientSecret }
+        : {}),
+    }),
+    [clientSecret, customerSessionClientSecret]
+  );
+
   return (
     <Elements
       stripe={stripePromise}
-      options={{ clientSecret, appearance }}
+      options={elementsOptions}
     >
       {children}
     </Elements>

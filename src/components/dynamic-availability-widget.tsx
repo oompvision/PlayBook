@@ -117,6 +117,7 @@ type CheckoutIntent = {
   stripe_account_id: string;
   amount_cents: number;
   cancellation_policy_text: string;
+  customer_session_client_secret?: string;
 };
 
 type MembershipContext = {
@@ -1987,6 +1988,7 @@ export function DynamicAvailabilityWidget(
                               <StripeCheckoutWrapper
                                 stripeAccountId={checkoutIntent.stripe_account_id}
                                 clientSecret={checkoutIntent.client_secret}
+                                customerSessionClientSecret={checkoutIntent.customer_session_client_secret}
                               >
                                 <CheckoutForm
                                   ref={checkoutFormRef}
