@@ -141,9 +141,11 @@ export function MyBookingsScreen() {
     }
 
     // Set cancellation window info
+    console.log('[MyBookingsScreen] paymentSettings data:', JSON.stringify(paymentSettingsResult.data), 'error:', paymentSettingsResult.error?.message);
     if (paymentSettingsResult.data) {
       const ps = paymentSettingsResult.data;
       const active = ps.payment_mode !== 'none' && ps.stripe_onboarding_complete;
+      console.log('[MyBookingsScreen] payment_mode:', ps.payment_mode, 'onboarded:', ps.stripe_onboarding_complete, 'window_hours:', ps.cancellation_window_hours, 'active:', active);
       setHasPaymentMode(active);
       setCancellationWindowHours(active ? (ps.cancellation_window_hours ?? 24) : null);
     }
