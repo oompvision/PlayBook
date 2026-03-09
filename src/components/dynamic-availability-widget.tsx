@@ -86,6 +86,7 @@ type Booking = {
   start_time: string;
   end_time: string;
   total_price_cents: number;
+  discount_cents?: number;
   status: string;
   notes: string | null;
 };
@@ -431,7 +432,7 @@ export function DynamicAvailabilityWidget(
     const supabase = createClient();
     const { data } = await supabase
       .from("bookings")
-      .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, status, notes")
+      .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, discount_cents, status, notes")
       .eq("org_id", orgId)
       .eq("status", "confirmed")
       .gte("date", todayStr)
@@ -826,6 +827,7 @@ export function DynamicAvailabilityWidget(
       bayName,
       canCancel: true,
       canModify: true,
+      discount_cents: booking.discount_cents || 0,
     });
     setSidebarModalOpen(true);
   }
@@ -1145,7 +1147,7 @@ export function DynamicAvailabilityWidget(
                     const bayName =
                       bays.find((b) => b.id === booking.bay_id)?.name ??
                       "Unknown Bay";
-                    const price = `$${(booking.total_price_cents / 100).toFixed(2)}`;
+                    const price = `$${((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}`;
                     const isHighlighted = highlightedBookingIds.has(booking.id);
 
                     return (

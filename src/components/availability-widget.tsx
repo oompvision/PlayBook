@@ -97,6 +97,7 @@ type Booking = {
   start_time: string;
   end_time: string;
   total_price_cents: number;
+  discount_cents?: number;
   status: string;
   notes: string | null;
 };
@@ -459,7 +460,7 @@ export function AvailabilityWidget({
     const [bookingsResult, eventRegsResult] = await Promise.all([
       supabase
         .from("bookings")
-        .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, status, notes")
+        .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, discount_cents, status, notes")
         .eq("org_id", orgId)
         .eq("status", "confirmed")
         .gte("date", todayStr)
@@ -1426,6 +1427,7 @@ export function AvailabilityWidget({
       start_time: booking.start_time,
       end_time: booking.end_time,
       total_price_cents: booking.total_price_cents,
+      discount_cents: booking.discount_cents || 0,
       status: booking.status,
       confirmation_code: booking.confirmation_code,
       notes: booking.notes,
@@ -1601,7 +1603,7 @@ export function AvailabilityWidget({
                       const bayName =
                         bays.find((b) => b.id === booking.bay_id)?.name ??
                         "Unknown Bay";
-                      const price = `$${(booking.total_price_cents / 100).toFixed(2)}`;
+                      const price = `$${((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}`;
                       const isHighlighted = highlightedBookingIds.has(booking.id);
 
                       return (
