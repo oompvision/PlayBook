@@ -15,6 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.apiazza.ezbooker.dev",
+      "appleTeamId": "JJ6L6ACNRJ",
       "infoPlist": {}
     },
     "android": {
