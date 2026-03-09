@@ -33,6 +33,7 @@ export interface PaymentParams {
   eventId?: string;
   registrationId?: string;
   locationId?: string | null;
+  discountCents?: number;
 }
 
 export interface PaymentResult {
@@ -101,6 +102,7 @@ export function usePayment() {
           event_id: params.eventId,
           registration_id: params.registrationId,
           location_id: params.locationId,
+          discount_cents: params.discountCents || 0,
         }),
       });
 

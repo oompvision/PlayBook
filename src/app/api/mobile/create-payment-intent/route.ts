@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
       event_id?: string;
       registration_id?: string;
       location_id?: string | null;
+      discount_cents?: number;
     };
 
     if (!body.org_id || !body.type) {
@@ -179,6 +180,13 @@ export async function POST(request: NextRequest) {
 
         metadata.registration_id = body.registration_id;
       }
+    }
+
+    // Apply membership discount
+    const discountCents = Math.max(0, Math.min(body.discount_cents || 0, totalCents));
+    totalCents = totalCents - discountCents;
+    if (discountCents > 0) {
+      metadata.discount_cents = String(discountCents);
     }
 
     // If total is $0, no payment needed

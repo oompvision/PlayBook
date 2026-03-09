@@ -6,6 +6,7 @@ import { BookingScreen } from '../screens/BookingScreen';
 import { MyBookingsScreen } from '../screens/MyBookingsScreen';
 import { MembershipScreen } from '../screens/MembershipScreen';
 import { AccountScreen } from '../screens/AccountScreen';
+import { useFacility } from '../lib/facility-context';
 import { colors } from '../theme/colors';
 import type { MainTabParamList } from './types';
 
@@ -20,6 +21,9 @@ const TAB_ICONS: Record<string, string> = {
 };
 
 export function MainTabs() {
+  const { organization } = useFacility();
+  const membershipEnabled = organization?.membership_tiers_enabled ?? false;
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -57,11 +61,13 @@ export function MainTabs() {
         component={MyBookingsScreen}
         options={{ title: 'My Bookings' }}
       />
-      <Tab.Screen
-        name="Membership"
-        component={MembershipScreen}
-        options={{ title: 'Membership' }}
-      />
+      {membershipEnabled && (
+        <Tab.Screen
+          name="Membership"
+          component={MembershipScreen}
+          options={{ title: 'Membership' }}
+        />
+      )}
       <Tab.Screen
         name="Account"
         component={AccountScreen}

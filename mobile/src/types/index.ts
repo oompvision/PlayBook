@@ -178,6 +178,8 @@ export interface MembershipTier {
   benefit_description: string | null;
   discount_type: 'flat' | 'percent';
   discount_value: number;
+  event_discount_type: 'flat' | 'percent';
+  event_discount_value: number;
   price_monthly_cents: number | null;
   price_yearly_cents: number | null;
   created_at: string;
