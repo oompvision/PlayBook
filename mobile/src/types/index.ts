@@ -97,6 +97,8 @@ export interface Booking {
   start_time: string;
   end_time: string;
   total_price_cents: number;
+  discount_cents: number;
+  discount_description: string | null;
   status: 'confirmed' | 'cancelled';
   confirmation_code: string;
   notes: string | null;

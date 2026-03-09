@@ -55,7 +55,7 @@ export default async function MyBookingsPage({
   const { data: bookings } = await supabase
     .from("bookings")
     .select(
-      "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, bay_id, created_at, modified_from, location_id, locations:location_id(name)"
+      "id, date, start_time, end_time, total_price_cents, discount_cents, discount_description, status, confirmation_code, notes, bay_id, created_at, modified_from, location_id, locations:location_id(name)"
     )
     .eq("org_id", org.id)
     .eq("customer_id", auth.profile.id)

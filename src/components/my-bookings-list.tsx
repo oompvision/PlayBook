@@ -28,6 +28,8 @@ type Booking = {
   start_time: string;
   end_time: string;
   total_price_cents: number;
+  discount_cents?: number;
+  discount_description?: string | null;
   status: string;
   confirmation_code: string;
   notes: string | null;
@@ -128,7 +130,7 @@ export function MyBookingsList({
     const { data: booking } = await supabase
       .from("bookings")
       .select(
-        "id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, bay_id, created_at, modified_from"
+        "id, date, start_time, end_time, total_price_cents, discount_cents, discount_description, status, confirmation_code, notes, bay_id, created_at, modified_from"
       )
       .eq("org_id", orgId)
       .eq("confirmation_code", code)
@@ -180,6 +182,8 @@ export function MyBookingsList({
       start_time: booking.start_time,
       end_time: booking.end_time,
       total_price_cents: booking.total_price_cents,
+      discount_cents: booking.discount_cents || 0,
+      discount_description: booking.discount_description || null,
       status: booking.status,
       confirmation_code: booking.confirmation_code,
       notes: booking.notes,
@@ -210,6 +214,8 @@ export function MyBookingsList({
         start_time: found.start_time,
         end_time: found.end_time,
         total_price_cents: found.total_price_cents,
+        discount_cents: found.discount_cents || 0,
+        discount_description: found.discount_description || null,
         status: found.status,
         confirmation_code: found.confirmation_code,
         notes: found.notes,
@@ -244,6 +250,8 @@ export function MyBookingsList({
       start_time: booking.start_time,
       end_time: booking.end_time,
       total_price_cents: booking.total_price_cents,
+      discount_cents: booking.discount_cents || 0,
+      discount_description: booking.discount_description || null,
       status: booking.status,
       confirmation_code: booking.confirmation_code,
       notes: booking.notes,
@@ -332,7 +340,7 @@ export function MyBookingsList({
               <p className="mt-0.5 text-sm text-muted-foreground">
                 {timeStr} · {bayMap[booking.bay_id] || "Facility"}
                 {booking.locationName ? ` · ${booking.locationName}` : ""} · $
-                {(booking.total_price_cents / 100).toFixed(2)}
+                {((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}
               </p>
               <p className="mt-0.5 font-mono text-xs text-muted-foreground">
                 {booking.confirmation_code}
@@ -386,7 +394,7 @@ export function MyBookingsList({
             <p className="mt-0.5 text-sm text-muted-foreground">
               {timeStr} · {bayMap[booking.bay_id] || "Facility"}
               {booking.locationName ? ` · ${booking.locationName}` : ""} · $
-              {(booking.total_price_cents / 100).toFixed(2)}
+              {((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}
             </p>
             <p className="mt-0.5 font-mono text-xs text-muted-foreground">
               {booking.confirmation_code}

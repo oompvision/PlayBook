@@ -44,6 +44,8 @@ export type BookingDetailData = {
   start_time: string;
   end_time: string;
   total_price_cents: number;
+  discount_cents?: number;
+  discount_description?: string | null;
   status: string;
   confirmation_code: string;
   notes: string | null;
@@ -1122,19 +1124,49 @@ export function BookingDetailsModal({
                     </div>
                   ))}
                 </div>
+                {(booking.discount_cents ?? 0) > 0 && (
+                  <div className="flex items-center justify-between border-t px-3 py-2 text-sm">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="text-muted-foreground">
+                      ${(booking.total_price_cents / 100).toFixed(2)}
+                    </span>
+                  </div>
+                )}
+                {(booking.discount_cents ?? 0) > 0 && (
+                  <div className="flex items-center justify-between px-3 py-1 text-sm text-teal-600 dark:text-teal-400">
+                    <span>★ {booking.discount_description || "Member discount"}</span>
+                    <span>-${((booking.discount_cents ?? 0) / 100).toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between border-t bg-muted/30 px-3 py-2 text-sm font-semibold">
                   <span>Total</span>
                   <span>
-                    ${(booking.total_price_cents / 100).toFixed(2)}
+                    ${((booking.total_price_cents - (booking.discount_cents ?? 0)) / 100).toFixed(2)}
                   </span>
                 </div>
               </div>
             ) : (
-              <div className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
-                <span>Total</span>
-                <span className="font-semibold">
-                  ${(booking.total_price_cents / 100).toFixed(2)}
-                </span>
+              <div className="rounded-lg border">
+                {(booking.discount_cents ?? 0) > 0 && (
+                  <>
+                    <div className="flex items-center justify-between px-3 py-2 text-sm">
+                      <span className="text-muted-foreground">Subtotal</span>
+                      <span className="text-muted-foreground">
+                        ${(booking.total_price_cents / 100).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-1 text-sm text-teal-600 dark:text-teal-400">
+                      <span>★ {booking.discount_description || "Member discount"}</span>
+                      <span>-${((booking.discount_cents ?? 0) / 100).toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
+                <div className={`flex items-center justify-between px-3 py-2 text-sm ${(booking.discount_cents ?? 0) > 0 ? "border-t font-semibold" : ""}`}>
+                  <span>Total</span>
+                  <span className="font-semibold">
+                    ${((booking.total_price_cents - (booking.discount_cents ?? 0)) / 100).toFixed(2)}
+                  </span>
+                </div>
               </div>
             )}
           </div>
