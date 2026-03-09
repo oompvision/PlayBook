@@ -230,7 +230,7 @@ async function handleChargeUpfrontModification({
             currency: "usd",
             customer: oldPayment.stripe_customer_id as string,
             payment_method: oldPayment.stripe_payment_method_id as string,
-            automatic_payment_methods: { enabled: true },
+            payment_method_types: ['card'],
             ...(applicationFeeAmount
               ? { application_fee_amount: applicationFeeAmount }
               : {}),
