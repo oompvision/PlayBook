@@ -129,6 +129,28 @@ export function EventRegistrationPanel({
         return;
       }
 
+      // Check if user is already registered for this event
+      const { data: existingReg } = await supabase
+        .from("event_registrations")
+        .select("id, status")
+        .eq("event_id", event.id)
+        .eq("user_id", user.id)
+        .in("status", ["confirmed", "waitlisted", "pending_payment"])
+        .maybeSingle();
+
+      if (existingReg) {
+        const statusLabel =
+          existingReg.status === "confirmed"
+            ? "registered"
+            : existingReg.status === "waitlisted"
+              ? "on the waitlist"
+              : "pending payment";
+        setError(
+          `You're already ${statusLabel} for this event. Check "My Bookings" to view or manage your registration.`
+        );
+        return;
+      }
+
       // Register for the event
       const { data: regResult, error: regError } = await supabase.rpc(
         "register_for_event",

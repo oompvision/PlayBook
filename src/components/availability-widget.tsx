@@ -1827,30 +1827,41 @@ export function AvailabilityWidget({
                 const startTime = formatTime(group.start_time, timezone);
                 const endTime = formatTime(group.end_time, timezone);
 
-                // Event row — clickable, opens registration panel
+                // Event row — clickable, opens registration panel or details modal if already registered
                 if (group.isEvent) {
                   const spotsLeft = (group.eventCapacity || 0) - (group.eventRegisteredCount || 0);
                   const priceLabel = group.eventPriceCents === 0
                     ? "Free"
                     : `$${((group.eventPriceCents || 0) / 100).toFixed(2)}`;
 
+                  // Check if user is already registered for this event
+                  const existingReg = sidebarEventRegs.find(
+                    (r) => r.event_id === group.eventId
+                  );
+                  const isRegistered = !!existingReg;
+
                   return (
                     <button
                       key={group.key}
                       type="button"
                       onClick={() => {
-                        setSelectedEventForPanel({
-                          id: group.eventId!,
-                          name: group.eventName || "",
-                          description: group.eventDescription || null,
-                          startTime: group.start_time,
-                          endTime: group.end_time,
-                          capacity: group.eventCapacity || 0,
-                          registeredCount: group.eventRegisteredCount || 0,
-                          priceCents: group.eventPriceCents || 0,
-                          membersOnly: group.eventMembersOnly || false,
-                          bayNames: group.available_bays.map((b) => b.bay_name).join(", "),
-                        });
+                        if (isRegistered) {
+                          // Open details modal for existing registration
+                          openSidebarEvent(existingReg);
+                        } else {
+                          setSelectedEventForPanel({
+                            id: group.eventId!,
+                            name: group.eventName || "",
+                            description: group.eventDescription || null,
+                            startTime: group.start_time,
+                            endTime: group.end_time,
+                            capacity: group.eventCapacity || 0,
+                            registeredCount: group.eventRegisteredCount || 0,
+                            priceCents: group.eventPriceCents || 0,
+                            membersOnly: group.eventMembersOnly || false,
+                            bayNames: group.available_bays.map((b) => b.bay_name).join(", "),
+                          });
+                        }
                       }}
                       className="flex w-full items-center justify-between rounded-lg border border-green-200 bg-green-50/50 px-4 py-3 text-left transition-colors hover:bg-green-100/70 dark:border-green-900/30 dark:bg-green-950/20 dark:hover:bg-green-950/40"
                     >
@@ -1866,6 +1877,17 @@ export function AvailabilityWidget({
                             <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
                               Event
                             </span>
+                            {isRegistered && (
+                              <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                {existingReg.status === "confirmed"
+                                  ? "Registered"
+                                  : existingReg.status === "waitlisted"
+                                    ? "Waitlisted"
+                                    : existingReg.status === "pending_payment"
+                                      ? "Payment Pending"
+                                      : "Registered"}
+                              </span>
+                            )}
                           </div>
                           <p className="mt-0.5 text-xs text-muted-foreground">
                             {startTime} &ndash; {endTime}
