@@ -278,5 +278,6 @@ The `mobile/` directory contains a React Native app built with Expo (SDK 53). It
 ### Important Rules
 - **Never add `merchantIdentifier`** to the Stripe plugin in app.json (fails with personal dev team)
 - **Never add `UIBackgroundModes: ["remote-notification"]`** to ios.infoPlist (fails with personal dev team)
+- **Never add `expo-notifications` to plugins** — it automatically adds Push Notifications capability and aps-environment entitlement, which personal dev teams cannot provision
 - When suggesting build commands, always use `npx expo run:ios --device` (not `expo start` or Expo Go)
 - If the iOS build fails with provisioning errors, check app.json for entitlements the personal dev team can't sign
