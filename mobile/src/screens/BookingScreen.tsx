@@ -48,7 +48,7 @@ export function BookingScreen({ route, navigation }: Props) {
     availableDurations,
   } = useFacility();
   const { user, profile } = useAuth();
-  const { bookableWindowDays } = useMembership();
+  const { bookableWindowDays, isMember, tier, membershipEnabled } = useMembership();
   const { collectPayment, recordPayment, isProcessing: paymentProcessing } = usePayment();
 
   // Modify mode
@@ -385,6 +385,40 @@ export function BookingScreen({ route, navigation }: Props) {
     ? selectedDynamicSlot?.price_cents ?? 0
     : selectedSlots.reduce((sum, s) => sum + s.price_cents, 0);
 
+  // ─── Membership discount helpers ──────────────────────
+  const hasMemberDiscount = isMember && tier && tier.discount_value > 0;
+  const hasEventDiscount = isMember && tier && tier.event_discount_value > 0;
+
+  function calcBookingDiscount(priceCents: number): { discountCents: number; finalCents: number; label: string } {
+    if (!hasMemberDiscount || !tier) return { discountCents: 0, finalCents: priceCents, label: '' };
+    let discountCents: number;
+    let label: string;
+    if (tier.discount_type === 'percent') {
+      discountCents = Math.round(priceCents * tier.discount_value / 100);
+      label = `${tier.discount_value}% member discount`;
+    } else {
+      discountCents = Math.min(tier.discount_value * 100, priceCents);
+      label = `$${(tier.discount_value).toFixed(2)} member discount`;
+    }
+    return { discountCents, finalCents: priceCents - discountCents, label };
+  }
+
+  function calcEventDiscount(priceCents: number): { discountCents: number; finalCents: number; label: string } {
+    if (!hasEventDiscount || !tier) return { discountCents: 0, finalCents: priceCents, label: '' };
+    let discountCents: number;
+    let label: string;
+    if (tier.event_discount_type === 'percent') {
+      discountCents = Math.round(priceCents * tier.event_discount_value / 100);
+      label = `${tier.event_discount_value}% member discount`;
+    } else {
+      discountCents = Math.min(tier.event_discount_value * 100, priceCents);
+      label = `$${(tier.event_discount_value).toFixed(2)} member discount`;
+    }
+    return { discountCents, finalCents: priceCents - discountCents, label };
+  }
+
+  const bookingDiscount = calcBookingDiscount(totalCents);
+
   // ─── Booking handlers ─────────────────────────────────
 
   const handleSlotBasedBook = async () => {
@@ -393,12 +427,16 @@ export function BookingScreen({ route, navigation }: Props) {
     setBooking(true);
     setBookingStep('processing');
 
+    // Calculate membership discount
+    const discount = calcBookingDiscount(totalCents);
+
     // Collect payment first (skips if org has no Stripe or $0 total)
     const paymentResult = await collectPayment({
       orgId: organization.id,
       type: 'slot_booking',
       slotIds: selectedSlots.map((s) => s.id),
       locationId: selectedLocation?.id,
+      discountCents: discount.discountCents,
     });
 
     if (paymentResult.cancelled) {
@@ -423,6 +461,8 @@ export function BookingScreen({ route, navigation }: Props) {
       p_slot_ids: selectedSlots.map((s) => s.id),
       p_notes: notes || null,
       p_location_id: selectedLocation?.id || null,
+      p_discount_cents: discount.discountCents || 0,
+      p_discount_description: discount.label || null,
     });
 
     if (error) {
@@ -457,12 +497,16 @@ export function BookingScreen({ route, navigation }: Props) {
     setBooking(true);
     setBookingStep('processing');
 
+    // Calculate membership discount
+    const discount = calcBookingDiscount(selectedDynamicSlot.price_cents);
+
     // Collect payment first (skips if org has no Stripe or $0 total)
     const paymentResult = await collectPayment({
       orgId: organization.id,
       type: 'dynamic_booking',
       priceCents: selectedDynamicSlot.price_cents,
       locationId: selectedLocation?.id,
+      discountCents: discount.discountCents,
     });
 
     if (paymentResult.cancelled) {
@@ -509,6 +553,8 @@ export function BookingScreen({ route, navigation }: Props) {
       p_price_cents: selectedDynamicSlot.price_cents,
       p_notes: notes || null,
       p_location_id: selectedLocation?.id || null,
+      p_discount_cents: discount.discountCents || 0,
+      p_discount_description: discount.label || null,
     });
 
     if (error) {
@@ -604,9 +650,9 @@ export function BookingScreen({ route, navigation }: Props) {
 
     const result = Array.isArray(data) ? data[0] : data;
 
-    // Handle payment difference
+    // Handle payment difference (use discounted total)
     if (result?.booking_id) {
-      const newTotal = selectedSlots.reduce((sum, s) => sum + s.price_cents, 0);
+      const newTotal = calcBookingDiscount(selectedSlots.reduce((sum, s) => sum + s.price_cents, 0)).finalCents;
       await handleModifyPayment(modifyBooking.id, result.booking_id, newTotal);
     }
 
@@ -658,9 +704,10 @@ export function BookingScreen({ route, navigation }: Props) {
 
     const result = Array.isArray(newData) ? newData[0] : newData;
 
-    // Handle payment difference
+    // Handle payment difference (use discounted total)
     if (result?.booking_id) {
-      await handleModifyPayment(modifyBooking.id, result.booking_id, selectedDynamicSlot.price_cents);
+      const discountedTotal = calcBookingDiscount(selectedDynamicSlot.price_cents).finalCents;
+      await handleModifyPayment(modifyBooking.id, result.booking_id, discountedTotal);
     }
 
     setBooking(false);
@@ -1127,12 +1174,24 @@ export function BookingScreen({ route, navigation }: Props) {
                       ))}
                     </View>
                   )}
+                  {bookingDiscount.discountCents > 0 && (
+                    <>
+                      <View style={styles.summaryTotal}>
+                        <Text style={styles.totalLabel}>Subtotal</Text>
+                        <Text style={styles.subtotalPrice}>{formatPrice(totalCents)}</Text>
+                      </View>
+                      <View style={styles.discountRow}>
+                        <Text style={styles.discountLabel}>★ {bookingDiscount.label}</Text>
+                        <Text style={styles.discountAmount}>-{formatPrice(bookingDiscount.discountCents)}</Text>
+                      </View>
+                    </>
+                  )}
                   <View style={styles.summaryTotal}>
                     <Text style={styles.totalLabel}>Total</Text>
-                    <Text style={styles.totalPrice}>{formatPrice(totalCents)}</Text>
+                    <Text style={styles.totalPrice}>{formatPrice(bookingDiscount.finalCents)}</Text>
                   </View>
                   {isModifyMode && modifyBooking && (() => {
-                    const diff = totalCents - modifyBooking.totalPriceCents;
+                    const diff = bookingDiscount.finalCents - modifyBooking.totalPriceCents;
                     const absDiff = Math.abs(diff);
                     const cardLabel = modifyCardBrand && modifyCardLast4
                       ? `${modifyCardBrand.charAt(0).toUpperCase() + modifyCardBrand.slice(1)} •••• ${modifyCardLast4}`
@@ -1372,9 +1431,23 @@ export function BookingScreen({ route, navigation }: Props) {
                   )}
                   <View style={eventStyles.detailRow}>
                     <Text style={eventStyles.detailLabel}>Price</Text>
-                    <Text style={eventStyles.detailValue}>
-                      {selectedEvent.price_cents === 0 ? 'Free' : formatPrice(selectedEvent.price_cents)}
-                    </Text>
+                    {(() => {
+                      const evtDisc = calcEventDiscount(selectedEvent.price_cents);
+                      if (selectedEvent.price_cents === 0) return <Text style={eventStyles.detailValue}>Free</Text>;
+                      if (evtDisc.discountCents > 0) {
+                        return (
+                          <View style={{ alignItems: 'flex-end' }}>
+                            <Text style={[eventStyles.detailValue, { textDecorationLine: 'line-through', color: colors.mutedForeground, fontSize: 13 }]}>
+                              {formatPrice(selectedEvent.price_cents)}
+                            </Text>
+                            <Text style={[eventStyles.detailValue, { color: '#0d9488' }]}>
+                              {formatPrice(evtDisc.finalCents)}
+                            </Text>
+                          </View>
+                        );
+                      }
+                      return <Text style={eventStyles.detailValue}>{formatPrice(selectedEvent.price_cents)}</Text>;
+                    })()}
                   </View>
                   <View style={eventStyles.detailRow}>
                     <Text style={eventStyles.detailLabel}>Spots</Text>
@@ -1436,12 +1509,31 @@ export function BookingScreen({ route, navigation }: Props) {
                         {selectedEvent.bay_names.join(', ')}
                       </Text>
                     )}
-                    <View style={styles.summaryTotal}>
-                      <Text style={styles.totalLabel}>Total</Text>
-                      <Text style={styles.totalPrice}>
-                        {selectedEvent.price_cents === 0 ? 'Free' : formatPrice(selectedEvent.price_cents)}
-                      </Text>
-                    </View>
+                    {(() => {
+                      const evtDisc = calcEventDiscount(selectedEvent.price_cents);
+                      return (
+                        <>
+                          {evtDisc.discountCents > 0 && selectedEvent.price_cents > 0 && (
+                            <>
+                              <View style={styles.summaryTotal}>
+                                <Text style={styles.totalLabel}>Subtotal</Text>
+                                <Text style={styles.subtotalPrice}>{formatPrice(selectedEvent.price_cents)}</Text>
+                              </View>
+                              <View style={styles.discountRow}>
+                                <Text style={styles.discountLabel}>★ {evtDisc.label}</Text>
+                                <Text style={styles.discountAmount}>-{formatPrice(evtDisc.discountCents)}</Text>
+                              </View>
+                            </>
+                          )}
+                          <View style={styles.summaryTotal}>
+                            <Text style={styles.totalLabel}>Total</Text>
+                            <Text style={styles.totalPrice}>
+                              {selectedEvent.price_cents === 0 ? 'Free' : formatPrice(evtDisc.finalCents)}
+                            </Text>
+                          </View>
+                        </>
+                      );
+                    })()}
                   </Card>
                 </ScrollView>
 
@@ -1453,20 +1545,24 @@ export function BookingScreen({ route, navigation }: Props) {
                     <Text style={{ color: colors.primary, fontSize: 16 }}>Back</Text>
                   </TouchableOpacity>
                   <Button
-                    title={selectedEvent.price_cents === 0 ? 'Confirm Registration' : `Pay ${formatPrice(selectedEvent.price_cents)} & Register`}
+                    title={selectedEvent.price_cents === 0 ? 'Confirm Registration' : `Pay ${formatPrice(calcEventDiscount(selectedEvent.price_cents).finalCents)} & Register`}
                     onPress={async () => {
                       if (!user || !organization) return;
                       setRegisteringEvent(true);
 
+                      // Calculate event discount
+                      const evtDiscount = calcEventDiscount(selectedEvent.price_cents);
+
                       // Collect payment for paid events
                       let paymentResult: { success: boolean; cancelled?: boolean; error?: string; intentId?: string; intentType?: 'payment' | 'setup'; stripeCustomerId?: string; amountCents?: number; cancellationPolicyText?: string } | null = null;
 
-                      if (selectedEvent.price_cents > 0) {
+                      if (evtDiscount.finalCents > 0) {
                         paymentResult = await collectPayment({
                           orgId: organization.id,
                           type: 'event',
                           eventId: selectedEvent.id,
                           priceCents: selectedEvent.price_cents,
+                          discountCents: evtDiscount.discountCents,
                         });
 
                         if (paymentResult.cancelled) {
@@ -1546,7 +1642,7 @@ export function BookingScreen({ route, navigation }: Props) {
                 {selectedSlots.length} slot{selectedSlots.length > 1 ? 's' : ''} selected
               </Text>
             )}
-            <Text style={styles.ctaTotal}>{formatPrice(totalCents)}</Text>
+            <Text style={styles.ctaTotal}>{formatPrice(bookingDiscount.finalCents)}</Text>
           </View>
           {user ? (
             <Button
@@ -1796,6 +1892,26 @@ const styles = StyleSheet.create({
   totalPrice: {
     ...typography.h3,
     color: colors.foreground,
+  },
+  subtotalPrice: {
+    ...typography.body,
+    color: colors.mutedForeground,
+  },
+  discountRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.xs,
+  },
+  discountLabel: {
+    ...typography.bodySmall,
+    color: '#0d9488',
+  },
+  discountAmount: {
+    ...typography.bodySmall,
+    color: '#0d9488',
+    fontWeight: '600',
   },
   ctaBar: {
     position: 'absolute',
