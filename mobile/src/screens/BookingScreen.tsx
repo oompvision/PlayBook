@@ -90,6 +90,7 @@ export function BookingScreen({ route, navigation }: Props) {
 
   // Event state
   const [dateEvents, setDateEvents] = useState<(FacilityEvent & { registered_count: number; bay_names: string[] })[]>([]);
+  const [userEventRegMap, setUserEventRegMap] = useState<Record<string, string>>({});
   const [selectedEvent, setSelectedEvent] = useState<(FacilityEvent & { registered_count: number; bay_names: string[] }) | null>(null);
   const [eventConfirmStep, setEventConfirmStep] = useState(false);
   const [registeringEvent, setRegisteringEvent] = useState(false);
@@ -334,6 +335,7 @@ export function BookingScreen({ route, navigation }: Props) {
 
     if (!events || events.length === 0) {
       setDateEvents([]);
+      setUserEventRegMap({});
       return;
     }
 
@@ -355,7 +357,28 @@ export function BookingScreen({ route, navigation }: Props) {
     );
 
     setDateEvents(enriched);
-  }, [organization, selectedDate]);
+
+    // Fetch user's registrations for these events
+    if (user) {
+      const eventIds = events.map((e: any) => e.id);
+      const { data: userRegs } = await supabase
+        .from('event_registrations')
+        .select('event_id, status')
+        .eq('user_id', user.id)
+        .in('event_id', eventIds)
+        .in('status', ['confirmed', 'waitlisted', 'pending_payment']);
+
+      const regMap: Record<string, string> = {};
+      if (userRegs) {
+        for (const r of userRegs) {
+          regMap[r.event_id] = r.status;
+        }
+      }
+      setUserEventRegMap(regMap);
+    } else {
+      setUserEventRegMap({});
+    }
+  }, [organization, selectedDate, user]);
 
   // Fetch on changes
   useEffect(() => {
@@ -952,10 +975,26 @@ export function BookingScreen({ route, navigation }: Props) {
             {filteredEvents.map((evt) => {
               const spotsLeft = (evt.capacity || 0) - (evt.registered_count || 0);
               const priceLabel = evt.price_cents === 0 ? 'Free' : formatPrice(evt.price_cents);
+              const userRegStatus = userEventRegMap[evt.id] || null;
               return (
                 <TouchableOpacity
                   key={evt.id}
-                  onPress={() => setSelectedEvent(evt)}
+                  onPress={() => {
+                    if (userRegStatus) {
+                      const statusLabel =
+                        userRegStatus === 'confirmed'
+                          ? 'registered'
+                          : userRegStatus === 'waitlisted'
+                            ? 'on the waitlist'
+                            : 'pending payment';
+                      Alert.alert(
+                        'Already Registered',
+                        `You're already ${statusLabel} for this event. Check "My Bookings" to view or manage your registration.`,
+                      );
+                    } else {
+                      setSelectedEvent(evt);
+                    }
+                  }}
                   style={eventStyles.card}
                   activeOpacity={0.7}
                 >
@@ -969,6 +1008,18 @@ export function BookingScreen({ route, navigation }: Props) {
                           {evt.name}
                         </Text>
                         <Badge label="Event" variant="success" />
+                        {userRegStatus && (
+                          <Badge
+                            label={
+                              userRegStatus === 'confirmed'
+                                ? 'Registered'
+                                : userRegStatus === 'waitlisted'
+                                  ? 'Waitlisted'
+                                  : 'Pending'
+                            }
+                            variant={userRegStatus === 'confirmed' ? 'default' : 'warning'}
+                          />
+                        )}
                       </View>
                       <Text style={eventStyles.eventTime}>
                         {formatTimeInZone(evt.start_time, organization!.timezone)} –{' '}
@@ -1549,6 +1600,32 @@ export function BookingScreen({ route, navigation }: Props) {
                     onPress={async () => {
                       if (!user || !organization) return;
                       setRegisteringEvent(true);
+
+                      // Check for existing registration before collecting payment
+                      const { data: existingReg } = await supabase
+                        .from('event_registrations')
+                        .select('id, status')
+                        .eq('event_id', selectedEvent.id)
+                        .eq('user_id', user.id)
+                        .in('status', ['confirmed', 'waitlisted', 'pending_payment'])
+                        .maybeSingle();
+
+                      if (existingReg) {
+                        setRegisteringEvent(false);
+                        const statusLabel =
+                          existingReg.status === 'confirmed'
+                            ? 'registered'
+                            : existingReg.status === 'waitlisted'
+                              ? 'on the waitlist'
+                              : 'pending payment';
+                        Alert.alert(
+                          'Already Registered',
+                          `You're already ${statusLabel} for this event. Check "My Bookings" to view or manage your registration.`,
+                        );
+                        setSelectedEvent(null);
+                        setEventConfirmStep(false);
+                        return;
+                      }
 
                       // Calculate event discount
                       const evtDiscount = calcEventDiscount(selectedEvent.price_cents);
