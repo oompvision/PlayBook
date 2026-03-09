@@ -14,6 +14,7 @@ import { useAuth } from '../lib/auth-context';
 import { supabase } from '../lib/supabase';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
+import { BookIcon, BookingsIcon } from '../components/TabIcons';
 import { formatPrice, formatTimeInZone, getTodayInTimezone, formatDate } from '../lib/format';
 import { colors, spacing, typography } from '../theme';
 import type { MainTabParamList } from '../navigation/types';
@@ -112,14 +113,14 @@ export function HomeScreen({ navigation }: Props) {
           style={styles.quickAction}
           onPress={() => (navigation as any).navigate('Book')}
         >
-          <Text style={styles.quickActionIcon}>📅</Text>
+          <BookIcon size={30} color={colors.primaryForeground} />
           <Text style={styles.quickActionLabel}>Book Now</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.quickAction}
           onPress={() => (navigation as any).navigate('Bookings')}
         >
-          <Text style={styles.quickActionIcon}>📋</Text>
+          <BookingsIcon size={30} color={colors.primaryForeground} />
           <Text style={styles.quickActionLabel}>My Bookings</Text>
         </TouchableOpacity>
       </View>
@@ -269,11 +270,8 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     alignItems: 'center',
   },
-  quickActionIcon: {
-    fontSize: 28,
-    marginBottom: spacing.sm,
-  },
   quickActionLabel: {
+    marginTop: spacing.sm,
     ...typography.button,
     color: colors.primaryForeground,
   },
