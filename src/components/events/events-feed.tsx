@@ -91,7 +91,7 @@ export async function EventsFeed({
   if (visibleEvents.length === 0) return null;
 
   return (
-    <div className="mt-8">
+    <div>
       <h2 className="mb-4 text-lg font-semibold text-gray-800 dark:text-white/90">
         Upcoming Events
       </h2>

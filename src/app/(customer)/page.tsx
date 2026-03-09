@@ -11,7 +11,6 @@ import { SignOutButton } from "@/components/sign-out-button";
 import { AvailabilityWidget } from "@/components/availability-widget";
 import { DynamicAvailabilityWidget } from "@/components/dynamic-availability-widget";
 import { AdminLoginForm } from "@/components/admin-login-form";
-import { EventsFeed } from "@/components/events/events-feed";
 import { MarketingHomepage } from "@/components/marketing/marketing-homepage";
 
 export default async function FacilityHomePage({
@@ -37,7 +36,7 @@ export default async function FacilityHomePage({
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, logo_url, cover_photo_url, timezone, min_booking_lead_minutes, scheduling_type, bookable_window_days, locations_enabled, events_enabled")
+    .select("id, name, slug, logo_url, cover_photo_url, timezone, min_booking_lead_minutes, scheduling_type, bookable_window_days, locations_enabled")
     .eq("slug", slug)
     .single();
 
@@ -363,17 +362,6 @@ export default async function FacilityHomePage({
                 </p>
               </div>
             )}
-            {org && (org.events_enabled ?? true) && (
-              <EventsFeed
-                orgId={org.id}
-                timezone={timezone}
-                isAuthenticated={!!auth}
-                isMember={membershipContext.isMember}
-                userId={auth?.profile.id}
-                paymentMode={paymentMode}
-                locationId={activeLocationId}
-              />
-            )}
           </div>
         </div>
       </div>
@@ -487,16 +475,6 @@ export default async function FacilityHomePage({
                 No facilities are currently available for booking.
               </p>
             </div>
-          )}
-          {org && (org.events_enabled ?? true) && (
-            <EventsFeed
-              orgId={org.id}
-              timezone={timezone}
-              isAuthenticated={!!auth}
-              isMember={membershipContext.isMember}
-              userId={auth?.profile.id}
-              locationId={activeLocationId}
-            />
           )}
         </div>
       </div>
