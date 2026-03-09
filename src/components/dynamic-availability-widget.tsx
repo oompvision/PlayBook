@@ -86,6 +86,7 @@ type Booking = {
   start_time: string;
   end_time: string;
   total_price_cents: number;
+  discount_cents?: number;
   status: string;
   notes: string | null;
 };
@@ -129,6 +130,21 @@ type MembershipContext = {
   membershipEnabled: boolean;
 };
 
+export type DynamicOriginalBookingInfo = {
+  id: string;
+  confirmationCode: string;
+  bayId: string;
+  bayName: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  totalPriceCents: number;
+  notes: string | null;
+  durationMinutes: number;
+  cardBrand?: string | null;
+  cardLast4?: string | null;
+};
+
 type DynamicAvailabilityWidgetProps = {
   orgId: string;
   orgName: string;
@@ -151,6 +167,9 @@ type DynamicAvailabilityWidgetProps = {
   locations?: Array<{ id: string; name: string; is_default: boolean; address: string | null }>;
   locationsEnabled?: boolean;
   membership?: MembershipContext;
+  mode?: "customer" | "modify";
+  originalBooking?: DynamicOriginalBookingInfo;
+  modifyRedirectBase?: string;
 };
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -241,7 +260,12 @@ export function DynamicAvailabilityWidget(
     locations = [],
     locationsEnabled = false,
     membership,
+    mode = "customer",
+    originalBooking,
+    modifyRedirectBase,
   } = props;
+
+  const isModify = mode === "modify";
 
   // Membership discount calculation
   const memberDiscount = membership?.isMember && membership.discountType && membership.discountValue
@@ -286,10 +310,12 @@ export function DynamicAvailabilityWidget(
   );
 
   // Date + duration + time
-  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [selectedDate, setSelectedDate] = useState(
+    isModify && originalBooking ? originalBooking.date : todayStr
+  );
   const [durations, setDurations] = useState<number[]>(defaultDurations);
   const [selectedDuration, setSelectedDuration] = useState<number>(
-    defaultDurations[0] || 60
+    isModify && originalBooking ? originalBooking.durationMinutes : (defaultDurations[0] || 60)
   );
   const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
@@ -300,7 +326,9 @@ export function DynamicAvailabilityWidget(
   // Booking panel (portal-based bottom-up overlay)
   const [panelOpen, setPanelOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [bookingNotes, setBookingNotes] = useState("");
+  const [bookingNotes, setBookingNotes] = useState(
+    isModify && originalBooking?.notes ? originalBooking.notes : ""
+  );
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingError, setBookingError] = useState("");
 
@@ -404,7 +432,7 @@ export function DynamicAvailabilityWidget(
     const supabase = createClient();
     const { data } = await supabase
       .from("bookings")
-      .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, status, notes")
+      .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, discount_cents, status, notes")
       .eq("org_id", orgId)
       .eq("status", "confirmed")
       .gte("date", todayStr)
@@ -799,6 +827,7 @@ export function DynamicAvailabilityWidget(
       bayName,
       canCancel: true,
       canModify: true,
+      discount_cents: booking.discount_cents || 0,
     });
     setSidebarModalOpen(true);
   }
@@ -851,6 +880,76 @@ export function DynamicAvailabilityWidget(
     try {
       const { discountCents, label: discountLabel } = calcDiscount(selectedSlot.price_cents);
 
+      if (isModify && originalBooking) {
+        // ─── Modify mode: call modify_dynamic_booking RPC ───
+        const supabase = createClient();
+
+        // Detect "no changes"
+        const sameTime = selectedSlot.start_time === originalBooking.startTime &&
+          selectedSlot.end_time === originalBooking.endTime &&
+          selectedDate === originalBooking.date;
+        if (sameTime) {
+          setBookingError("No changes detected. Select a different time to modify your booking.");
+          setBookingLoading(false);
+          return;
+        }
+
+        const { data, error } = await supabase.rpc("modify_dynamic_booking", {
+          p_booking_id: originalBooking.id,
+          p_new_bay_id: selectedSlot.bay_id,
+          p_new_date: selectedDate,
+          p_start_time: selectedSlot.start_time,
+          p_end_time: selectedSlot.end_time,
+          p_price_cents: selectedSlot.price_cents,
+          p_notes: bookingNotes || null,
+          p_location_id: locationId || null,
+        });
+
+        if (error) {
+          setBookingError(error.message);
+          setBookingLoading(false);
+          return;
+        }
+
+        const result = data as {
+          booking_id: string;
+          confirmation_code: string;
+          old_confirmation_code: string;
+          total_price_cents: number;
+        };
+
+        // Handle payment adjustments
+        if (paymentMode !== "none" && result.booking_id) {
+          try {
+            const payRes = await fetch("/api/stripe/modify-booking-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                old_booking_id: originalBooking.id,
+                new_booking_id: result.booking_id,
+                new_amount_cents: calcDiscount(selectedSlot.price_cents).finalCents,
+              }),
+            });
+            if (payRes.ok) {
+              const payData = await payRes.json();
+              if (payData.status === "requires_action") {
+                console.warn("Modification payment requires additional authentication");
+              }
+            }
+          } catch {
+            console.error("Failed to adjust payment for modification");
+          }
+        }
+
+        const redirectBase = modifyRedirectBase || "/my-bookings";
+        const facilityParam = facilitySlug ? `&facility=${facilitySlug}` : "";
+        router.push(
+          `${redirectBase}?success=true&codes=${result.confirmation_code}&modified=true${facilityParam}`
+        );
+        return;
+      }
+
+      // ─── Normal booking mode ───
       const res = await fetch("/api/bookings/dynamic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1048,7 +1147,7 @@ export function DynamicAvailabilityWidget(
                     const bayName =
                       bays.find((b) => b.id === booking.bay_id)?.name ??
                       "Unknown Bay";
-                    const price = `$${(booking.total_price_cents / 100).toFixed(2)}`;
+                    const price = `$${((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}`;
                     const isHighlighted = highlightedBookingIds.has(booking.id);
 
                     return (
@@ -2031,6 +2130,39 @@ export function DynamicAvailabilityWidget(
                                 </>
                               );
                             })()}
+
+                            {/* Modify mode: price diff */}
+                            {isModify && originalBooking && (() => {
+                              const newFinal = calcDiscount(selectedSlot.price_cents).finalCents;
+                              const oldPaid = originalBooking.totalPriceCents;
+                              const diff = newFinal - oldPaid;
+                              if (diff === 0) return (
+                                <div className="mt-2 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                                  No price change — no additional charge or refund
+                                </div>
+                              );
+                              const absDiff = Math.abs(diff);
+                              const cardLabel = originalBooking.cardBrand && originalBooking.cardLast4
+                                ? `${originalBooking.cardBrand.charAt(0).toUpperCase() + originalBooking.cardBrand.slice(1)} •••• ${originalBooking.cardLast4}`
+                                : "your card on file";
+                              if (diff > 0 && paymentMode !== "none") return (
+                                <div className="mt-2 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs dark:border-amber-900 dark:bg-amber-950/50">
+                                  <span className="text-amber-700 dark:text-amber-300">
+                                    {paymentMode === "charge_upfront" ? `${cardLabel} will be charged` : "Price increase — no charge now"}
+                                  </span>
+                                  <span className="font-semibold text-amber-700 dark:text-amber-300">+${(absDiff / 100).toFixed(2)}</span>
+                                </div>
+                              );
+                              if (diff < 0 && paymentMode !== "none") return (
+                                <div className="mt-2 flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs dark:border-green-900 dark:bg-green-950/50">
+                                  <span className="text-green-700 dark:text-green-300">
+                                    {paymentMode === "charge_upfront" ? `Refund to ${cardLabel}` : "Price decrease — no refund needed"}
+                                  </span>
+                                  <span className="font-semibold text-green-700 dark:text-green-300">-${(absDiff / 100).toFixed(2)}</span>
+                                </div>
+                              );
+                              return null;
+                            })()}
                           </div>
 
                           {/* Notes (if provided) */}
@@ -2113,12 +2245,16 @@ export function DynamicAvailabilityWidget(
                               {bookingLoading ? (
                                 <>
                                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                  {requiresPayment && paymentMode === "charge_upfront"
+                                  {isModify
+                                    ? "Modifying..."
+                                    : requiresPayment && paymentMode === "charge_upfront"
                                     ? "Processing payment..."
                                     : requiresPayment
                                     ? "Saving card..."
                                     : "Booking..."}
                                 </>
+                              ) : isModify ? (
+                                "Confirm Modification"
                               ) : requiresPayment && paymentMode === "charge_upfront" ? (
                                 `Confirm & Pay $${(calcDiscount(selectedSlot.price_cents).finalCents / 100).toFixed(2)}`
                               ) : requiresPayment ? (

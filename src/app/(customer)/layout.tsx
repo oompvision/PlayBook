@@ -23,7 +23,7 @@ export default async function CustomerLayout({
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, logo_url, membership_tiers_enabled")
+    .select("id, name, slug, logo_url, membership_tiers_enabled, events_enabled")
     .eq("slug", slug)
     .single();
 
@@ -39,6 +39,13 @@ export default async function CustomerLayout({
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
           <OrgHeader name={org.name} logoUrl={org.logo_url} />
           <div className="flex items-center gap-2 sm:gap-3">
+            {(org.events_enabled ?? true) && (
+              <Link href="/events">
+                <Button variant="ghost" size="sm">
+                  Events
+                </Button>
+              </Link>
+            )}
             {auth ? (
               <>
                 <Link href="/my-bookings">

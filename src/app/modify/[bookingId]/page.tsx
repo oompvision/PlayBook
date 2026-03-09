@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getTodayInTimezone, formatTimeInZone } from "@/lib/utils";
 import { AvailabilityWidget } from "@/components/availability-widget";
+import { DynamicAvailabilityWidget } from "@/components/dynamic-availability-widget";
 import { OrgHeader } from "@/components/org-header";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import Link from "next/link";
@@ -24,21 +25,23 @@ export default async function ModifyBookingPage({
   const { data: booking } = await supabase
     .from("bookings")
     .select(
-      "id, org_id, customer_id, bay_id, date, start_time, end_time, total_price_cents, status, confirmation_code, notes, is_guest, guest_name, modified_from"
+      "id, org_id, customer_id, bay_id, date, start_time, end_time, total_price_cents, discount_cents, status, confirmation_code, notes, is_guest, guest_name, modified_from"
     )
     .eq("id", bookingId)
     .single();
 
   if (!booking) redirect("/my-bookings");
 
-  // Fetch the org from the booking's org_id
+  // Fetch the org from the booking's org_id (include scheduling_type)
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, timezone, min_booking_lead_minutes, logo_url")
+    .select("id, name, slug, timezone, min_booking_lead_minutes, logo_url, scheduling_type, bookable_window_days, locations_enabled, membership_tiers_enabled, guest_booking_window_days, member_booking_window_days")
     .eq("id", booking.org_id)
     .single();
 
   if (!org) redirect("/my-bookings");
+
+  const isDynamic = (org.scheduling_type ?? "slot_based") === "dynamic";
 
   // Validate: booking must be confirmed
   if (booking.status !== "confirmed") redirect("/my-bookings");
@@ -87,7 +90,7 @@ export default async function ModifyBookingPage({
     }
   }
 
-  // Fetch the booking's slot IDs
+  // Fetch the booking's slot IDs (for slot-based)
   const { data: bookingSlots } = await supabase
     .from("booking_slots")
     .select("bay_schedule_slot_id")
@@ -176,6 +179,76 @@ export default async function ModifyBookingPage({
   const redirectBase = isAdmin ? "/admin/bookings" : "/my-bookings";
   const backHref = isAdmin ? "/admin/bookings" : "/my-bookings";
 
+  // For dynamic orgs: fetch facility groups, standalone bays, durations
+  let facilityGroups: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    bays: Array<{ id: string; name: string; resource_type: string | null }>;
+  }> = [];
+  let standaloneBays: Array<{ id: string; name: string; resource_type: string | null }> = [];
+  let defaultDurations: number[] = [60];
+  let bookableWindowDays = org.bookable_window_days ?? 30;
+
+  if (isDynamic && bays && bays.length > 0) {
+    const [groupsResult, rulesResult] = await Promise.all([
+      supabase
+        .from("facility_groups")
+        .select("id, name, description")
+        .eq("org_id", org.id),
+      supabase
+        .from("dynamic_schedule_rules")
+        .select("available_durations")
+        .eq("org_id", org.id)
+        .limit(1),
+    ]);
+
+    const groups = groupsResult.data || [];
+
+    // Build bay→group map
+    if (groups.length > 0) {
+      const { data: members } = await supabase
+        .from("facility_group_members")
+        .select("bay_id, group_id")
+        .in("group_id", groups.map((g) => g.id));
+
+      const bayGroupMap = new Map<string, string>();
+      for (const m of (members || [])) {
+        bayGroupMap.set(m.bay_id, m.group_id);
+      }
+
+      facilityGroups = groups.map((g) => ({
+        ...g,
+        bays: bays.filter((b) => bayGroupMap.has(b.id) && bayGroupMap.get(b.id) === g.id),
+      })).filter((g) => g.bays.length > 0);
+
+      standaloneBays = bays.filter((b) => !bayGroupMap.has(b.id));
+    } else {
+      standaloneBays = bays;
+    }
+
+    if (rulesResult.data?.[0]?.available_durations) {
+      defaultDurations = rulesResult.data[0].available_durations;
+    }
+
+    // Get membership-aware bookable window
+    const { data: windowData } = await supabase.rpc("get_effective_bookable_window", {
+      p_org_id: org.id,
+      p_user_id: auth.user.id,
+    });
+    if (typeof windowData === "number") {
+      bookableWindowDays = windowData;
+    }
+  }
+
+  // Calculate original booking duration for dynamic modify pre-fill
+  const originalDurationMinutes = Math.round(
+    (new Date(booking.end_time).getTime() - new Date(booking.start_time).getTime()) / 60_000
+  );
+
+  // Original booking total paid (subtract discount)
+  const originalPaidCents = booking.total_price_cents - (booking.discount_cents || 0);
+
   return (
     <div className="min-h-screen p-8">
       <div className="mx-auto max-w-4xl">
@@ -201,7 +274,7 @@ export default async function ModifyBookingPage({
                   {new Date(booking.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })},{" "}
                   {bayName}
                 </span>{" "}
-                &mdash; select new time slots below.
+                &mdash; select new time {isDynamic ? "slot" : "slots"} below.
               </p>
             </div>
             <OrgHeader name={org.name} logoUrl={org.logo_url} />
@@ -224,37 +297,74 @@ export default async function ModifyBookingPage({
 
         {/* Availability Widget in modify mode */}
         {bays && bays.length > 0 ? (
-          <AvailabilityWidget
-            orgId={org.id}
-            orgName={org.name}
-            timezone={timezone}
-            bays={bays}
-            todayStr={todayStr}
-            minBookingLeadMinutes={minLeadMinutes}
-            facilitySlug={org.slug}
-            isAuthenticated={true}
-            userEmail={auth.profile.email}
-            userFullName={auth.profile.full_name}
-            userProfileId={auth.profile.id}
-            mode="modify"
-            paymentMode={paymentMode}
-            originalBooking={{
-              id: booking.id,
-              confirmationCode: booking.confirmation_code,
-              bayId: booking.bay_id,
-              bayName,
-              date: booking.date,
-              startTime: booking.start_time,
-              endTime: booking.end_time,
-              totalPriceCents: booking.total_price_cents,
-              notes: booking.notes,
-              isGuest: booking.is_guest,
-              slotIds: slotIds,
-              cardBrand: oldPaymentCardBrand,
-              cardLast4: oldPaymentCardLast4,
-            }}
-            modifyRedirectBase={redirectBase}
-          />
+          isDynamic ? (
+            <DynamicAvailabilityWidget
+              orgId={org.id}
+              orgName={org.name}
+              timezone={timezone}
+              bays={bays}
+              facilityGroups={facilityGroups}
+              standaloneBays={standaloneBays}
+              defaultDurations={defaultDurations}
+              todayStr={todayStr}
+              minBookingLeadMinutes={minLeadMinutes}
+              bookableWindowDays={bookableWindowDays}
+              facilitySlug={org.slug}
+              isAuthenticated={true}
+              userEmail={auth.profile.email}
+              userFullName={auth.profile.full_name}
+              userProfileId={auth.profile.id}
+              paymentMode={paymentMode}
+              mode="modify"
+              originalBooking={{
+                id: booking.id,
+                confirmationCode: booking.confirmation_code,
+                bayId: booking.bay_id,
+                bayName,
+                date: booking.date,
+                startTime: booking.start_time,
+                endTime: booking.end_time,
+                totalPriceCents: originalPaidCents,
+                notes: booking.notes,
+                durationMinutes: originalDurationMinutes,
+                cardBrand: oldPaymentCardBrand,
+                cardLast4: oldPaymentCardLast4,
+              }}
+              modifyRedirectBase={redirectBase}
+            />
+          ) : (
+            <AvailabilityWidget
+              orgId={org.id}
+              orgName={org.name}
+              timezone={timezone}
+              bays={bays}
+              todayStr={todayStr}
+              minBookingLeadMinutes={minLeadMinutes}
+              facilitySlug={org.slug}
+              isAuthenticated={true}
+              userEmail={auth.profile.email}
+              userFullName={auth.profile.full_name}
+              userProfileId={auth.profile.id}
+              mode="modify"
+              paymentMode={paymentMode}
+              originalBooking={{
+                id: booking.id,
+                confirmationCode: booking.confirmation_code,
+                bayId: booking.bay_id,
+                bayName,
+                date: booking.date,
+                startTime: booking.start_time,
+                endTime: booking.end_time,
+                totalPriceCents: originalPaidCents,
+                notes: booking.notes,
+                isGuest: booking.is_guest,
+                slotIds: slotIds,
+                cardBrand: oldPaymentCardBrand,
+                cardLast4: oldPaymentCardLast4,
+              }}
+              modifyRedirectBase={redirectBase}
+            />
+          )
         ) : (
           <div className="rounded-xl border bg-card p-12 text-center">
             <p className="text-muted-foreground">

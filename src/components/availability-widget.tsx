@@ -97,6 +97,7 @@ type Booking = {
   start_time: string;
   end_time: string;
   total_price_cents: number;
+  discount_cents?: number;
   status: string;
   notes: string | null;
 };
@@ -459,7 +460,7 @@ export function AvailabilityWidget({
     const [bookingsResult, eventRegsResult] = await Promise.all([
       supabase
         .from("bookings")
-        .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, status, notes")
+        .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, discount_cents, status, notes")
         .eq("org_id", orgId)
         .eq("status", "confirmed")
         .gte("date", todayStr)
@@ -1426,6 +1427,7 @@ export function AvailabilityWidget({
       start_time: booking.start_time,
       end_time: booking.end_time,
       total_price_cents: booking.total_price_cents,
+      discount_cents: booking.discount_cents || 0,
       status: booking.status,
       confirmation_code: booking.confirmation_code,
       notes: booking.notes,
@@ -1601,7 +1603,7 @@ export function AvailabilityWidget({
                       const bayName =
                         bays.find((b) => b.id === booking.bay_id)?.name ??
                         "Unknown Bay";
-                      const price = `$${(booking.total_price_cents / 100).toFixed(2)}`;
+                      const price = `$${((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}`;
                       const isHighlighted = highlightedBookingIds.has(booking.id);
 
                       return (
@@ -1825,30 +1827,41 @@ export function AvailabilityWidget({
                 const startTime = formatTime(group.start_time, timezone);
                 const endTime = formatTime(group.end_time, timezone);
 
-                // Event row — clickable, opens registration panel
+                // Event row — clickable, opens registration panel or details modal if already registered
                 if (group.isEvent) {
                   const spotsLeft = (group.eventCapacity || 0) - (group.eventRegisteredCount || 0);
                   const priceLabel = group.eventPriceCents === 0
                     ? "Free"
                     : `$${((group.eventPriceCents || 0) / 100).toFixed(2)}`;
 
+                  // Check if user is already registered for this event
+                  const existingReg = sidebarEventRegs.find(
+                    (r) => r.event_id === group.eventId
+                  );
+                  const isRegistered = !!existingReg;
+
                   return (
                     <button
                       key={group.key}
                       type="button"
                       onClick={() => {
-                        setSelectedEventForPanel({
-                          id: group.eventId!,
-                          name: group.eventName || "",
-                          description: group.eventDescription || null,
-                          startTime: group.start_time,
-                          endTime: group.end_time,
-                          capacity: group.eventCapacity || 0,
-                          registeredCount: group.eventRegisteredCount || 0,
-                          priceCents: group.eventPriceCents || 0,
-                          membersOnly: group.eventMembersOnly || false,
-                          bayNames: group.available_bays.map((b) => b.bay_name).join(", "),
-                        });
+                        if (isRegistered) {
+                          // Open details modal for existing registration
+                          openSidebarEvent(existingReg);
+                        } else {
+                          setSelectedEventForPanel({
+                            id: group.eventId!,
+                            name: group.eventName || "",
+                            description: group.eventDescription || null,
+                            startTime: group.start_time,
+                            endTime: group.end_time,
+                            capacity: group.eventCapacity || 0,
+                            registeredCount: group.eventRegisteredCount || 0,
+                            priceCents: group.eventPriceCents || 0,
+                            membersOnly: group.eventMembersOnly || false,
+                            bayNames: group.available_bays.map((b) => b.bay_name).join(", "),
+                          });
+                        }
                       }}
                       className="flex w-full items-center justify-between rounded-lg border border-green-200 bg-green-50/50 px-4 py-3 text-left transition-colors hover:bg-green-100/70 dark:border-green-900/30 dark:bg-green-950/20 dark:hover:bg-green-950/40"
                     >
@@ -1864,6 +1877,17 @@ export function AvailabilityWidget({
                             <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
                               Event
                             </span>
+                            {isRegistered && (
+                              <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                {existingReg.status === "confirmed"
+                                  ? "Registered"
+                                  : existingReg.status === "waitlisted"
+                                    ? "Waitlisted"
+                                    : existingReg.status === "pending_payment"
+                                      ? "Payment Pending"
+                                      : "Registered"}
+                              </span>
+                            )}
                           </div>
                           <p className="mt-0.5 text-xs text-muted-foreground">
                             {startTime} &ndash; {endTime}
