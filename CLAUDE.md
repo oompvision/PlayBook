@@ -242,3 +242,41 @@ When an admin clicks "Connect Stripe Account," they're redirected to Stripe's ho
 | `src/app/api/org/payment-settings/route.ts` | GET/PUT org payment settings (payment mode, fees) |
 | `src/app/admin/settings/payment-settings.tsx` | Admin UI for Connect onboarding + payment config |
 | `supabase/migrations/00028_stripe_connect_tables.sql` | DB tables: `org_payment_settings`, `org_subscriptions`, `booking_payments` |
+
+## Mobile App (React Native / Expo)
+
+### Overview
+The `mobile/` directory contains a React Native app built with Expo (SDK 53). It uses Expo Router for navigation, `@stripe/stripe-react-native` for payments, and connects to the same Supabase backend as the web app.
+
+### Development Setup
+- **Framework**: React Native with Expo SDK 53, Expo Router
+- **Auth**: `@supabase/supabase-js` + `expo-secure-store` for token persistence
+- **Payments**: `@stripe/stripe-react-native` (requires native modules — cannot run in Expo Go)
+- **State**: React context providers for auth and Stripe
+
+### iOS Development (User's Local Machine)
+- **Apple Team**: Personal dev team (free) — `DEVELOPMENT_TEAM=JJ6L6ACNRJ`
+- **Bundle ID**: `com.apiazza.ezbooker.dev`
+- **Build method**: `npx expo run:ios --device` (custom dev client, NOT Expo Go)
+- **Why not Expo Go**: Stripe's native module requires a custom dev client build. Expo Go doesn't support native modules like `@stripe/stripe-react-native`.
+- **Provisioning limitations**: Personal dev team CANNOT provision Apple Pay (`merchantIdentifier`) or Push Notifications (`UIBackgroundModes: remote-notification`). Do NOT add these entitlements to app.json — the build will fail.
+- **After changing app.json or native config**: Run `npx expo prebuild --clean --platform ios` before building
+
+### Android Development
+- **Package**: `app.ezbooker.mobile`
+- **Build method**: `npx expo run:android` (custom dev client)
+
+### Key Mobile Files
+| File | Purpose |
+|------|---------|
+| `mobile/app.json` | Expo config (bundle IDs, plugins, splash screen) |
+| `mobile/app/(tabs)/` | Tab-based navigation (home, bookings, profile) |
+| `mobile/lib/supabase.ts` | Supabase client with SecureStore adapter |
+| `mobile/providers/` | Auth and Stripe context providers |
+| `mobile/components/` | Shared mobile components |
+
+### Important Rules
+- **Never add `merchantIdentifier`** to the Stripe plugin in app.json (fails with personal dev team)
+- **Never add `UIBackgroundModes: ["remote-notification"]`** to ios.infoPlist (fails with personal dev team)
+- When suggesting build commands, always use `npx expo run:ios --device` (not `expo start` or Expo Go)
+- If the iOS build fails with provisioning errors, check app.json for entitlements the personal dev team can't sign

@@ -14,10 +14,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.ezbooker.mobile",
-      "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
-      }
+      "bundleIdentifier": "com.apiazza.ezbooker.dev",
+      "infoPlist": {}
     },
     "android": {
       "adaptiveIcon": {
@@ -40,7 +38,6 @@
       [
         "@stripe/stripe-react-native",
         {
-          "merchantIdentifier": "merchant.app.ezbooker",
           "enableGooglePay": true
         }
       ]
