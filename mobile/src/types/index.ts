@@ -81,6 +81,13 @@ export interface BayScheduleSlot {
   status: 'available' | 'booked' | 'blocked';
 }
 
+export interface ModifiedFromInfo {
+  startTime: string;
+  endTime: string;
+  date: string;
+  bayName: string;
+}
+
 export interface Booking {
   id: string;
   org_id: string;
@@ -94,6 +101,8 @@ export interface Booking {
   confirmation_code: string;
   notes: string | null;
   created_at: string;
+  modified_from: string | null;
+  modified_from_info?: ModifiedFromInfo | null;
   // Joined fields
   bays?: Bay;
   organizations?: Organization;

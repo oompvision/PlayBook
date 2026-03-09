@@ -17,9 +17,10 @@ import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
+import { CancelBookingModal } from '../components/CancelBookingModal';
 import { formatPrice, formatTimeInZone, formatDateLong } from '../lib/format';
 import { colors, spacing, typography } from '../theme';
-import type { Booking, EventRegistration } from '../types';
+import type { Booking, EventRegistration, ModifiedFromInfo } from '../types';
 import type { MainTabParamList, ModifyBookingParams } from '../navigation/types';
 
 type FeedItem =
@@ -37,6 +38,7 @@ export function MyBookingsScreen() {
   const [hasPaymentMode, setHasPaymentMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [cancelModalBooking, setCancelModalBooking] = useState<Booking | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!user || !organization) return;
@@ -44,7 +46,7 @@ export function MyBookingsScreen() {
     const [bookingsResult, eventsResult, paymentSettingsResult] = await Promise.all([
       supabase
         .from('bookings')
-        .select('*, bays(*), organizations(*)')
+        .select('*, bays(*), organizations(*), modified_from')
         .eq('customer_id', user.id)
         .eq('org_id', organization.id)
         .order('date', { ascending: false })
@@ -83,7 +85,38 @@ export function MyBookingsScreen() {
         .single(),
     ]);
 
-    if (bookingsResult.data) setBookings(bookingsResult.data as Booking[]);
+    if (bookingsResult.data) {
+      // Enrich bookings with modified_from_info
+      const rawBookings = bookingsResult.data as Booking[];
+      const modifiedIds = rawBookings
+        .filter((b) => b.modified_from)
+        .map((b) => b.modified_from as string);
+
+      let modifiedFromMap: Record<string, ModifiedFromInfo> = {};
+      if (modifiedIds.length > 0) {
+        const { data: originals } = await supabase
+          .from('bookings')
+          .select('id, start_time, end_time, date, bay_id, bays(name)')
+          .in('id', modifiedIds);
+        if (originals) {
+          for (const orig of originals) {
+            modifiedFromMap[orig.id] = {
+              startTime: orig.start_time,
+              endTime: orig.end_time,
+              date: orig.date,
+              bayName: (orig as any).bays?.name ?? 'Unknown',
+            };
+          }
+        }
+      }
+
+      setBookings(
+        rawBookings.map((b) => ({
+          ...b,
+          modified_from_info: b.modified_from ? modifiedFromMap[b.modified_from] ?? null : null,
+        }))
+      );
+    }
     if (eventsResult.data) setEventRegistrations(eventsResult.data as unknown as EventRegistration[]);
 
     // Fetch booking_slots for confirmed upcoming bookings (needed for modify flow)
@@ -160,28 +193,13 @@ export function MyBookingsScreen() {
   };
 
   const handleCancelBooking = (booking: Booking) => {
-    Alert.alert(
-      'Cancel Booking',
-      `Cancel booking ${booking.confirmation_code}?`,
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            const { error } = await supabase.rpc('cancel_booking', {
-              p_booking_id: booking.id,
-            });
-            if (error) {
-              Alert.alert('Error', error.message);
-            } else {
-              Alert.alert('Cancelled', `Booking ${booking.confirmation_code} has been cancelled.`);
-              fetchData();
-            }
-          },
-        },
-      ]
-    );
+    setCancelModalBooking(booking);
+  };
+
+  const handleCancelComplete = () => {
+    setCancelModalBooking(null);
+    Alert.alert('Cancelled', `Booking ${cancelModalBooking?.confirmation_code} has been cancelled.`);
+    fetchData();
   };
 
   const handleCancelRegistration = (reg: EventRegistration) => {
@@ -294,6 +312,18 @@ export function MyBookingsScreen() {
             />
           </View>
 
+          {booking.modified_from_info && (
+            <Text style={styles.modifiedFrom}>
+              Modified from {formatTimeInZone(booking.modified_from_info.startTime, tz)} –{' '}
+              {formatTimeInZone(booking.modified_from_info.endTime, tz)},{' '}
+              {new Date(booking.modified_from_info.date + 'T12:00:00').toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+              })}
+              , {booking.modified_from_info.bayName}
+            </Text>
+          )}
+
           <Text style={styles.bookingDate}>{formatDateLong(booking.date)}</Text>
           <Text style={styles.bookingTime}>
             {formatTimeInZone(booking.start_time, tz)} – {formatTimeInZone(booking.end_time, tz)}
@@ -379,6 +409,15 @@ export function MyBookingsScreen() {
 
   return (
     <View style={styles.container}>
+      <CancelBookingModal
+        visible={!!cancelModalBooking}
+        booking={cancelModalBooking}
+        timezone={tz}
+        cancellationWindowHours={cancellationWindowHours}
+        hasPaymentMode={hasPaymentMode}
+        onClose={() => setCancelModalBooking(null)}
+        onCancelled={handleCancelComplete}
+      />
       <SectionList
         sections={sections}
         renderItem={renderItem}
@@ -475,6 +514,12 @@ const styles = StyleSheet.create({
   bookingActions: {
     flexDirection: 'row',
     gap: spacing.sm,
+  },
+  modifiedFrom: {
+    ...typography.caption,
+    color: '#2563eb',
+    marginTop: 2,
+    marginBottom: spacing.xs,
   },
   bookingNotes: {
     ...typography.caption,

@@ -50,7 +50,7 @@ export function MainTabs() {
       <Tab.Screen
         name="Book"
         component={BookingScreen}
-        options={{ title: 'Book' }}
+        options={{ title: 'Book', tabBarLabel: 'Book' }}
       />
       <Tab.Screen
         name="Bookings"
