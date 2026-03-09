@@ -99,6 +99,12 @@ export function BookingScreen({ route, navigation }: Props) {
   const [notes, setNotes] = useState(modifyBooking?.notes ?? '');
   const [showConfirm, setShowConfirm] = useState(false);
 
+  // Bottom sheet wizard steps: summary → processing → success
+  type BookingStep = 'summary' | 'processing' | 'success';
+  const [bookingStep, setBookingStep] = useState<BookingStep>('summary');
+  const [successCode, setSuccessCode] = useState<string | null>(null);
+  const [successOldCode, setSuccessOldCode] = useState<string | null>(null);
+
   // Payment info for modify mode
   const [modifyPaymentMode, setModifyPaymentMode] = useState<string>('none');
   const [modifyCardBrand, setModifyCardBrand] = useState<string | null>(null);
@@ -385,6 +391,7 @@ export function BookingScreen({ route, navigation }: Props) {
     if (!user || !organization || !selectedBay || selectedSlots.length === 0) return;
 
     setBooking(true);
+    setBookingStep('processing');
 
     // Collect payment first (skips if org has no Stripe or $0 total)
     const paymentResult = await collectPayment({
@@ -396,11 +403,13 @@ export function BookingScreen({ route, navigation }: Props) {
 
     if (paymentResult.cancelled) {
       setBooking(false);
+      setBookingStep('summary');
       return;
     }
 
     if (!paymentResult.success) {
       setBooking(false);
+      setBookingStep('summary');
       Alert.alert('Payment Failed', paymentResult.error || 'Unable to process payment.');
       return;
     }
@@ -418,6 +427,7 @@ export function BookingScreen({ route, navigation }: Props) {
 
     if (error) {
       setBooking(false);
+      setBookingStep('summary');
       Alert.alert('Booking Failed', error.message);
       return;
     }
@@ -445,6 +455,7 @@ export function BookingScreen({ route, navigation }: Props) {
     if (!user || !organization || !selectedOption || !selectedDynamicSlot) return;
 
     setBooking(true);
+    setBookingStep('processing');
 
     // Collect payment first (skips if org has no Stripe or $0 total)
     const paymentResult = await collectPayment({
@@ -456,11 +467,13 @@ export function BookingScreen({ route, navigation }: Props) {
 
     if (paymentResult.cancelled) {
       setBooking(false);
+      setBookingStep('summary');
       return;
     }
 
     if (!paymentResult.success) {
       setBooking(false);
+      setBookingStep('summary');
       Alert.alert('Payment Failed', paymentResult.error || 'Unable to process payment.');
       return;
     }
@@ -478,6 +491,7 @@ export function BookingScreen({ route, navigation }: Props) {
 
       if (!targetBayId) {
         setBooking(false);
+        setBookingStep('summary');
         Alert.alert('Booking Failed', 'No facility available for this time slot. Please try another time.');
         return;
       }
@@ -499,6 +513,7 @@ export function BookingScreen({ route, navigation }: Props) {
 
     if (error) {
       setBooking(false);
+      setBookingStep('summary');
       Alert.alert('Booking Failed', error.message);
       return;
     }
@@ -522,31 +537,19 @@ export function BookingScreen({ route, navigation }: Props) {
     showBookingSuccess((result as any)?.confirmation_code);
   };
 
-  const showBookingSuccess = (confirmationCode?: string) => {
-    const code = confirmationCode || 'Confirmed';
-    Alert.alert('Booking Confirmed!', `Your confirmation code is ${code}`, [
-      {
-        text: 'View My Bookings',
-        onPress: () => {
-          resetSelection();
-          (navigation as any).navigate('Bookings');
-        },
-      },
-      {
-        text: 'OK',
-        onPress: () => {
-          resetSelection();
-          if (isDynamic) fetchDynamicSlots();
-          else fetchSlotBasedSlots();
-        },
-      },
-    ]);
+  const showBookingSuccess = (confirmationCode?: string, oldCode?: string) => {
+    setSuccessCode(confirmationCode || 'Confirmed');
+    setSuccessOldCode(oldCode || null);
+    setBookingStep('success');
   };
 
   const resetSelection = () => {
     setSelectedSlotIds(new Set());
     setSelectedDynamicSlot(null);
     setShowConfirm(false);
+    setBookingStep('summary');
+    setSuccessCode(null);
+    setSuccessOldCode(null);
     setNotes('');
   };
 
@@ -582,6 +585,7 @@ export function BookingScreen({ route, navigation }: Props) {
   const handleSlotBasedModify = async () => {
     if (!user || !organization || !selectedBay || selectedSlots.length === 0 || !modifyBooking) return;
     setBooking(true);
+    setBookingStep('processing');
 
     const { data, error } = await supabase.rpc('modify_booking', {
       p_booking_id: modifyBooking.id,
@@ -593,6 +597,7 @@ export function BookingScreen({ route, navigation }: Props) {
 
     if (error) {
       setBooking(false);
+      setBookingStep('summary');
       Alert.alert('Modification Failed', error.message);
       return;
     }
@@ -606,28 +611,13 @@ export function BookingScreen({ route, navigation }: Props) {
     }
 
     setBooking(false);
-    const newCode = result?.confirmation_code || 'Confirmed';
-    const oldCode = modifyBooking.confirmationCode;
-    Alert.alert(
-      'Booking Modified!',
-      `Your new confirmation code is ${newCode} (was ${oldCode})`,
-      [
-        {
-          text: 'View My Bookings',
-          onPress: () => {
-            resetSelection();
-            // Clear modify params
-            navigation.setParams({ modifyBooking: undefined } as any);
-            (navigation as any).navigate('Bookings');
-          },
-        },
-      ]
-    );
+    showBookingSuccess(result?.confirmation_code, modifyBooking.confirmationCode);
   };
 
   const handleDynamicModify = async () => {
     if (!user || !organization || !selectedOption || !selectedDynamicSlot || !modifyBooking) return;
     setBooking(true);
+    setBookingStep('processing');
 
     let targetBayId: string | null = null;
     if (selectedOption.type === 'group') {
@@ -640,6 +630,7 @@ export function BookingScreen({ route, navigation }: Props) {
       });
       if (!targetBayId) {
         setBooking(false);
+        setBookingStep('summary');
         Alert.alert('Modification Failed', 'No facility available for this time slot.');
         return;
       }
@@ -660,6 +651,7 @@ export function BookingScreen({ route, navigation }: Props) {
 
     if (modifyError) {
       setBooking(false);
+      setBookingStep('summary');
       Alert.alert('Modification Failed', modifyError.message);
       return;
     }
@@ -672,22 +664,7 @@ export function BookingScreen({ route, navigation }: Props) {
     }
 
     setBooking(false);
-    const newCode = result?.confirmation_code || 'Confirmed';
-    const oldCode = modifyBooking.confirmationCode;
-    Alert.alert(
-      'Booking Modified!',
-      `Your new confirmation code is ${newCode} (was ${oldCode})`,
-      [
-        {
-          text: 'View My Bookings',
-          onPress: () => {
-            resetSelection();
-            navigation.setParams({ modifyBooking: undefined } as any);
-            (navigation as any).navigate('Bookings');
-          },
-        },
-      ]
-    );
+    showBookingSuccess(result?.confirmation_code, modifyBooking.confirmationCode);
   };
 
   const handleBook = isModifyMode
@@ -1055,176 +1032,298 @@ export function BookingScreen({ route, navigation }: Props) {
           </Card>
         )}
 
-        {/* Booking confirmation panel */}
-        {showConfirm && hasSelection && (
-          <View style={styles.confirmPanel}>
-            <Text style={styles.sectionTitle}>
-              {isModifyMode ? 'Modification Summary' : 'Booking Summary'}
+      </ScrollView>
+
+      {/* Booking confirmation bottom sheet */}
+      <Modal
+        visible={showConfirm && hasSelection}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => {
+          if (bookingStep === 'success') {
+            resetSelection();
+            if (isDynamic) fetchDynamicSlots();
+            else fetchSlotBasedSlots();
+          } else if (!booking && !paymentProcessing) {
+            setShowConfirm(false);
+            setBookingStep('summary');
+          }
+        }}
+      >
+        <View style={sheetStyles.container}>
+          {/* Header with close button */}
+          <View style={sheetStyles.header}>
+            <Text style={sheetStyles.headerTitle}>
+              {bookingStep === 'success'
+                ? (isModifyMode ? 'Booking Modified!' : 'Booking Confirmed!')
+                : (isModifyMode ? 'Modify Booking' : 'Confirm Booking')}
             </Text>
-            <Card>
-              <Text style={styles.summaryBay}>{summaryLabel}</Text>
-              <Text style={styles.summaryDate}>{formatDate(selectedDate)}</Text>
-              {isDynamic && selectedDynamicSlot ? (
-                <View style={styles.summarySlots}>
-                  <View style={styles.summarySlotRow}>
-                    <Text style={styles.summarySlotTime}>
-                      {formatTimeInZone(selectedDynamicSlot.start_time, organization.timezone)} –{' '}
-                      {formatTimeInZone(selectedDynamicSlot.end_time, organization.timezone)}
-                    </Text>
-                    <Text style={styles.summarySlotPrice}>
-                      {formatPrice(selectedDynamicSlot.price_cents)}
-                    </Text>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.summarySlots}>
-                  {selectedSlots.map((slot) => (
-                    <View key={slot.id} style={styles.summarySlotRow}>
-                      <Text style={styles.summarySlotTime}>
-                        {formatTimeInZone(slot.start_time, organization.timezone)} –{' '}
-                        {formatTimeInZone(slot.end_time, organization.timezone)}
-                      </Text>
-                      <Text style={styles.summarySlotPrice}>
-                        {formatPrice(slot.price_cents)}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-              <View style={styles.summaryTotal}>
-                <Text style={styles.totalLabel}>Total</Text>
-                <Text style={styles.totalPrice}>{formatPrice(totalCents)}</Text>
-              </View>
-              {isModifyMode && modifyBooking && (() => {
-                const diff = totalCents - modifyBooking.totalPriceCents;
-                const absDiff = Math.abs(diff);
-                const cardLabel = modifyCardBrand && modifyCardLast4
-                  ? `${modifyCardBrand.charAt(0).toUpperCase() + modifyCardBrand.slice(1)} •••• ${modifyCardLast4}`
-                  : 'your card on file';
-                const hasPayment = modifyPaymentMode !== 'none';
-
-                if (diff > 0 && hasPayment) {
-                  return (
-                    <View style={[styles.priceDiff, { backgroundColor: '#fffbeb', borderColor: '#fde68a', borderWidth: 1, borderRadius: borderRadius.md, padding: spacing.sm, marginTop: spacing.sm }]}>
-                      <Text style={[styles.priceDiffLabel, { color: '#b45309', flex: 1 }]}>
-                        {modifyPaymentMode === 'charge_upfront'
-                          ? `${cardLabel} will be charged`
-                          : 'Price increase — no charge now'}
-                      </Text>
-                      <Text style={[styles.priceDiffAmount, { color: '#b45309' }]}>
-                        +{formatPrice(absDiff)}
-                      </Text>
-                    </View>
-                  );
-                } else if (diff < 0 && hasPayment) {
-                  return (
-                    <View style={[styles.priceDiff, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', borderWidth: 1, borderRadius: borderRadius.md, padding: spacing.sm, marginTop: spacing.sm }]}>
-                      <Text style={[styles.priceDiffLabel, { color: '#15803d', flex: 1 }]}>
-                        {modifyPaymentMode === 'charge_upfront'
-                          ? `Refund to ${cardLabel}`
-                          : 'Price decrease — no refund needed'}
-                      </Text>
-                      <Text style={[styles.priceDiffAmount, { color: '#15803d' }]}>
-                        -{formatPrice(absDiff)}
-                      </Text>
-                    </View>
-                  );
-                } else if (diff === 0 && hasPayment) {
-                  return (
-                    <View style={[styles.priceDiff, { backgroundColor: colors.muted, borderRadius: borderRadius.md, padding: spacing.sm, marginTop: spacing.sm }]}>
-                      <Text style={[styles.priceDiffLabel, { color: colors.mutedForeground }]}>
-                        No price change — no additional charge or refund
-                      </Text>
-                    </View>
-                  );
-                } else if (diff !== 0) {
-                  return (
-                    <View style={styles.priceDiff}>
-                      <Text style={styles.priceDiffLabel}>
-                        {diff > 0 ? 'Price increase' : 'Price decrease'}
-                      </Text>
-                      <Text style={[
-                        styles.priceDiffAmount,
-                        { color: diff > 0 ? colors.destructive : '#16a34a' },
-                      ]}>
-                        {diff > 0 ? '+' : '-'}{formatPrice(absDiff)}
-                      </Text>
-                    </View>
-                  );
-                }
-                return null;
-              })()}
-            </Card>
-
-            <Input
-              label="Notes (optional)"
-              placeholder="Any special requests?"
-              value={notes}
-              onChangeText={setNotes}
-              multiline
-              numberOfLines={2}
-            />
-
-            {/* Within cancellation window warning */}
-            {isWithinCancellationWindow && (
-              <View style={styles.windowWarningBanner}>
-                <Text style={styles.windowWarningText}>
-                  ⚠ Booking is less than {cancellationWindowHours}h away and cannot be refunded or modified.
-                </Text>
-              </View>
-            )}
-
-            {/* Terms + cancellation policy agreement */}
-            {orgPaymentMode !== 'none' && (
-              <Text style={styles.policyAgreementText}>
-                By booking you agree to the terms and{' '}
-                {cancellationPolicyText ? (
-                  <Text
-                    style={styles.policyAgreementLink}
-                    onPress={() => setShowPolicyModal(true)}
-                  >
-                    cancellation policy
-                  </Text>
-                ) : (
-                  'cancellation policy'
-                )}
-              </Text>
-            )}
-
-            <Button
-              title={isModifyMode ? 'Confirm Modification' : 'Confirm Booking'}
-              onPress={handleBook}
-              loading={booking || paymentProcessing}
-              size="lg"
-            />
-
-            {/* Cancellation policy modal */}
-            {cancellationPolicyText && (
-              <Modal
-                visible={showPolicyModal}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setShowPolicyModal(false)}
+            {bookingStep !== 'processing' && (
+              <TouchableOpacity
+                onPress={() => {
+                  if (bookingStep === 'success') {
+                    resetSelection();
+                    if (isDynamic) fetchDynamicSlots();
+                    else fetchSlotBasedSlots();
+                  } else {
+                    setShowConfirm(false);
+                    setBookingStep('summary');
+                  }
+                }}
               >
-                <View style={styles.policyModalOverlay}>
-                  <View style={styles.policyModalContent}>
-                    <Text style={styles.policyModalTitle}>Cancellation Policy</Text>
-                    <View style={styles.policyModalBox}>
-                      <Text style={styles.policyModalText}>{cancellationPolicyText}</Text>
-                    </View>
-                    <TouchableOpacity
-                      style={styles.policyModalClose}
-                      onPress={() => setShowPolicyModal(false)}
-                    >
-                      <Text style={styles.policyModalCloseText}>Close</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </Modal>
+                <Text style={sheetStyles.headerClose}>✕</Text>
+              </TouchableOpacity>
             )}
           </View>
-        )}
-      </ScrollView>
+
+          {/* Step dots */}
+          <View style={sheetStyles.dotsRow}>
+            {(['summary', 'processing', 'success'] as BookingStep[]).map((step, i) => (
+              <View
+                key={step}
+                style={[
+                  sheetStyles.dot,
+                  (step === bookingStep ||
+                    (step === 'summary' && bookingStep !== 'summary') ||
+                    (step === 'processing' && bookingStep === 'success'))
+                    ? sheetStyles.dotActive
+                    : sheetStyles.dotInactive,
+                ]}
+              />
+            ))}
+          </View>
+
+          {/* Step: Summary */}
+          {bookingStep === 'summary' && (
+            <>
+              <ScrollView contentContainerStyle={sheetStyles.content}>
+                <Card>
+                  <Text style={styles.summaryBay}>{summaryLabel}</Text>
+                  <Text style={styles.summaryDate}>{formatDate(selectedDate)}</Text>
+                  {isDynamic && selectedDynamicSlot ? (
+                    <View style={styles.summarySlots}>
+                      <View style={styles.summarySlotRow}>
+                        <Text style={styles.summarySlotTime}>
+                          {formatTimeInZone(selectedDynamicSlot.start_time, organization.timezone)} –{' '}
+                          {formatTimeInZone(selectedDynamicSlot.end_time, organization.timezone)}
+                        </Text>
+                        <Text style={styles.summarySlotPrice}>
+                          {formatPrice(selectedDynamicSlot.price_cents)}
+                        </Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.summarySlots}>
+                      {selectedSlots.map((slot) => (
+                        <View key={slot.id} style={styles.summarySlotRow}>
+                          <Text style={styles.summarySlotTime}>
+                            {formatTimeInZone(slot.start_time, organization.timezone)} –{' '}
+                            {formatTimeInZone(slot.end_time, organization.timezone)}
+                          </Text>
+                          <Text style={styles.summarySlotPrice}>
+                            {formatPrice(slot.price_cents)}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                  <View style={styles.summaryTotal}>
+                    <Text style={styles.totalLabel}>Total</Text>
+                    <Text style={styles.totalPrice}>{formatPrice(totalCents)}</Text>
+                  </View>
+                  {isModifyMode && modifyBooking && (() => {
+                    const diff = totalCents - modifyBooking.totalPriceCents;
+                    const absDiff = Math.abs(diff);
+                    const cardLabel = modifyCardBrand && modifyCardLast4
+                      ? `${modifyCardBrand.charAt(0).toUpperCase() + modifyCardBrand.slice(1)} •••• ${modifyCardLast4}`
+                      : 'your card on file';
+                    const hasPayment = modifyPaymentMode !== 'none';
+
+                    if (diff > 0 && hasPayment) {
+                      return (
+                        <View style={[styles.priceDiff, { backgroundColor: '#fffbeb', borderColor: '#fde68a', borderWidth: 1, borderRadius: borderRadius.md, padding: spacing.sm, marginTop: spacing.sm }]}>
+                          <Text style={[styles.priceDiffLabel, { color: '#b45309', flex: 1 }]}>
+                            {modifyPaymentMode === 'charge_upfront'
+                              ? `${cardLabel} will be charged`
+                              : 'Price increase — no charge now'}
+                          </Text>
+                          <Text style={[styles.priceDiffAmount, { color: '#b45309' }]}>
+                            +{formatPrice(absDiff)}
+                          </Text>
+                        </View>
+                      );
+                    } else if (diff < 0 && hasPayment) {
+                      return (
+                        <View style={[styles.priceDiff, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', borderWidth: 1, borderRadius: borderRadius.md, padding: spacing.sm, marginTop: spacing.sm }]}>
+                          <Text style={[styles.priceDiffLabel, { color: '#15803d', flex: 1 }]}>
+                            {modifyPaymentMode === 'charge_upfront'
+                              ? `Refund to ${cardLabel}`
+                              : 'Price decrease — no refund needed'}
+                          </Text>
+                          <Text style={[styles.priceDiffAmount, { color: '#15803d' }]}>
+                            -{formatPrice(absDiff)}
+                          </Text>
+                        </View>
+                      );
+                    } else if (diff === 0 && hasPayment) {
+                      return (
+                        <View style={[styles.priceDiff, { backgroundColor: colors.muted, borderRadius: borderRadius.md, padding: spacing.sm, marginTop: spacing.sm }]}>
+                          <Text style={[styles.priceDiffLabel, { color: colors.mutedForeground }]}>
+                            No price change — no additional charge or refund
+                          </Text>
+                        </View>
+                      );
+                    } else if (diff !== 0) {
+                      return (
+                        <View style={styles.priceDiff}>
+                          <Text style={styles.priceDiffLabel}>
+                            {diff > 0 ? 'Price increase' : 'Price decrease'}
+                          </Text>
+                          <Text style={[
+                            styles.priceDiffAmount,
+                            { color: diff > 0 ? colors.destructive : '#16a34a' },
+                          ]}>
+                            {diff > 0 ? '+' : '-'}{formatPrice(absDiff)}
+                          </Text>
+                        </View>
+                      );
+                    }
+                    return null;
+                  })()}
+                </Card>
+
+                <Input
+                  label="Notes (optional)"
+                  placeholder="Any special requests?"
+                  value={notes}
+                  onChangeText={setNotes}
+                  multiline
+                  numberOfLines={2}
+                />
+
+                {/* Within cancellation window warning */}
+                {isWithinCancellationWindow && (
+                  <View style={styles.windowWarningBanner}>
+                    <Text style={styles.windowWarningText}>
+                      ⚠ Booking is less than {cancellationWindowHours}h away and cannot be refunded or modified.
+                    </Text>
+                  </View>
+                )}
+
+                {/* Terms + cancellation policy agreement */}
+                {orgPaymentMode !== 'none' && (
+                  <Text style={styles.policyAgreementText}>
+                    By booking you agree to the terms and{' '}
+                    {cancellationPolicyText ? (
+                      <Text
+                        style={styles.policyAgreementLink}
+                        onPress={() => setShowPolicyModal(true)}
+                      >
+                        cancellation policy
+                      </Text>
+                    ) : (
+                      'cancellation policy'
+                    )}
+                  </Text>
+                )}
+              </ScrollView>
+
+              <View style={sheetStyles.footer}>
+                <Button
+                  title={isModifyMode ? 'Confirm Modification' : 'Confirm Booking'}
+                  onPress={handleBook}
+                  loading={booking || paymentProcessing}
+                  size="lg"
+                />
+              </View>
+
+              {/* Cancellation policy modal */}
+              {cancellationPolicyText && (
+                <Modal
+                  visible={showPolicyModal}
+                  transparent
+                  animationType="fade"
+                  onRequestClose={() => setShowPolicyModal(false)}
+                >
+                  <View style={styles.policyModalOverlay}>
+                    <View style={styles.policyModalContent}>
+                      <Text style={styles.policyModalTitle}>Cancellation Policy</Text>
+                      <View style={styles.policyModalBox}>
+                        <Text style={styles.policyModalText}>{cancellationPolicyText}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.policyModalClose}
+                        onPress={() => setShowPolicyModal(false)}
+                      >
+                        <Text style={styles.policyModalCloseText}>Close</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </Modal>
+              )}
+            </>
+          )}
+
+          {/* Step: Processing */}
+          {bookingStep === 'processing' && (
+            <View style={sheetStyles.processingContainer}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={sheetStyles.processingText}>
+                {isModifyMode ? 'Modifying your booking...' : 'Processing your booking...'}
+              </Text>
+            </View>
+          )}
+
+          {/* Step: Success */}
+          {bookingStep === 'success' && (
+            <>
+              <View style={sheetStyles.successContainer}>
+                <View style={sheetStyles.successIcon}>
+                  <Text style={sheetStyles.successIconText}>✓</Text>
+                </View>
+                <Text style={sheetStyles.successTitle}>
+                  {isModifyMode ? 'Booking Modified!' : 'You\'re booked!'}
+                </Text>
+                <Text style={sheetStyles.successCode}>{successCode}</Text>
+                {successOldCode && (
+                  <Text style={sheetStyles.successOldCode}>
+                    Previous: {successOldCode}
+                  </Text>
+                )}
+                <Text style={sheetStyles.successHint}>
+                  Save your confirmation code for reference.
+                </Text>
+              </View>
+              <View style={sheetStyles.footer}>
+                <Button
+                  title="View My Bookings"
+                  onPress={() => {
+                    resetSelection();
+                    if (isModifyMode) {
+                      navigation.setParams({ modifyBooking: undefined } as any);
+                    }
+                    (navigation as any).navigate('Bookings');
+                  }}
+                  size="lg"
+                />
+                <TouchableOpacity
+                  style={sheetStyles.secondaryButton}
+                  onPress={() => {
+                    resetSelection();
+                    if (isModifyMode) {
+                      navigation.setParams({ modifyBooking: undefined } as any);
+                    }
+                    if (isDynamic) fetchDynamicSlots();
+                    else fetchSlotBasedSlots();
+                  }}
+                >
+                  <Text style={sheetStyles.secondaryButtonText}>Book Another</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </View>
+      </Modal>
 
       {/* Event Detail Modal */}
       <Modal
@@ -1452,7 +1551,7 @@ export function BookingScreen({ route, navigation }: Props) {
           {user ? (
             <Button
               title={isModifyMode ? 'Continue to Modify' : 'Continue to Book'}
-              onPress={() => setShowConfirm(true)}
+              onPress={() => { setBookingStep('summary'); setShowConfirm(true); }}
             />
           ) : (
             <Button
@@ -1932,5 +2031,126 @@ const eventStyles = StyleSheet.create({
     paddingBottom: Platform.OS === 'ios' ? spacing['3xl'] : spacing.lg,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+  },
+});
+
+const sheetStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingTop: Platform.OS === 'ios' ? spacing.xl : spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  headerTitle: {
+    ...typography.h2,
+    color: colors.foreground,
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  headerClose: {
+    fontSize: 20,
+    color: colors.mutedForeground,
+    padding: spacing.sm,
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  dotActive: {
+    backgroundColor: colors.primary,
+  },
+  dotInactive: {
+    backgroundColor: colors.border,
+  },
+  content: {
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  footer: {
+    padding: spacing.lg,
+    paddingBottom: Platform.OS === 'ios' ? spacing['3xl'] : spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: spacing.md,
+  },
+  processingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.lg,
+  },
+  processingText: {
+    ...typography.body,
+    color: colors.mutedForeground,
+  },
+  successContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+    gap: spacing.md,
+  },
+  successIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#f0fdf4',
+    borderWidth: 2,
+    borderColor: '#22c55e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  successIconText: {
+    fontSize: 28,
+    color: '#22c55e',
+    fontWeight: '700',
+  },
+  successTitle: {
+    ...typography.h2,
+    color: colors.foreground,
+    textAlign: 'center',
+  },
+  successCode: {
+    ...typography.h1,
+    color: colors.foreground,
+    fontFamily: 'monospace',
+    letterSpacing: 2,
+    textAlign: 'center',
+  },
+  successOldCode: {
+    ...typography.bodySmall,
+    color: colors.mutedForeground,
+    textAlign: 'center',
+  },
+  successHint: {
+    ...typography.bodySmall,
+    color: colors.mutedForeground,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  secondaryButtonText: {
+    ...typography.label,
+    color: colors.mutedForeground,
   },
 });

@@ -8,7 +8,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useFacility } from '../lib/facility-context';
 import { useAuth } from '../lib/auth-context';
@@ -154,6 +154,13 @@ export function MyBookingsScreen() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Auto-refresh when screen gains focus (e.g. returning from Booking tab)
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [fetchData])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);

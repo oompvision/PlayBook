@@ -143,6 +143,15 @@ export function usePayment() {
         defaultBillingDetails: {},
         allowsDelayedPaymentMethods: false,
         returnURL: 'ezbooker://stripe-redirect',
+        // Enable Apple Pay
+        applePay: {
+          merchantCountryCode: 'US',
+        },
+        // Enable Google Pay
+        googlePay: {
+          merchantCountryCode: 'US',
+          testEnv: __DEV__,
+        },
       });
 
       if (initError) {
