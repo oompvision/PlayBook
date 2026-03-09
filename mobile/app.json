@@ -29,13 +29,6 @@
     },
     "plugins": [
       [
-        "expo-notifications",
-        {
-          "icon": "./assets/notification-icon.png",
-          "color": "#1a1a1a"
-        }
-      ],
-      [
         "@stripe/stripe-react-native",
         {
           "enableGooglePay": true
