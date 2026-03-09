@@ -123,9 +123,34 @@ export async function POST(request: NextRequest) {
       settings.cancellation_policy_text ||
       buildCancellationPolicyText(settings);
 
-    // 6. Create intent based on payment mode
+    // 6. Create a Customer Session so PaymentElement shows saved cards
     const stripeAccountId = settings.stripe_account_id;
 
+    let customerSessionClientSecret: string | undefined;
+    try {
+      const customerSession = await stripe.customerSessions.create(
+        {
+          customer: stripeCustomerId,
+          components: {
+            payment_element: {
+              enabled: true,
+              features: {
+                payment_method_save: "enabled",
+                payment_method_redisplay: "enabled",
+                payment_method_redisplay_limit: 3,
+              },
+            },
+          },
+        },
+        { stripeAccount: stripeAccountId }
+      );
+      customerSessionClientSecret = customerSession.client_secret;
+    } catch (csErr) {
+      // Non-fatal — fall back to no saved cards
+      console.warn("[create-checkout-intent-dynamic] CustomerSession creation failed:", csErr);
+    }
+
+    // 7. Create intent based on payment mode
     if (settings.payment_mode === "charge_upfront") {
       const platformFeePercent = Number(settings.platform_fee_percent) || 0;
       const applicationFeeAmount =
@@ -138,7 +163,8 @@ export async function POST(request: NextRequest) {
           amount: price_cents,
           currency: "usd",
           customer: stripeCustomerId,
-          payment_method_types: ['card'],
+          automatic_payment_methods: { enabled: true },
+          setup_future_usage: "off_session",
           ...(applicationFeeAmount
             ? { application_fee_amount: applicationFeeAmount }
             : {}),
@@ -164,13 +190,16 @@ export async function POST(request: NextRequest) {
         stripe_account_id: stripeAccountId,
         amount_cents: price_cents,
         cancellation_policy_text: cancellationPolicyText,
+        ...(customerSessionClientSecret
+          ? { customer_session_client_secret: customerSessionClientSecret }
+          : {}),
       });
     } else {
       // hold or hold_charge_manual → SetupIntent
       const setupIntent = await stripe.setupIntents.create(
         {
           customer: stripeCustomerId,
-          payment_method_types: ['card'],
+          automatic_payment_methods: { enabled: true },
           metadata: {
             org_id: org.id,
             profile_id: auth.profile.id,
@@ -191,6 +220,9 @@ export async function POST(request: NextRequest) {
         stripe_account_id: stripeAccountId,
         amount_cents: price_cents,
         cancellation_policy_text: cancellationPolicyText,
+        ...(customerSessionClientSecret
+          ? { customer_session_client_secret: customerSessionClientSecret }
+          : {}),
       });
     }
   } catch (err: unknown) {

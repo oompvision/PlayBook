@@ -365,6 +365,7 @@ export function AvailabilityWidget({
     stripe_account_id: string;
     amount_cents: number;
     cancellation_policy_text: string;
+    customer_session_client_secret?: string;
   } | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
@@ -2855,6 +2856,7 @@ export function AvailabilityWidget({
                               <StripeCheckoutWrapper
                                 stripeAccountId={checkoutIntent.stripe_account_id}
                                 clientSecret={checkoutIntent.client_secret}
+                                customerSessionClientSecret={checkoutIntent.customer_session_client_secret}
                               >
                                 <CheckoutForm
                                   ref={checkoutFormRef}
