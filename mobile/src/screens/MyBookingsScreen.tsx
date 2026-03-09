@@ -339,7 +339,16 @@ export function MyBookingsScreen() {
           {booking.bays && <Text style={styles.bookingBay}>{booking.bays.name}</Text>}
 
           <View style={styles.bookingFooter}>
-            <Text style={styles.bookingPrice}>{formatPrice(booking.total_price_cents)}</Text>
+            <View>
+              {(booking.discount_cents > 0) && (
+                <Text style={styles.discountNote}>
+                  {booking.discount_description || 'Member discount'}: -{formatPrice(booking.discount_cents)}
+                </Text>
+              )}
+              <Text style={styles.bookingPrice}>
+                {formatPrice(booking.total_price_cents - (booking.discount_cents || 0))}
+              </Text>
+            </View>
             {isUpcoming && (
               <View style={styles.bookingActions}>
                 {canModifyBooking(booking) && (
@@ -517,6 +526,11 @@ const styles = StyleSheet.create({
   bookingPrice: {
     ...typography.h3,
     color: colors.foreground,
+  },
+  discountNote: {
+    ...typography.caption,
+    color: '#0d9488',
+    marginBottom: 2,
   },
   bookingActions: {
     flexDirection: 'row',
