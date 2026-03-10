@@ -10,10 +10,8 @@ import {
 } from "@/components/checkout-form";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Toast } from "@/components/ui/toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -30,7 +28,6 @@ import {
 import { LocationSwitcher } from "@/components/location-switcher";
 import { EventRegistrationPanel, type EventForPanel } from "@/components/events/event-registration-panel";
 import {
-  CalendarIcon,
   CalendarCheck,
   CalendarDays,
   Clock,
@@ -367,8 +364,9 @@ export function DynamicAvailabilityWidget(
   // Toast
   const [toast, setToast] = useState<ToastData | null>(null);
 
-  // Calendar popover
-  const [calendarOpen, setCalendarOpen] = useState(false);
+  // Date chips pagination
+  const [datePageStart, setDatePageStart] = useState(0);
+  const DATES_PER_PAGE = 7;
 
   // Events for the selected date/facility
   const [dayEvents, setDayEvents] = useState<DayEvent[]>([]);
@@ -386,6 +384,19 @@ export function DynamicAvailabilityWidget(
 
   // Max date
   const maxDate = addDays(todayStr, bookableWindowDays);
+
+  // Generate all bookable dates
+  const bookableDates: string[] = [];
+  {
+    let cursor = todayStr;
+    while (cursor <= maxDate) {
+      bookableDates.push(cursor);
+      cursor = addDays(cursor, 1);
+    }
+  }
+  const visibleDates = bookableDates.slice(datePageStart, datePageStart + DATES_PER_PAGE);
+  const canPageBack = datePageStart > 0;
+  const canPageForward = datePageStart + DATES_PER_PAGE < bookableDates.length;
 
   // Check if booking is within cancellation window
   const isWithinCancellationWindow = selectedSlot
@@ -1086,20 +1097,6 @@ export function DynamicAvailabilityWidget(
     processChatBookingAction(pendingBookingAction.current);
   }, [loadingSlots, availableSlots]);
 
-  // ─── Date navigation ───────────────────────────────────
-
-  function goToPrevDay() {
-    if (selectedDate > todayStr) {
-      setSelectedDate(addDays(selectedDate, -1));
-    }
-  }
-
-  function goToNextDay() {
-    if (selectedDate < maxDate) {
-      setSelectedDate(addDays(selectedDate, 1));
-    }
-  }
-
   // ─── Render ─────────────────────────────────────────────
 
   const selectedOption = selectedGroupId
@@ -1240,7 +1237,58 @@ export function DynamicAvailabilityWidget(
           />
         </div>
       )}
-      {/* Step 1: Facility/Group Picker (if needed) */}
+      {/* Select Date */}
+      <div className="rounded-xl border bg-card p-4">
+        <p className="mb-3 text-sm font-medium text-foreground">Select Date</p>
+        <div className="flex items-center gap-1.5">
+          {canPageBack && (
+            <button
+              onClick={() => setDatePageStart(Math.max(0, datePageStart - DATES_PER_PAGE))}
+              className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          )}
+          <div className="flex flex-1 gap-1.5">
+            {visibleDates.map((date) => {
+              const d = new Date(date + "T12:00:00");
+              const isSelected = date === selectedDate;
+              const isToday = date === todayStr;
+              return (
+                <button
+                  key={date}
+                  onClick={() => setSelectedDate(date)}
+                  className={`flex flex-1 flex-col items-center rounded-lg border py-2 text-center transition-colors ${
+                    isSelected
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border hover:border-primary/50 hover:bg-accent"
+                  }`}
+                >
+                  <span className={`text-[11px] font-medium ${isSelected ? "text-primary-foreground" : "text-muted-foreground"}`}>
+                    {d.toLocaleDateString("en-US", { weekday: "short" })}
+                  </span>
+                  <span className={`text-lg font-semibold leading-tight ${isSelected ? "text-primary-foreground" : "text-foreground"}`}>
+                    {d.getDate()}
+                  </span>
+                  {isToday && !isSelected && (
+                    <span className="mt-0.5 h-1 w-1 rounded-full bg-primary" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {canPageForward && (
+            <button
+              onClick={() => setDatePageStart(datePageStart + DATES_PER_PAGE)}
+              className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Select Facility (if needed) */}
       {hasMultipleOptions && (
         <div className="rounded-xl border bg-card p-4">
           <p className="mb-3 text-sm font-medium text-foreground">
@@ -1288,83 +1336,28 @@ export function DynamicAvailabilityWidget(
         </div>
       )}
 
-      {/* Step 2: Date + Duration */}
-      <div className="rounded-xl border bg-card p-4 space-y-4">
-        {/* Date picker row */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={goToPrevDay}
-            disabled={selectedDate <= todayStr}
-            className="rounded-lg border p-2 text-muted-foreground transition-colors hover:bg-accent disabled:opacity-30"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-
-          <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-            <PopoverTrigger asChild>
-              <button className="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:bg-accent">
-                <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                {formatDateLabel(selectedDate)}
-                {selectedDate === todayStr && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                    Today
-                  </span>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="center">
-              <Calendar
-                mode="single"
-                selected={new Date(selectedDate + "T12:00:00")}
-                onSelect={(date) => {
-                  if (date) {
-                    const y = date.getFullYear();
-                    const m = String(date.getMonth() + 1).padStart(2, "0");
-                    const d = String(date.getDate()).padStart(2, "0");
-                    setSelectedDate(`${y}-${m}-${d}`);
-                    setCalendarOpen(false);
-                  }
-                }}
-                disabled={(date) => {
-                  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-                  return dateStr < todayStr || dateStr > maxDate;
-                }}
-              />
-            </PopoverContent>
-          </Popover>
-
-          <button
-            onClick={goToNextDay}
-            disabled={selectedDate >= maxDate}
-            className="rounded-lg border p-2 text-muted-foreground transition-colors hover:bg-accent disabled:opacity-30"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Duration chips */}
-        <div>
-          <p className="mb-2 text-sm font-medium text-foreground">
-            Play for {formatDuration(selectedDuration)}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {durations.map((dur) => (
-              <button
-                key={dur}
-                onClick={() => {
-                  setSelectedDuration(dur);
-                  setSelectedSlot(null);
-                }}
-                className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${
-                  selectedDuration === dur
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border hover:border-primary/50 hover:bg-accent"
-                }`}
-              >
-                {formatDuration(dur)}
-              </button>
-            ))}
-          </div>
+      {/* Play for [duration] */}
+      <div className="rounded-xl border bg-card p-4">
+        <p className="mb-2 text-sm font-medium text-foreground">
+          Play for {formatDuration(selectedDuration)}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {durations.map((dur) => (
+            <button
+              key={dur}
+              onClick={() => {
+                setSelectedDuration(dur);
+                setSelectedSlot(null);
+              }}
+              className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${
+                selectedDuration === dur
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border hover:border-primary/50 hover:bg-accent"
+              }`}
+            >
+              {formatDuration(dur)}
+            </button>
+          ))}
         </div>
       </div>
 
