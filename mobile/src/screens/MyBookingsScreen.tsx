@@ -279,13 +279,21 @@ export function MyBookingsScreen() {
   const todayStr = now.toISOString().slice(0, 10);
   const tz = organization?.timezone || 'America/New_York';
 
-  // Build unified feed items
+  // Build unified feed items — use time-based status (matching web behavior)
   const upcomingBookingItems: FeedItem[] = bookings
-    .filter((b) => b.status === 'confirmed' && b.date >= todayStr)
+    .filter((b) => {
+      if (b.status === 'cancelled') return false;
+      // "upcoming" means confirmed and end_time hasn't passed yet (active or future)
+      return new Date(b.end_time).getTime() > now.getTime();
+    })
     .map((b) => ({ kind: 'booking' as const, sortDate: b.start_time, booking: b }));
 
   const pastBookingItems: FeedItem[] = bookings
-    .filter((b) => b.status !== 'confirmed' || b.date < todayStr)
+    .filter((b) => {
+      if (b.status === 'cancelled') return true;
+      // "past" means confirmed but end_time has passed
+      return new Date(b.end_time).getTime() <= now.getTime();
+    })
     .map((b) => ({ kind: 'booking' as const, sortDate: b.start_time, booking: b }));
 
   const upcomingEventItems: FeedItem[] = eventRegistrations
@@ -368,10 +376,26 @@ export function MyBookingsScreen() {
           <Card style={[styles.bookingCard, !isUpcoming && styles.pastCard]}>
             <View style={styles.bookingHeader}>
               <Text style={styles.confirmationCode}>{booking.confirmation_code}</Text>
-              <Badge
-                label={booking.status === 'confirmed' ? 'Confirmed' : 'Cancelled'}
-                variant={booking.status === 'confirmed' ? 'success' : 'destructive'}
-              />
+              {(() => {
+                if (booking.status === 'cancelled') {
+                  return <Badge label="Cancelled" variant="destructive" />;
+                }
+                const nowMs = Date.now();
+                const startMs = new Date(booking.start_time).getTime();
+                const endMs = new Date(booking.end_time).getTime();
+                if (nowMs >= startMs && nowMs < endMs) {
+                  return (
+                    <View style={styles.activeBadge}>
+                      <View style={styles.activeDot} />
+                      <Text style={styles.activeBadgeText}>Active</Text>
+                    </View>
+                  );
+                }
+                if (nowMs >= endMs) {
+                  return <Badge label="Completed" variant="muted" />;
+                }
+                return <Badge label="Confirmed" variant="success" />;
+              })()}
             </View>
 
             <Text style={styles.bookingDate}>{formatDateLong(booking.date)}</Text>
@@ -495,6 +519,26 @@ const styles = StyleSheet.create({
   },
   pastCard: {
     opacity: 0.6,
+  },
+  activeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#16a34a',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 999,
+    gap: 4,
+  },
+  activeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#ffffff',
+  },
+  activeBadgeText: {
+    ...typography.caption,
+    fontWeight: '600',
+    color: '#ffffff',
   },
   bookingHeader: {
     flexDirection: 'row',
