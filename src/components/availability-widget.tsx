@@ -1015,7 +1015,7 @@ export function AvailabilityWidget({
       password: signUpPassword,
       options: {
         emailRedirectTo: `${window.location.origin}/auth/callback`,
-        data: { full_name: signUpName, phone: signUpPhone || undefined },
+        data: { full_name: signUpName, phone: signUpPhone || undefined, facility_slug: facilitySlug || undefined },
       },
     });
 

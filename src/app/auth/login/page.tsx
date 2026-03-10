@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { getClientFacilitySlug } from "@/lib/facility-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,11 +75,16 @@ function LoginForm() {
     setMessage("");
 
     const supabase = createClient();
+    const slug = getClientFacilitySlug();
+    const callbackUrl = new URL(`${window.location.origin}/auth/callback`);
+    callbackUrl.searchParams.set("next", redirectTo);
+    if (slug) callbackUrl.searchParams.set("facility_slug", slug);
+
     const { error: otpError } = await supabase.auth.signInWithOtp({
       email,
       options: {
         shouldCreateUser: false,
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTo)}`,
+        emailRedirectTo: callbackUrl.toString(),
       },
     });
 
@@ -99,10 +105,15 @@ function LoginForm() {
     setMessage("");
 
     const supabase = createClient();
+    const resetSlug = getClientFacilitySlug();
+    const resetUrl = new URL(`${window.location.origin}/auth/callback`);
+    resetUrl.searchParams.set("next", "/auth/reset-password");
+    if (resetSlug) resetUrl.searchParams.set("facility_slug", resetSlug);
+
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(
       email,
       {
-        redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset-password`,
+        redirectTo: resetUrl.toString(),
       }
     );
 

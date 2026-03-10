@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { getClientFacilitySlug } from "@/lib/facility-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +41,7 @@ export default function SignUpPage() {
         data: {
           full_name: fullName,
           phone: phone || undefined,
+          facility_slug: getClientFacilitySlug() || undefined,
         },
       },
     });
