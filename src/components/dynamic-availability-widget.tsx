@@ -1120,10 +1120,30 @@ export function DynamicAvailabilityWidget(
     ? ["Booking Details", "Payment Method", "Confirm Booking"]
     : ["Booking Details", "Confirm Booking"];
 
+  // Track sidebar left position for fixed positioning
+  const sidebarSpacerRef = useRef<HTMLDivElement>(null);
+  const [sidebarLeft, setSidebarLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    function updateLeft() {
+      if (sidebarSpacerRef.current) {
+        setSidebarLeft(sidebarSpacerRef.current.getBoundingClientRect().left);
+      }
+    }
+    updateLeft();
+    window.addEventListener("resize", updateLeft);
+    return () => window.removeEventListener("resize", updateLeft);
+  }, []);
+
   return (
     <div className="flex items-start gap-6">
       {/* ===== Sidebar — Confirmed Bookings + Chat Assistant (desktop only) ===== */}
-      <div className="sticky top-[4.5rem] hidden w-72 shrink-0 flex-col rounded-xl border bg-card shadow-sm lg:flex h-[calc(100vh-5.5rem)]">
+      {/* Spacer to reserve layout width */}
+      <div ref={sidebarSpacerRef} className="hidden w-72 shrink-0 lg:block" />
+      <div
+        style={sidebarLeft != null ? { left: sidebarLeft } : undefined}
+        className="fixed top-[4.5rem] z-30 hidden w-72 flex-col overflow-hidden rounded-xl border bg-card shadow-sm lg:flex h-[calc(100vh-5.5rem)]"
+      >
         {/* Bookings section — scrollable middle */}
         {isAuthenticated ? (
           <div className="flex min-h-0 flex-1 flex-col">
