@@ -270,6 +270,58 @@ export function MyBookingsScreen() {
     );
   };
 
+  // Scroll to the expanded booking after data loads
+  useEffect(() => {
+    const targetId = pendingScrollId.current;
+    if (!targetId || loading || bookings.length === 0) return;
+
+    // Build sections inline to find the target index
+    const now = new Date();
+    const upcomingItems: FeedItem[] = bookings
+      .filter((b) => b.status !== 'cancelled' && new Date(b.end_time).getTime() > now.getTime())
+      .map((b) => ({ kind: 'booking' as const, sortDate: b.start_time, booking: b }));
+    const pastItems: FeedItem[] = bookings
+      .filter((b) => b.status === 'cancelled' || new Date(b.end_time).getTime() <= now.getTime())
+      .map((b) => ({ kind: 'booking' as const, sortDate: b.start_time, booking: b }));
+
+    // Include event items in section calculation
+    const upcomingEvtItems: FeedItem[] = eventRegistrations
+      .filter((r) => r.status !== 'cancelled' && r.events && new Date(r.events.end_time) >= now)
+      .map((r) => ({ kind: 'event' as const, sortDate: r.events!.start_time, registration: r }));
+    const pastEvtItems: FeedItem[] = eventRegistrations
+      .filter((r) => r.status === 'cancelled' || (r.events && new Date(r.events.end_time) < now))
+      .filter((r) => r.events !== null)
+      .map((r) => ({ kind: 'event' as const, sortDate: r.events!.start_time, registration: r }));
+
+    const upcomingSorted = [...upcomingItems, ...upcomingEvtItems]
+      .sort((a, b) => new Date(a.sortDate).getTime() - new Date(b.sortDate).getTime());
+    const pastSorted = [...pastItems, ...pastEvtItems]
+      .sort((a, b) => new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime());
+
+    const builtSections = [
+      ...(upcomingSorted.length > 0 ? [{ title: 'Upcoming', data: upcomingSorted }] : []),
+      ...(pastSorted.length > 0 ? [{ title: 'Past & Cancelled', data: pastSorted }] : []),
+    ];
+
+    for (let sectionIndex = 0; sectionIndex < builtSections.length; sectionIndex++) {
+      const itemIndex = builtSections[sectionIndex].data.findIndex(
+        (item) => item.kind === 'booking' && item.booking.id === targetId
+      );
+      if (itemIndex >= 0) {
+        pendingScrollId.current = null;
+        setTimeout(() => {
+          sectionListRef.current?.scrollToLocation({
+            sectionIndex,
+            itemIndex,
+            animated: true,
+            viewOffset: 0,
+          });
+        }, 300);
+        break;
+      }
+    }
+  }, [loading, bookings, eventRegistrations]);
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -320,31 +372,6 @@ export function MyBookingsScreen() {
     ...(upcoming.length > 0 ? [{ title: 'Upcoming', data: upcoming }] : []),
     ...(past.length > 0 ? [{ title: 'Past & Cancelled', data: past }] : []),
   ];
-
-  // Scroll to the expanded booking after data loads
-  useEffect(() => {
-    const targetId = pendingScrollId.current;
-    if (!targetId || sections.length === 0) return;
-
-    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
-      const itemIndex = sections[sectionIndex].data.findIndex(
-        (item) => item.kind === 'booking' && item.booking.id === targetId
-      );
-      if (itemIndex >= 0) {
-        pendingScrollId.current = null;
-        // Delay to let the list render first
-        setTimeout(() => {
-          sectionListRef.current?.scrollToLocation({
-            sectionIndex,
-            itemIndex,
-            animated: true,
-            viewOffset: 0,
-          });
-        }, 300);
-        break;
-      }
-    }
-  }, [sections.length, bookings]);
 
   const getBayNames = (reg: EventRegistration): string => {
     if (!reg.events?.event_bays) return '';
