@@ -35,7 +35,7 @@ export function MarketingFooter({ onOpenContact }: MarketingFooterProps) {
             <button onClick={onOpenContact} className="hover:text-gray-900 transition-colors">
               Contact
             </button>
-            <Link href="/auth/login" className="hover:text-gray-900 transition-colors">
+            <Link href="/auth/admin-login" className="hover:text-gray-900 transition-colors">
               Admin Login
             </Link>
           </nav>
