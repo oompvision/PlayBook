@@ -374,7 +374,7 @@ export function DynamicAvailabilityWidget(
   const [selectedEventForPanel, setSelectedEventForPanel] = useState<EventForPanel | null>(null);
 
   // Sidebar: confirmed bookings + chat
-  const [chatExpanded, setChatExpanded] = useState(false);
+  const [chatExpanded, setChatExpanded] = useState(true);
   const pendingBookingAction = useRef<BookingAction | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
@@ -1110,21 +1110,23 @@ export function DynamicAvailabilityWidget(
     <div className="flex items-start gap-6">
       {/* ===== Sidebar — Confirmed Bookings + Chat Assistant (desktop only) ===== */}
       <div className="sticky top-[4.5rem] hidden w-72 shrink-0 flex-col rounded-xl border bg-card shadow-sm lg:flex max-h-[calc(100vh-5.5rem)]">
-        {/* Bookings section — scrollable */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {isAuthenticated ? (
-            <div className="p-3">
-              <div className="mb-3 flex items-center gap-2 px-1">
-                <CalendarCheck className="h-4 w-4 text-muted-foreground" />
-                <h3 className="flex-1 text-sm font-semibold">Confirmed Bookings</h3>
-                <a
-                  href="/my-bookings"
-                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  title="View all bookings"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
-              </div>
+        {/* Bookings section — scrollable middle */}
+        {isAuthenticated ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {/* Sticky header */}
+            <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-card px-4 py-3">
+              <CalendarCheck className="h-4 w-4 text-muted-foreground" />
+              <h3 className="flex-1 text-sm font-semibold">Confirmed Bookings</h3>
+              <a
+                href="/my-bookings"
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="View all bookings"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </div>
+            {/* Scrollable booking cards */}
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
               {bookingsLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -1180,20 +1182,20 @@ export function DynamicAvailabilityWidget(
                 </div>
               )}
             </div>
-          ) : (
-            <div className="flex flex-col items-center gap-3 p-6 text-center">
-              <LogIn className="h-8 w-8 text-muted-foreground/20" />
-              <div>
-                <p className="text-sm font-medium">Your Bookings</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Sign in to see your confirmed bookings
-                </p>
-              </div>
+          </div>
+        ) : (
+          <div className="flex flex-1 flex-col items-center gap-3 p-6 text-center">
+            <LogIn className="h-8 w-8 text-muted-foreground/20" />
+            <div>
+              <p className="text-sm font-medium">Your Bookings</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Sign in to see your confirmed bookings
+              </p>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Chat Assistant — pinned to bottom of sidebar */}
+        {/* Chat Assistant — always pinned to bottom */}
         {facilitySlug && (
           <div className="shrink-0 border-t">
             <button
