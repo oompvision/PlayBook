@@ -20,14 +20,18 @@ type AuthModalProps = {
   trigger?: React.ReactNode;
 };
 
+type SignInMode = "password" | "magic-link" | "forgot-password";
+
 export function AuthModal({ trigger }: AuthModalProps) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<string>("signin");
+  const [signInMode, setSignInMode] = useState<SignInMode>("password");
 
   // Sign-in state
   const [signInEmail, setSignInEmail] = useState("");
   const [signInPassword, setSignInPassword] = useState("");
   const [signInError, setSignInError] = useState("");
+  const [signInMessage, setSignInMessage] = useState("");
   const [signInLoading, setSignInLoading] = useState(false);
 
   // Sign-up state
@@ -38,6 +42,12 @@ export function AuthModal({ trigger }: AuthModalProps) {
   const [signUpError, setSignUpError] = useState("");
   const [signUpLoading, setSignUpLoading] = useState(false);
   const [signUpSuccess, setSignUpSuccess] = useState(false);
+
+  function switchSignInMode(mode: SignInMode) {
+    setSignInMode(mode);
+    setSignInError("");
+    setSignInMessage("");
+  }
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
@@ -58,6 +68,52 @@ export function AuthModal({ trigger }: AuthModalProps) {
 
     // Full page reload so middleware refreshes session cookies
     window.location.reload();
+  }
+
+  async function handleMagicLink(e: React.FormEvent) {
+    e.preventDefault();
+    setSignInLoading(true);
+    setSignInError("");
+    setSignInMessage("");
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithOtp({
+      email: signInEmail,
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+
+    if (error) {
+      setSignInError(error.message);
+      setSignInLoading(false);
+      return;
+    }
+
+    setSignInMessage("Check your email for a sign-in link.");
+    setSignInLoading(false);
+  }
+
+  async function handleForgotPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setSignInLoading(true);
+    setSignInError("");
+    setSignInMessage("");
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(signInEmail, {
+      redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset-password`,
+    });
+
+    if (error) {
+      setSignInError(error.message);
+      setSignInLoading(false);
+      return;
+    }
+
+    setSignInMessage("Check your email for a password reset link.");
+    setSignInLoading(false);
   }
 
   async function handleSignUp(e: React.FormEvent) {
@@ -92,7 +148,9 @@ export function AuthModal({ trigger }: AuthModalProps) {
     setSignInEmail("");
     setSignInPassword("");
     setSignInError("");
+    setSignInMessage("");
     setSignInLoading(false);
+    setSignInMode("password");
     setSignUpName("");
     setSignUpPhone("");
     setSignUpEmail("");
@@ -135,7 +193,21 @@ export function AuthModal({ trigger }: AuthModalProps) {
 
           {/* Sign In Tab */}
           <TabsContent value="signin">
-            <form onSubmit={handleSignIn} className="space-y-4 pt-2">
+            <form
+              onSubmit={
+                signInMode === "password"
+                  ? handleSignIn
+                  : signInMode === "magic-link"
+                    ? handleMagicLink
+                    : handleForgotPassword
+              }
+              className="space-y-4 pt-2"
+            >
+              {signInMessage && (
+                <div className="rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
+                  {signInMessage}
+                </div>
+              )}
               {signInError && (
                 <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                   {signInError}
@@ -152,19 +224,59 @@ export function AuthModal({ trigger }: AuthModalProps) {
                   required
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="signin-password">Password</Label>
-                <Input
-                  id="signin-password"
-                  type="password"
-                  value={signInPassword}
-                  onChange={(e) => setSignInPassword(e.target.value)}
-                  required
-                />
-              </div>
+              {signInMode === "password" && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="signin-password">Password</Label>
+                    <button
+                      type="button"
+                      onClick={() => switchSignInMode("forgot-password")}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                  <Input
+                    id="signin-password"
+                    type="password"
+                    value={signInPassword}
+                    onChange={(e) => setSignInPassword(e.target.value)}
+                    required
+                  />
+                </div>
+              )}
               <Button type="submit" className="w-full" disabled={signInLoading}>
-                {signInLoading ? "Signing in..." : "Sign In"}
+                {signInLoading
+                  ? signInMode === "password"
+                    ? "Signing in..."
+                    : "Sending..."
+                  : signInMode === "password"
+                    ? "Sign In"
+                    : signInMode === "magic-link"
+                      ? "Send Magic Link"
+                      : "Send Reset Link"}
               </Button>
+              {signInMode === "password" ? (
+                <p className="text-center text-sm text-muted-foreground">
+                  <button
+                    type="button"
+                    onClick={() => switchSignInMode("magic-link")}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    Sign in with magic link
+                  </button>
+                </p>
+              ) : (
+                <p className="text-center text-sm text-muted-foreground">
+                  <button
+                    type="button"
+                    onClick={() => switchSignInMode("password")}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    Back to password login
+                  </button>
+                </p>
+              )}
             </form>
           </TabsContent>
 
