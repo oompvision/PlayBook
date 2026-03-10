@@ -385,18 +385,15 @@ export function DynamicAvailabilityWidget(
   // Max date
   const maxDate = addDays(todayStr, bookableWindowDays);
 
-  // Generate all bookable dates
-  const bookableDates: string[] = [];
-  {
-    let cursor = todayStr;
-    while (cursor <= maxDate) {
-      bookableDates.push(cursor);
-      cursor = addDays(cursor, 1);
-    }
+  // Generate visible dates for current page (always 7 days)
+  const visibleDates: string[] = [];
+  for (let i = 0; i < DATES_PER_PAGE; i++) {
+    visibleDates.push(addDays(todayStr, datePageStart + i));
   }
-  const visibleDates = bookableDates.slice(datePageStart, datePageStart + DATES_PER_PAGE);
   const canPageBack = datePageStart > 0;
-  const canPageForward = datePageStart + DATES_PER_PAGE < bookableDates.length;
+  // Allow forward only if at least one date in the NEXT page is bookable
+  const nextPageFirstDate = addDays(todayStr, datePageStart + DATES_PER_PAGE);
+  const canPageForward = nextPageFirstDate <= maxDate;
 
   // Check if booking is within cancellation window
   const isWithinCancellationWindow = selectedSlot
@@ -1254,14 +1251,33 @@ export function DynamicAvailabilityWidget(
               const d = new Date(date + "T12:00:00");
               const isSelected = date === selectedDate;
               const isToday = date === todayStr;
+              const isBookable = date >= todayStr && date <= maxDate;
               return (
                 <button
                   key={date}
-                  onClick={() => setSelectedDate(date)}
+                  onClick={() => {
+                    if (isBookable) {
+                      setSelectedDate(date);
+                    } else {
+                      // Date is outside bookable window — show when it becomes available
+                      const availableOn = addDays(date, -bookableWindowDays);
+                      const availableDate = availableOn > todayStr ? availableOn : todayStr;
+                      const formatted = new Date(availableDate + "T12:00:00").toLocaleDateString("en-US", {
+                        weekday: "long",
+                        month: "long",
+                        day: "numeric",
+                      });
+                      setToast({
+                        message: `This date cannot be booked until ${formatted}`,
+                      });
+                    }
+                  }}
                   className={`flex flex-1 flex-col items-center rounded-lg border py-2 text-center transition-colors ${
                     isSelected
                       ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border hover:border-primary/50 hover:bg-accent"
+                      : !isBookable
+                        ? "border-border opacity-35 cursor-not-allowed"
+                        : "border-border hover:border-primary/50 hover:bg-accent"
                   }`}
                 >
                   <span className={`text-[11px] font-medium ${isSelected ? "text-primary-foreground" : "text-muted-foreground"}`}>
