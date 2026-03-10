@@ -1098,6 +1098,11 @@ export function DynamicAvailabilityWidget(
 
     if (matchedSlot) {
       handleSelectSlot(matchedSlot);
+      // Auto-open the booking panel when triggered from chat
+      setTimeout(() => {
+        setBookingError("");
+        setPanelOpen(true);
+      }, 100);
     }
     pendingBookingAction.current = null;
   }
