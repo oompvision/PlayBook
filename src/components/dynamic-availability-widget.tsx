@@ -1345,7 +1345,7 @@ export function DynamicAvailabilityWidget(
         {/* Duration chips */}
         <div>
           <p className="mb-2 text-xs font-medium text-muted-foreground">
-            Duration
+            Play for {formatDuration(selectedDuration)}
           </p>
           <div className="flex flex-wrap gap-2">
             {durations.map((dur) => (

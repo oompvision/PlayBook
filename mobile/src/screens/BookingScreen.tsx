@@ -919,7 +919,13 @@ export function BookingScreen({ route, navigation }: Props) {
             {/* Duration Picker */}
             {availableDurations.length > 1 && (
               <>
-                <Text style={styles.sectionTitle}>Duration</Text>
+                <Text style={styles.sectionTitle}>
+                  Play for {selectedDuration >= 60
+                    ? selectedDuration % 60 === 0
+                      ? `${selectedDuration / 60}h`
+                      : `${Math.floor(selectedDuration / 60)}h ${selectedDuration % 60}m`
+                    : `${selectedDuration}m`}
+                </Text>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
