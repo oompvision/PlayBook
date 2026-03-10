@@ -93,7 +93,7 @@ export function MarketingNav({ onOpenDemo, onOpenContact, authInfo }: MarketingN
                 </Button>
               </a>
             ) : (
-              <Link href="/auth/login">
+              <Link href="/auth/admin-login">
                 <Button variant="link" size="sm" className="text-gray-500 text-xs">
                   Admin Login
                 </Button>
@@ -150,7 +150,7 @@ export function MarketingNav({ onOpenDemo, onOpenContact, authInfo }: MarketingN
                   </Button>
                 </a>
               ) : (
-                <Link href="/auth/login">
+                <Link href="/auth/admin-login">
                   <Button variant="ghost" className="w-full text-gray-500 text-sm">
                     Admin Login
                   </Button>
