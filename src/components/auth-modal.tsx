@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getClientFacilitySlug } from "@/lib/facility-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -77,11 +78,15 @@ export function AuthModal({ trigger }: AuthModalProps) {
     setSignInMessage("");
 
     const supabase = createClient();
+    const slug = getClientFacilitySlug();
+    const callbackUrl = new URL(`${window.location.origin}/auth/callback`);
+    if (slug) callbackUrl.searchParams.set("facility_slug", slug);
+
     const { error } = await supabase.auth.signInWithOtp({
       email: signInEmail,
       options: {
         shouldCreateUser: false,
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: callbackUrl.toString(),
       },
     });
 
@@ -102,8 +107,13 @@ export function AuthModal({ trigger }: AuthModalProps) {
     setSignInMessage("");
 
     const supabase = createClient();
+    const resetSlug = getClientFacilitySlug();
+    const resetUrl = new URL(`${window.location.origin}/auth/callback`);
+    resetUrl.searchParams.set("next", "/auth/reset-password");
+    if (resetSlug) resetUrl.searchParams.set("facility_slug", resetSlug);
+
     const { error } = await supabase.auth.resetPasswordForEmail(signInEmail, {
-      redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset-password`,
+      redirectTo: resetUrl.toString(),
     });
 
     if (error) {
@@ -130,6 +140,7 @@ export function AuthModal({ trigger }: AuthModalProps) {
         data: {
           full_name: signUpName,
           phone: signUpPhone || undefined,
+          facility_slug: getClientFacilitySlug() || undefined,
         },
       },
     });
