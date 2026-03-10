@@ -66,7 +66,6 @@ export function BookingScreen({ route, navigation }: Props) {
 
   const initialDate = modifyBooking?.date || (route.params as any)?.date;
   const initialBayId = modifyBooking?.bayId || (route.params as any)?.bayId;
-  const initialFacilityGroupId = (route.params as any)?.facilityGroupId;
 
   const [selectedDate, setSelectedDate] = useState<string>(
     initialDate || (organization ? getTodayInTimezone(organization.timezone) : '')
@@ -76,6 +75,18 @@ export function BookingScreen({ route, navigation }: Props) {
   const [selectedBay, setSelectedBay] = useState<Bay | null>(
     initialBayId ? bays.find((b) => b.id === initialBayId) || null : null
   );
+
+  // Sync date and bay when nav params change (tab is persistent, not remounted)
+  useEffect(() => {
+    if (isModifyMode) return;
+    const paramDate = (route.params as any)?.date;
+    const paramBayId = (route.params as any)?.bayId;
+    if (paramDate) setSelectedDate(paramDate);
+    if (paramBayId && !isDynamic) {
+      const bay = bays.find((b) => b.id === paramBayId) || null;
+      if (bay) setSelectedBay(bay);
+    }
+  }, [route.params]);
 
   // Dynamic scheduling state
   const [selectedOption, setSelectedOption] = useState<BookableOption | null>(null);
@@ -218,25 +229,31 @@ export function BookingScreen({ route, navigation }: Props) {
 
   // Auto-select facility group/bay from nav params, or first option
   useEffect(() => {
-    if (!isDynamic || bookableOptions.length === 0 || selectedOption) return;
-    if (initialFacilityGroupId) {
+    if (!isDynamic || bookableOptions.length === 0) return;
+    const paramGroupId = (route.params as any)?.facilityGroupId;
+    const paramBayId = modifyBooking?.bayId || (route.params as any)?.bayId;
+    if (paramGroupId) {
       const match = bookableOptions.find(
-        (o) => o.type === 'group' && o.group.id === initialFacilityGroupId
+        (o) => o.type === 'group' && o.group.id === paramGroupId
       );
       if (match) {
         setSelectedOption(match);
         return;
       }
     }
-    if (initialBayId) {
+    if (paramBayId) {
       const match = bookableOptions.find(
-        (o) => o.type === 'bay' && o.bay.id === initialBayId
+        (o) => o.type === 'bay' && o.bay.id === paramBayId
       );
       if (match) {
         setSelectedOption(match);
         return;
       }
     }
+    if (!selectedOption) {
+      setSelectedOption(bookableOptions[0]);
+    }
+  }, [isDynamic, bookableOptions, route.params]);
     setSelectedOption(bookableOptions[0]);
   }, [isDynamic, bookableOptions, selectedOption]);
 
