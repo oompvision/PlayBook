@@ -300,12 +300,12 @@ export function DynamicAvailabilityWidget(
 
   // Selection: group or standalone bay
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(
-    !hasMultipleOptions && facilityGroups.length === 1
+    facilityGroups.length > 0
       ? facilityGroups[0].id
       : null
   );
   const [selectedBayId, setSelectedBayId] = useState<string | null>(
-    !hasMultipleOptions && facilityGroups.length === 0 && standaloneBays.length === 1
+    facilityGroups.length === 0 && standaloneBays.length > 0
       ? standaloneBays[0].id
       : null
   );
@@ -1243,8 +1243,8 @@ export function DynamicAvailabilityWidget(
       {/* Step 1: Facility/Group Picker (if needed) */}
       {hasMultipleOptions && (
         <div className="rounded-xl border bg-card p-4">
-          <p className="mb-3 text-sm font-medium text-muted-foreground">
-            What would you like to book?
+          <p className="mb-3 text-sm font-medium text-foreground">
+            Select Facility
           </p>
           <div className="flex flex-wrap gap-2">
             {facilityGroups.map((group) => (
@@ -1344,7 +1344,7 @@ export function DynamicAvailabilityWidget(
 
         {/* Duration chips */}
         <div>
-          <p className="mb-2 text-xs font-medium text-muted-foreground">
+          <p className="mb-2 text-sm font-medium text-foreground">
             Play for {formatDuration(selectedDuration)}
           </p>
           <div className="flex flex-wrap gap-2">
