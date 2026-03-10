@@ -54,6 +54,7 @@ export function MyBookingsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+  const [pastTab, setPastTab] = useState<'past' | 'cancelled'>('past');
   const sectionListRef = useRef<SectionList<FeedItem>>(null);
   const pendingScrollId = useRef<string | null>(null);
 
@@ -295,12 +296,24 @@ export function MyBookingsScreen() {
 
     const upcomingSorted = [...upcomingItems, ...upcomingEvtItems]
       .sort((a, b) => new Date(a.sortDate).getTime() - new Date(b.sortDate).getTime());
-    const pastSorted = [...pastItems, ...pastEvtItems]
-      .sort((a, b) => new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime());
+    const scrollSortDesc = (a: FeedItem, b: FeedItem) =>
+      new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime();
+    const scrollPastCompleted = [...pastItems, ...pastEvtItems]
+      .filter((item) => {
+        if (item.kind === 'booking') return item.booking.status !== 'cancelled';
+        return item.registration.status !== 'cancelled';
+      })
+      .sort(scrollSortDesc);
+    const activePast = pastTab === 'past' ? scrollPastCompleted : [...pastItems, ...pastEvtItems]
+      .filter((item) => {
+        if (item.kind === 'booking') return item.booking.status === 'cancelled';
+        return item.registration.status === 'cancelled';
+      })
+      .sort(scrollSortDesc);
 
     const builtSections = [
       ...(upcomingSorted.length > 0 ? [{ title: 'Upcoming', data: upcomingSorted }] : []),
-      ...(pastSorted.length > 0 ? [{ title: 'Past & Cancelled', data: pastSorted }] : []),
+      ...(activePast.length > 0 ? [{ title: pastTab === 'past' ? 'Past' : 'Cancelled', data: activePast }] : []),
     ];
 
     for (let sectionIndex = 0; sectionIndex < builtSections.length; sectionIndex++) {
@@ -364,13 +377,30 @@ export function MyBookingsScreen() {
   const upcoming = [...upcomingBookingItems, ...upcomingEventItems]
     .sort((a, b) => new Date(a.sortDate).getTime() - new Date(b.sortDate).getTime());
 
-  // Past: most recent first (descending)
-  const past = [...pastBookingItems, ...pastEventItems]
-    .sort((a, b) => new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime());
+  // Split past into completed vs cancelled, both sorted most recent first
+  const sortDesc = (a: FeedItem, b: FeedItem) =>
+    new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime();
 
+  const pastCompleted = [...pastBookingItems, ...pastEventItems]
+    .filter((item) => {
+      if (item.kind === 'booking') return item.booking.status !== 'cancelled';
+      return item.registration.status !== 'cancelled';
+    })
+    .sort(sortDesc);
+
+  const pastCancelled = [...pastBookingItems, ...pastEventItems]
+    .filter((item) => {
+      if (item.kind === 'booking') return item.booking.status === 'cancelled';
+      return item.registration.status === 'cancelled';
+    })
+    .sort(sortDesc);
+
+  const activePastItems = pastTab === 'past' ? pastCompleted : pastCancelled;
+
+  const hasPastOrCancelled = pastCompleted.length > 0 || pastCancelled.length > 0;
   const sections = [
     ...(upcoming.length > 0 ? [{ title: 'Upcoming', data: upcoming }] : []),
-    ...(past.length > 0 ? [{ title: 'Past & Cancelled', data: past }] : []),
+    ...(hasPastOrCancelled ? [{ title: pastTab === 'past' ? 'Past' : 'Cancelled', data: activePastItems }] : []),
   ];
 
   const getBayNames = (reg: EventRegistration): string => {
@@ -399,7 +429,7 @@ export function MyBookingsScreen() {
     }
   };
 
-  const renderItem = ({ item, section }: { item: FeedItem; section: { title: string } }) => {
+  const renderItem = ({ item, section }: { item: FeedItem; section: any }) => {
     const isUpcoming = section.title === 'Upcoming';
 
     if (item.kind === 'booking') {
@@ -526,9 +556,31 @@ export function MyBookingsScreen() {
         ref={sectionListRef}
         sections={sections}
         renderItem={renderItem}
-        renderSectionHeader={({ section: { title } }) => (
-          <Text style={styles.sectionHeader}>{title}</Text>
-        )}
+        renderSectionHeader={({ section: { title } }) => {
+          if (title === 'Past' || title === 'Cancelled') {
+            return (
+              <View style={styles.pastTabContainer}>
+                <TouchableOpacity
+                  style={[styles.pastTab, pastTab === 'past' && styles.pastTabActive]}
+                  onPress={() => setPastTab('past')}
+                >
+                  <Text style={[styles.pastTabText, pastTab === 'past' && styles.pastTabTextActive]}>
+                    Past{pastCompleted.length > 0 ? ` (${pastCompleted.length})` : ''}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.pastTab, pastTab === 'cancelled' && styles.pastTabActive]}
+                  onPress={() => setPastTab('cancelled')}
+                >
+                  <Text style={[styles.pastTabText, pastTab === 'cancelled' && styles.pastTabTextActive]}>
+                    Cancelled{pastCancelled.length > 0 ? ` (${pastCancelled.length})` : ''}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            );
+          }
+          return <Text style={styles.sectionHeader}>{title}</Text>;
+        }}
         keyExtractor={(item) =>
           item.kind === 'booking' ? item.booking.id : item.registration.id
         }
@@ -565,6 +617,36 @@ const styles = StyleSheet.create({
     color: colors.foreground,
     marginBottom: spacing.md,
     marginTop: spacing.md,
+  },
+  pastTabContainer: {
+    flexDirection: 'row',
+    backgroundColor: colors.muted,
+    borderRadius: 10,
+    padding: 3,
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  pastTab: {
+    flex: 1,
+    alignItems: 'center' as const,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  pastTabActive: {
+    backgroundColor: colors.background,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  pastTabText: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    color: colors.mutedForeground,
+  },
+  pastTabTextActive: {
+    color: colors.foreground,
   },
   bookingCard: {
     marginBottom: spacing.md,
