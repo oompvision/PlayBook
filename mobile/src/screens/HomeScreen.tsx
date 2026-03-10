@@ -9,71 +9,137 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Svg, { Path } from 'react-native-svg';
 import { useFacility } from '../lib/facility-context';
 import { useAuth } from '../lib/auth-context';
 import { supabase } from '../lib/supabase';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { BookIcon, BookingsIcon } from '../components/TabIcons';
-import { formatPrice, formatTimeInZone, getTodayInTimezone, formatDate } from '../lib/format';
+import { formatTimeInZone, getTodayInTimezone, formatDate } from '../lib/format';
 import { colors, spacing, typography } from '../theme';
 import type { MainTabParamList } from '../navigation/types';
-import type { BayScheduleSlot, Bay } from '../types';
+import type { Booking, Bay } from '../types';
 
 type Props = NativeStackScreenProps<MainTabParamList, 'Home'>;
 
-interface SlotWithBay extends BayScheduleSlot {
-  bay_schedules: {
-    bay_id: string;
-    date: string;
-    bays: Bay;
-  };
+function ChevronRight({ size, color }: { size: number; color: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M9 18l6-6-6-6"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
 }
 
 export function HomeScreen({ navigation }: Props) {
   const { organization, selectedLocation, bays, facilityGroups, standaloneBays, isDynamic } = useFacility();
-  const { profile } = useAuth();
-  const [todaySlots, setTodaySlots] = useState<SlotWithBay[]>([]);
+  const { user, profile } = useAuth();
+  const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
+  const [earliestDates, setEarliestDates] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchTodaySlots = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     if (!organization || !selectedLocation) return;
 
     const today = getTodayInTimezone(organization.timezone);
-    let query = supabase
-      .from('bay_schedule_slots')
-      .select(`
-        *,
-        bay_schedules!inner (
-          bay_id,
-          date,
-          bays!inner (*)
-        )
-      `)
-      .eq('org_id', organization.id)
-      .eq('location_id', selectedLocation.id)
-      .eq('status', 'available')
-      .eq('bay_schedules.date', today)
-      .order('start_time')
-      .limit(20);
+    const now = new Date().toISOString();
 
-    const { data } = await query;
+    const promises: Promise<void>[] = [];
 
-    if (data) {
-      setTodaySlots(data as unknown as SlotWithBay[]);
+    // Fetch upcoming bookings (up to 3, confirmed, today or later, not yet ended)
+    if (user) {
+      promises.push(
+        (async () => {
+          const { data } = await supabase
+            .from('bookings')
+            .select('*, bays(*)')
+            .eq('org_id', organization.id)
+            .eq('customer_id', user.id)
+            .eq('status', 'confirmed')
+            .gte('date', today)
+            .gte('end_time', now)
+            .order('date', { ascending: true })
+            .order('start_time', { ascending: true })
+            .limit(3);
+
+          if (data) {
+            setUpcomingBookings(data as unknown as Booking[]);
+          }
+        })()
+      );
     }
+
+    // Fetch earliest available date per bay (slot-based)
+    if (!isDynamic) {
+      promises.push(
+        (async () => {
+          const { data } = await supabase
+            .from('bay_schedule_slots')
+            .select('bay_schedules!inner(bay_id, date)')
+            .eq('org_id', organization.id)
+            .eq('location_id', selectedLocation.id)
+            .eq('status', 'available')
+            .gte('end_time', now)
+            .order('start_time', { ascending: true });
+
+          if (data) {
+            const dateMap: Record<string, string> = {};
+            for (const slot of data as any[]) {
+              const bayId = slot.bay_schedules.bay_id;
+              const date = slot.bay_schedules.date;
+              if (!dateMap[bayId] || date < dateMap[bayId]) {
+                dateMap[bayId] = date;
+              }
+            }
+            setEarliestDates(dateMap);
+          }
+        })()
+      );
+    }
+
+    await Promise.all(promises);
     setLoading(false);
-  }, [organization, selectedLocation]);
+  }, [organization, selectedLocation, user, isDynamic]);
 
   useEffect(() => {
-    fetchTodaySlots();
-  }, [fetchTodaySlots]);
+    fetchData();
+  }, [fetchData]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchTodaySlots();
+    await fetchData();
     setRefreshing(false);
+  };
+
+  // For dynamic scheduling, determine today or tomorrow
+  const getDynamicDate = (): string => {
+    if (!organization) return '';
+    const today = getTodayInTimezone(organization.timezone);
+    // Check current hour in facility timezone — if past 10 PM, use tomorrow
+    const nowInTz = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      hour12: false,
+      timeZone: organization.timezone,
+    }).format(new Date());
+    const hour = parseInt(nowInTz, 10);
+    if (hour >= 22) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: organization.timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(tomorrow);
+    }
+    return today;
   };
 
   if (!organization) {
@@ -83,8 +149,6 @@ export function HomeScreen({ navigation }: Props) {
       </View>
     );
   }
-
-  const today = getTodayInTimezone(organization.timezone);
 
   return (
     <ScrollView
@@ -125,101 +189,128 @@ export function HomeScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Today's Availability */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Available Today — {formatDate(today)}</Text>
-        {loading ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
-        ) : todaySlots.length === 0 ? (
-          <Card>
-            <Text style={styles.emptyText}>No available slots for today.</Text>
-            <TouchableOpacity onPress={() => (navigation as any).navigate('Book')}>
-              <Text style={styles.linkText}>Browse other dates →</Text>
-            </TouchableOpacity>
-          </Card>
-        ) : (
-          todaySlots.slice(0, 8).map((slot) => (
+      {/* Upcoming for you */}
+      {upcomingBookings.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Upcoming for you</Text>
+          {upcomingBookings.map((booking) => (
             <TouchableOpacity
-              key={slot.id}
+              key={booking.id}
               onPress={() =>
-                (navigation as any).navigate('Book', {
-                  date: today,
-                  bayId: slot.bay_schedules.bay_id,
+                (navigation as any).navigate('Bookings', {
+                  expandBookingId: booking.id,
                 })
               }
             >
-              <Card style={styles.slotCard}>
-                <View style={styles.slotRow}>
-                  <View>
-                    <Text style={styles.slotBay}>{slot.bay_schedules.bays.name}</Text>
-                    <Text style={styles.slotTime}>
-                      {formatTimeInZone(slot.start_time, organization.timezone)} –{' '}
-                      {formatTimeInZone(slot.end_time, organization.timezone)}
+              <Card style={styles.upcomingCard}>
+                <View style={styles.upcomingRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.upcomingBay}>
+                      {booking.bays?.name ?? 'Booking'}
                     </Text>
+                    <Text style={styles.upcomingDetails}>
+                      {formatDate(booking.date)} &middot;{' '}
+                      {formatTimeInZone(booking.start_time, organization.timezone)} –{' '}
+                      {formatTimeInZone(booking.end_time, organization.timezone)}
+                    </Text>
+                    <Text style={styles.upcomingCode}>{booking.confirmation_code}</Text>
                   </View>
-                  <View style={styles.slotRight}>
-                    <Text style={styles.slotPrice}>{formatPrice(slot.price_cents)}</Text>
-                    <Badge label="Available" variant="success" />
-                  </View>
+                  <ChevronRight size={20} color={colors.mutedForeground} />
                 </View>
               </Card>
             </TouchableOpacity>
-          ))
-        )}
-      </View>
+          ))}
+        </View>
+      )}
 
-      {/* Facilities Info */}
+      {/* Available to Book */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
-          {isDynamic && facilityGroups.length > 0 ? 'Our Facilities' : 'Our Bays'}
-        </Text>
-        {isDynamic ? (
+        <Text style={styles.sectionTitle}>Available to Book</Text>
+        {loading ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
+        ) : isDynamic ? (
           <>
             {facilityGroups.map((group) => (
-              <Card key={group.id} style={styles.bayCard}>
-                <Text style={styles.bayName}>{group.name}</Text>
-                <View style={styles.bayMeta}>
-                  <Badge label={`${group.bays.length} available`} variant="muted" />
-                  {group.bays[0]?.hourly_rate_cents && (
-                    <Text style={styles.bayRate}>
-                      from {formatPrice(group.bays[0].hourly_rate_cents)}/hr
-                    </Text>
-                  )}
-                </View>
-              </Card>
+              <TouchableOpacity
+                key={group.id}
+                onPress={() =>
+                  (navigation as any).navigate('Book', {
+                    date: getDynamicDate(),
+                    facilityGroupId: group.id,
+                  })
+                }
+              >
+                <Card style={styles.facilityCard}>
+                  <View style={styles.facilityRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.facilityName2}>{group.name}</Text>
+                      <View style={styles.facilityMeta}>
+                        <Badge label={`${group.bays.length} available`} variant="muted" />
+                      </View>
+                    </View>
+                    <ChevronRight size={20} color={colors.mutedForeground} />
+                  </View>
+                </Card>
+              </TouchableOpacity>
             ))}
             {standaloneBays.map((bay) => (
-              <Card key={bay.id} style={styles.bayCard}>
-                <Text style={styles.bayName}>{bay.name}</Text>
-                <View style={styles.bayMeta}>
-                  {bay.resource_type && (
-                    <Badge label={bay.resource_type} variant="muted" />
-                  )}
-                  {bay.hourly_rate_cents && (
-                    <Text style={styles.bayRate}>
-                      {formatPrice(bay.hourly_rate_cents)}/hr
-                    </Text>
-                  )}
-                </View>
-              </Card>
+              <TouchableOpacity
+                key={bay.id}
+                onPress={() =>
+                  (navigation as any).navigate('Book', {
+                    date: getDynamicDate(),
+                    bayId: bay.id,
+                  })
+                }
+              >
+                <Card style={styles.facilityCard}>
+                  <View style={styles.facilityRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.facilityName2}>{bay.name}</Text>
+                      {bay.resource_type && (
+                        <View style={styles.facilityMeta}>
+                          <Badge label={bay.resource_type} variant="muted" />
+                        </View>
+                      )}
+                    </View>
+                    <ChevronRight size={20} color={colors.mutedForeground} />
+                  </View>
+                </Card>
+              </TouchableOpacity>
             ))}
           </>
         ) : (
-          bays.map((bay) => (
-            <Card key={bay.id} style={styles.bayCard}>
-              <Text style={styles.bayName}>{bay.name}</Text>
-              <View style={styles.bayMeta}>
-                {bay.resource_type && (
-                  <Badge label={bay.resource_type} variant="muted" />
-                )}
-                {bay.hourly_rate_cents && (
-                  <Text style={styles.bayRate}>
-                    {formatPrice(bay.hourly_rate_cents)}/hr
-                  </Text>
-                )}
-              </View>
+          bays.length > 0 ? (
+            bays.map((bay) => (
+              <TouchableOpacity
+                key={bay.id}
+                onPress={() =>
+                  (navigation as any).navigate('Book', {
+                    date: earliestDates[bay.id] || getTodayInTimezone(organization.timezone),
+                    bayId: bay.id,
+                  })
+                }
+              >
+                <Card style={styles.facilityCard}>
+                  <View style={styles.facilityRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.facilityName2}>{bay.name}</Text>
+                      {bay.resource_type && (
+                        <View style={styles.facilityMeta}>
+                          <Badge label={bay.resource_type} variant="muted" />
+                        </View>
+                      )}
+                    </View>
+                    <ChevronRight size={20} color={colors.mutedForeground} />
+                  </View>
+                </Card>
+              </TouchableOpacity>
+            ))
+          ) : (
+            <Card>
+              <Text style={styles.emptyText}>No facilities available at this time.</Text>
             </Card>
-          ))
+          )
         )}
       </View>
     </ScrollView>
@@ -283,55 +374,49 @@ const styles = StyleSheet.create({
     color: colors.foreground,
     marginBottom: spacing.md,
   },
-  slotCard: {
+  // Upcoming booking cards
+  upcomingCard: {
     marginBottom: spacing.sm,
   },
-  slotRow: {
+  upcomingRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  slotBay: {
+  upcomingBay: {
     ...typography.label,
     color: colors.foreground,
   },
-  slotTime: {
+  upcomingDetails: {
     ...typography.bodySmall,
     color: colors.mutedForeground,
     marginTop: 2,
   },
-  slotRight: {
-    alignItems: 'flex-end',
-    gap: spacing.xs,
-  },
-  slotPrice: {
-    ...typography.label,
-    color: colors.foreground,
-  },
-  emptyText: {
-    ...typography.body,
-    color: colors.mutedForeground,
-    marginBottom: spacing.sm,
-  },
-  linkText: {
-    ...typography.label,
+  upcomingCode: {
+    ...typography.bodySmall,
     color: colors.primary,
+    marginTop: 2,
+    fontWeight: '600',
   },
-  bayCard: {
+  // Facility / Available to Book cards
+  facilityCard: {
     marginBottom: spacing.sm,
   },
-  bayName: {
+  facilityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  facilityName2: {
     ...typography.label,
     color: colors.foreground,
-    marginBottom: spacing.xs,
   },
-  bayMeta: {
+  facilityMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    marginTop: spacing.xs,
   },
-  bayRate: {
-    ...typography.bodySmall,
+  emptyText: {
+    ...typography.body,
     color: colors.mutedForeground,
   },
 });

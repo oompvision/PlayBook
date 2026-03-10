@@ -76,6 +76,18 @@ export function BookingScreen({ route, navigation }: Props) {
     initialBayId ? bays.find((b) => b.id === initialBayId) || null : null
   );
 
+  // Sync date and bay when nav params change (tab is persistent, not remounted)
+  useEffect(() => {
+    if (isModifyMode) return;
+    const paramDate = (route.params as any)?.date;
+    const paramBayId = (route.params as any)?.bayId;
+    if (paramDate) setSelectedDate(paramDate);
+    if (paramBayId && !isDynamic) {
+      const bay = bays.find((b) => b.id === paramBayId) || null;
+      if (bay) setSelectedBay(bay);
+    }
+  }, [route.params]);
+
   // Dynamic scheduling state
   const [selectedOption, setSelectedOption] = useState<BookableOption | null>(null);
   const [selectedDuration, setSelectedDuration] = useState<number>(
@@ -105,6 +117,7 @@ export function BookingScreen({ route, navigation }: Props) {
   const [bookingStep, setBookingStep] = useState<BookingStep>('summary');
   const [successCode, setSuccessCode] = useState<string | null>(null);
   const [successOldCode, setSuccessOldCode] = useState<string | null>(null);
+  const [successBookingId, setSuccessBookingId] = useState<string | null>(null);
 
   // Payment info for modify mode
   const [modifyPaymentMode, setModifyPaymentMode] = useState<string>('none');
@@ -215,12 +228,33 @@ export function BookingScreen({ route, navigation }: Props) {
     return opts;
   }, [isDynamic, facilityGroups, standaloneBays]);
 
-  // Auto-select first option for dynamic if only one exists
+  // Auto-select facility group/bay from nav params, or first option
   useEffect(() => {
-    if (isDynamic && bookableOptions.length > 0 && !selectedOption) {
+    if (!isDynamic || bookableOptions.length === 0) return;
+    const paramGroupId = (route.params as any)?.facilityGroupId;
+    const paramBayId = modifyBooking?.bayId || (route.params as any)?.bayId;
+    if (paramGroupId) {
+      const match = bookableOptions.find(
+        (o) => o.type === 'group' && o.group.id === paramGroupId
+      );
+      if (match) {
+        setSelectedOption(match);
+        return;
+      }
+    }
+    if (paramBayId) {
+      const match = bookableOptions.find(
+        (o) => o.type === 'bay' && o.bay.id === paramBayId
+      );
+      if (match) {
+        setSelectedOption(match);
+        return;
+      }
+    }
+    if (!selectedOption) {
       setSelectedOption(bookableOptions[0]);
     }
-  }, [isDynamic, bookableOptions, selectedOption]);
+  }, [isDynamic, bookableOptions, route.params]);
 
   // Update selected duration when available durations change
   useEffect(() => {
@@ -511,7 +545,7 @@ export function BookingScreen({ route, navigation }: Props) {
     }
 
     setBooking(false);
-    showBookingSuccess(result?.confirmation_code);
+    showBookingSuccess(result?.confirmation_code, undefined, result?.booking_id);
   };
 
   const handleDynamicBook = async () => {
@@ -603,12 +637,13 @@ export function BookingScreen({ route, navigation }: Props) {
     }
 
     setBooking(false);
-    showBookingSuccess((result as any)?.confirmation_code);
+    showBookingSuccess((result as any)?.confirmation_code, undefined, (result as any)?.booking_id);
   };
 
-  const showBookingSuccess = (confirmationCode?: string, oldCode?: string) => {
+  const showBookingSuccess = (confirmationCode?: string, oldCode?: string, bookingId?: string) => {
     setSuccessCode(confirmationCode || 'Confirmed');
     setSuccessOldCode(oldCode || null);
+    setSuccessBookingId(bookingId || null);
     setBookingStep('success');
   };
 
@@ -619,6 +654,7 @@ export function BookingScreen({ route, navigation }: Props) {
     setBookingStep('summary');
     setSuccessCode(null);
     setSuccessOldCode(null);
+    setSuccessBookingId(null);
     setNotes('');
   };
 
@@ -680,7 +716,7 @@ export function BookingScreen({ route, navigation }: Props) {
     }
 
     setBooking(false);
-    showBookingSuccess(result?.confirmation_code, modifyBooking.confirmationCode);
+    showBookingSuccess(result?.confirmation_code, modifyBooking.confirmationCode, result?.booking_id);
   };
 
   const handleDynamicModify = async () => {
@@ -734,7 +770,7 @@ export function BookingScreen({ route, navigation }: Props) {
     }
 
     setBooking(false);
-    showBookingSuccess(result?.confirmation_code, modifyBooking.confirmationCode);
+    showBookingSuccess(result?.confirmation_code, modifyBooking.confirmationCode, result?.booking_id);
   };
 
   const handleBook = isModifyMode
@@ -883,7 +919,13 @@ export function BookingScreen({ route, navigation }: Props) {
             {/* Duration Picker */}
             {availableDurations.length > 1 && (
               <>
-                <Text style={styles.sectionTitle}>Duration</Text>
+                <Text style={styles.sectionTitle}>
+                  Play for {selectedDuration >= 60
+                    ? selectedDuration % 60 === 0
+                      ? `${selectedDuration / 60}h`
+                      : `${Math.floor(selectedDuration / 60)}h ${selectedDuration % 60}m`
+                    : `${selectedDuration}m`}
+                </Text>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -1406,13 +1448,16 @@ export function BookingScreen({ route, navigation }: Props) {
               </View>
               <View style={sheetStyles.footer}>
                 <Button
-                  title="View My Bookings"
+                  title="View Booking"
                   onPress={() => {
+                    const bookingId = successBookingId;
                     resetSelection();
                     if (isModifyMode) {
                       navigation.setParams({ modifyBooking: undefined } as any);
                     }
-                    (navigation as any).navigate('Bookings');
+                    (navigation as any).navigate('Bookings', {
+                      expandBookingId: bookingId || undefined,
+                    });
                   }}
                   size="lg"
                 />

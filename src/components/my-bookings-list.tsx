@@ -119,6 +119,7 @@ export function MyBookingsList({
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [filterNotice, setFilterNotice] = useState<string | null>(null);
   const [autoOpenedCode, setAutoOpenedCode] = useState<string | null>(null);
+  const [pastTab, setPastTab] = useState<"past" | "cancelled">("past");
 
   const allBookings = [...upcoming, ...past]
     .filter((item): item is FeedItemBooking => item.kind === "booking")
@@ -463,7 +464,25 @@ export function MyBookingsList({
   }
 
   const hasUpcoming = upcoming.length > 0;
-  const hasPast = past.length > 0;
+
+  // Split past into completed vs cancelled
+  const pastCompleted = past.filter((item) => {
+    if (item.kind === "booking") return item.booking.status !== "cancelled";
+    return item.registration.status !== "cancelled";
+  });
+  const pastCancelled = past.filter((item) => {
+    if (item.kind === "booking") return item.booking.status === "cancelled";
+    return item.registration.status === "cancelled";
+  });
+
+  // Sort both: most recent first (closest to now)
+  const sortDesc = (a: FeedItem, b: FeedItem) =>
+    new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime();
+  const sortedPastCompleted = [...pastCompleted].sort(sortDesc);
+  const sortedPastCancelled = [...pastCancelled].sort(sortDesc);
+
+  const hasPastOrCancelled = pastCompleted.length > 0 || pastCancelled.length > 0;
+  const activePastItems = pastTab === "past" ? sortedPastCompleted : sortedPastCancelled;
 
   return (
     <>
@@ -487,16 +506,43 @@ export function MyBookingsList({
         </div>
       </div>
 
-      {/* Past */}
-      {hasPast && (
+      {/* Past / Cancelled tabs */}
+      {hasPastOrCancelled && (
         <div className="mt-8">
-          <h2 className="text-lg font-semibold">Past & Cancelled</h2>
+          <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
+            <button
+              onClick={() => setPastTab("past")}
+              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                pastTab === "past"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Past{pastCompleted.length > 0 ? ` (${pastCompleted.length})` : ""}
+            </button>
+            <button
+              onClick={() => setPastTab("cancelled")}
+              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                pastTab === "cancelled"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Cancelled{pastCancelled.length > 0 ? ` (${pastCancelled.length})` : ""}
+            </button>
+          </div>
           <div className="mt-3 space-y-2">
-            {past.map((item) => (
-              <div key={item.kind === "booking" ? item.booking.id : item.registration.id}>
-                {renderFeedItem(item, false)}
-              </div>
-            ))}
+            {activePastItems.length === 0 ? (
+              <p className="py-8 text-center text-muted-foreground">
+                {pastTab === "past" ? "No past bookings." : "No cancelled bookings."}
+              </p>
+            ) : (
+              activePastItems.map((item) => (
+                <div key={item.kind === "booking" ? item.booking.id : item.registration.id}>
+                  {renderFeedItem(item, false)}
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}

@@ -10,10 +10,8 @@ import {
 } from "@/components/checkout-form";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Toast } from "@/components/ui/toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -30,7 +28,6 @@ import {
 import { LocationSwitcher } from "@/components/location-switcher";
 import { EventRegistrationPanel, type EventForPanel } from "@/components/events/event-registration-panel";
 import {
-  CalendarIcon,
   CalendarCheck,
   CalendarDays,
   Clock,
@@ -300,12 +297,12 @@ export function DynamicAvailabilityWidget(
 
   // Selection: group or standalone bay
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(
-    !hasMultipleOptions && facilityGroups.length === 1
+    facilityGroups.length > 0
       ? facilityGroups[0].id
       : null
   );
   const [selectedBayId, setSelectedBayId] = useState<string | null>(
-    !hasMultipleOptions && facilityGroups.length === 0 && standaloneBays.length === 1
+    facilityGroups.length === 0 && standaloneBays.length > 0
       ? standaloneBays[0].id
       : null
   );
@@ -367,8 +364,23 @@ export function DynamicAvailabilityWidget(
   // Toast
   const [toast, setToast] = useState<ToastData | null>(null);
 
-  // Calendar popover
-  const [calendarOpen, setCalendarOpen] = useState(false);
+  // Date chips pagination
+  const [datePageStart, setDatePageStart] = useState(0);
+  const DATES_PER_PAGE = 7;
+
+  const [chatFocused, setChatFocused] = useState(false);
+  const chatRef = useRef<HTMLDivElement>(null);
+
+  // Collapse chat focus when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (chatFocused && chatRef.current && !chatRef.current.contains(e.target as Node)) {
+        setChatFocused(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [chatFocused]);
 
   // Events for the selected date/facility
   const [dayEvents, setDayEvents] = useState<DayEvent[]>([]);
@@ -376,7 +388,7 @@ export function DynamicAvailabilityWidget(
   const [selectedEventForPanel, setSelectedEventForPanel] = useState<EventForPanel | null>(null);
 
   // Sidebar: confirmed bookings + chat
-  const [chatExpanded, setChatExpanded] = useState(false);
+  const [chatExpanded, setChatExpanded] = useState(true);
   const pendingBookingAction = useRef<BookingAction | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
@@ -386,6 +398,16 @@ export function DynamicAvailabilityWidget(
 
   // Max date
   const maxDate = addDays(todayStr, bookableWindowDays);
+
+  // Generate visible dates for current page (always 7 days)
+  const visibleDates: string[] = [];
+  for (let i = 0; i < DATES_PER_PAGE; i++) {
+    visibleDates.push(addDays(todayStr, datePageStart + i));
+  }
+  const canPageBack = datePageStart > 0;
+  // Allow forward only if at least one date in the NEXT page is bookable
+  const nextPageFirstDate = addDays(todayStr, datePageStart + DATES_PER_PAGE);
+  const canPageForward = nextPageFirstDate <= maxDate;
 
   // Check if booking is within cancellation window
   const isWithinCancellationWindow = selectedSlot
@@ -1076,6 +1098,11 @@ export function DynamicAvailabilityWidget(
 
     if (matchedSlot) {
       handleSelectSlot(matchedSlot);
+      // Auto-open the booking panel when triggered from chat
+      setTimeout(() => {
+        setBookingError("");
+        setPanelOpen(true);
+      }, 100);
     }
     pendingBookingAction.current = null;
   }
@@ -1085,20 +1112,6 @@ export function DynamicAvailabilityWidget(
     if (!pendingBookingAction.current || loadingSlots || availableSlots.length === 0) return;
     processChatBookingAction(pendingBookingAction.current);
   }, [loadingSlots, availableSlots]);
-
-  // ─── Date navigation ───────────────────────────────────
-
-  function goToPrevDay() {
-    if (selectedDate > todayStr) {
-      setSelectedDate(addDays(selectedDate, -1));
-    }
-  }
-
-  function goToNextDay() {
-    if (selectedDate < maxDate) {
-      setSelectedDate(addDays(selectedDate, 1));
-    }
-  }
 
   // ─── Render ─────────────────────────────────────────────
 
@@ -1112,25 +1125,59 @@ export function DynamicAvailabilityWidget(
     ? ["Booking Details", "Payment Method", "Confirm Booking"]
     : ["Booking Details", "Confirm Booking"];
 
+  // Track sidebar position for fixed positioning
+  const sidebarSpacerRef = useRef<HTMLDivElement>(null);
+  const [sidebarLeft, setSidebarLeft] = useState<number | null>(null);
+  const [sidebarTop, setSidebarTop] = useState(72); // 4.5rem fallback
+
+  useEffect(() => {
+    function updatePosition() {
+      if (sidebarSpacerRef.current) {
+        const rect = sidebarSpacerRef.current.getBoundingClientRect();
+        setSidebarLeft(rect.left);
+        // Align with the spacer's top, but never above the navbar (72px)
+        setSidebarTop(Math.max(72, rect.top));
+      }
+    }
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, { passive: true });
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition);
+    };
+  }, []);
+
   return (
     <div className="flex items-start gap-6">
       {/* ===== Sidebar — Confirmed Bookings + Chat Assistant (desktop only) ===== */}
-      <div className="sticky top-[4.5rem] hidden w-72 shrink-0 flex-col rounded-xl border bg-card shadow-sm lg:flex max-h-[calc(100vh-5.5rem)]">
-        {/* Bookings section — scrollable */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {isAuthenticated ? (
-            <div className="p-3">
-              <div className="mb-3 flex items-center gap-2 px-1">
-                <CalendarCheck className="h-4 w-4 text-muted-foreground" />
-                <h3 className="flex-1 text-sm font-semibold">Confirmed Bookings</h3>
-                <a
-                  href="/my-bookings"
-                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  title="View all bookings"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
-              </div>
+      {/* Spacer to reserve layout width */}
+      <div ref={sidebarSpacerRef} className="hidden w-72 shrink-0 lg:block" />
+      <div
+        style={{
+          ...(sidebarLeft != null ? { left: sidebarLeft } : {}),
+          top: sidebarTop,
+          height: `calc(100vh - ${sidebarTop + 16}px)`,
+        }}
+        className="fixed z-30 hidden w-72 flex-col overflow-hidden rounded-xl border bg-card shadow-sm lg:flex"
+      >
+        {/* Bookings section — scrollable middle */}
+        {isAuthenticated ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {/* Sticky header */}
+            <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-card px-4 py-3">
+              <CalendarCheck className="h-4 w-4 text-muted-foreground" />
+              <h3 className="flex-1 text-sm font-semibold">Confirmed Bookings</h3>
+              <a
+                href="/my-bookings"
+                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="View all bookings"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </div>
+            {/* Scrollable booking cards */}
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
               {bookingsLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -1186,22 +1233,26 @@ export function DynamicAvailabilityWidget(
                 </div>
               )}
             </div>
-          ) : (
-            <div className="flex flex-col items-center gap-3 p-6 text-center">
-              <LogIn className="h-8 w-8 text-muted-foreground/20" />
-              <div>
-                <p className="text-sm font-medium">Your Bookings</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Sign in to see your confirmed bookings
-                </p>
-              </div>
+          </div>
+        ) : (
+          <div className="flex flex-1 flex-col items-center gap-3 p-6 text-center">
+            <LogIn className="h-8 w-8 text-muted-foreground/20" />
+            <div>
+              <p className="text-sm font-medium">Your Bookings</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Sign in to see your confirmed bookings
+              </p>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Chat Assistant — pinned to bottom of sidebar */}
+        {/* Chat Assistant — always pinned to bottom */}
         {facilitySlug && (
-          <div className="shrink-0 border-t">
+          <div
+            ref={chatRef}
+            className="shrink-0 border-t"
+            onMouseDown={() => setChatFocused(true)}
+          >
             <button
               type="button"
               onClick={() => setChatExpanded((v) => !v)}
@@ -1216,7 +1267,7 @@ export function DynamicAvailabilityWidget(
               )}
             </button>
             {chatExpanded && (
-              <div className="h-[28rem] px-2 pb-2">
+              <div className={`px-2 pb-2 transition-all duration-200 ${chatFocused ? "h-[28rem]" : "h-[22.4rem]"}`}>
                 <ChatWidget
                   facilitySlug={facilitySlug}
                   orgName={orgName}
@@ -1240,11 +1291,81 @@ export function DynamicAvailabilityWidget(
           />
         </div>
       )}
-      {/* Step 1: Facility/Group Picker (if needed) */}
+      {/* Select Date */}
+      <div className="rounded-xl border bg-card p-4">
+        <p className="mb-3 text-sm font-medium text-foreground">Select Date</p>
+        <div className="flex items-center gap-1.5">
+          {canPageBack && (
+            <button
+              onClick={() => setDatePageStart(Math.max(0, datePageStart - DATES_PER_PAGE))}
+              className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          )}
+          <div className="flex flex-1 gap-1.5">
+            {visibleDates.map((date) => {
+              const d = new Date(date + "T12:00:00");
+              const isSelected = date === selectedDate;
+              const isToday = date === todayStr;
+              const isBookable = date >= todayStr && date <= maxDate;
+              return (
+                <button
+                  key={date}
+                  onClick={() => {
+                    if (isBookable) {
+                      setSelectedDate(date);
+                    } else {
+                      // Date is outside bookable window — show when it becomes available
+                      const availableOn = addDays(date, -bookableWindowDays);
+                      const availableDate = availableOn > todayStr ? availableOn : todayStr;
+                      const formatted = new Date(availableDate + "T12:00:00").toLocaleDateString("en-US", {
+                        weekday: "long",
+                        month: "long",
+                        day: "numeric",
+                      });
+                      setToast({
+                        message: `This date cannot be booked until ${formatted}`,
+                      });
+                    }
+                  }}
+                  className={`flex flex-1 flex-col items-center rounded-lg border py-2 text-center transition-colors ${
+                    isSelected
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : !isBookable
+                        ? "border-border opacity-35 cursor-not-allowed"
+                        : "border-border hover:border-primary/50 hover:bg-accent"
+                  }`}
+                >
+                  <span className={`text-[11px] font-medium ${isSelected ? "text-primary-foreground" : "text-muted-foreground"}`}>
+                    {d.toLocaleDateString("en-US", { weekday: "short" })}
+                  </span>
+                  <span className={`text-lg font-semibold leading-tight ${isSelected ? "text-primary-foreground" : "text-foreground"}`}>
+                    {d.getDate()}
+                  </span>
+                  {isToday && !isSelected && (
+                    <span className="mt-0.5 h-1 w-1 rounded-full bg-primary" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {canPageForward && (
+            <button
+              onClick={() => setDatePageStart(datePageStart + DATES_PER_PAGE)}
+              className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Select Facility (if needed) */}
       {hasMultipleOptions && (
         <div className="rounded-xl border bg-card p-4">
-          <p className="mb-3 text-sm font-medium text-muted-foreground">
-            What would you like to book?
+          <p className="mb-3 text-sm font-medium text-foreground">
+            Select Facility
           </p>
           <div className="flex flex-wrap gap-2">
             {facilityGroups.map((group) => (
@@ -1288,83 +1409,28 @@ export function DynamicAvailabilityWidget(
         </div>
       )}
 
-      {/* Step 2: Date + Duration */}
-      <div className="rounded-xl border bg-card p-4 space-y-4">
-        {/* Date picker row */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={goToPrevDay}
-            disabled={selectedDate <= todayStr}
-            className="rounded-lg border p-2 text-muted-foreground transition-colors hover:bg-accent disabled:opacity-30"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-
-          <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-            <PopoverTrigger asChild>
-              <button className="flex flex-1 items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors hover:bg-accent">
-                <CalendarIcon className="h-4 w-4 text-muted-foreground" />
-                {formatDateLabel(selectedDate)}
-                {selectedDate === todayStr && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                    Today
-                  </span>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="center">
-              <Calendar
-                mode="single"
-                selected={new Date(selectedDate + "T12:00:00")}
-                onSelect={(date) => {
-                  if (date) {
-                    const y = date.getFullYear();
-                    const m = String(date.getMonth() + 1).padStart(2, "0");
-                    const d = String(date.getDate()).padStart(2, "0");
-                    setSelectedDate(`${y}-${m}-${d}`);
-                    setCalendarOpen(false);
-                  }
-                }}
-                disabled={(date) => {
-                  const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-                  return dateStr < todayStr || dateStr > maxDate;
-                }}
-              />
-            </PopoverContent>
-          </Popover>
-
-          <button
-            onClick={goToNextDay}
-            disabled={selectedDate >= maxDate}
-            className="rounded-lg border p-2 text-muted-foreground transition-colors hover:bg-accent disabled:opacity-30"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Duration chips */}
-        <div>
-          <p className="mb-2 text-xs font-medium text-muted-foreground">
-            Duration
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {durations.map((dur) => (
-              <button
-                key={dur}
-                onClick={() => {
-                  setSelectedDuration(dur);
-                  setSelectedSlot(null);
-                }}
-                className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${
-                  selectedDuration === dur
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border hover:border-primary/50 hover:bg-accent"
-                }`}
-              >
-                {formatDuration(dur)}
-              </button>
-            ))}
-          </div>
+      {/* Play for [duration] */}
+      <div className="rounded-xl border bg-card p-4">
+        <p className="mb-2 text-sm font-medium text-foreground">
+          Play for {formatDuration(selectedDuration)}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {durations.map((dur) => (
+            <button
+              key={dur}
+              onClick={() => {
+                setSelectedDuration(dur);
+                setSelectedSlot(null);
+              }}
+              className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${
+                selectedDuration === dur
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border hover:border-primary/50 hover:bg-accent"
+              }`}
+            >
+              {formatDuration(dur)}
+            </button>
+          ))}
         </div>
       </div>
 

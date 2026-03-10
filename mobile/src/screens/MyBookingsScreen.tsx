@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,9 +7,15 @@ import {
   RefreshControl,
   Alert,
   ActivityIndicator,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { RouteProp } from '@react-navigation/native';
 import { useFacility } from '../lib/facility-context';
 import { useAuth } from '../lib/auth-context';
 import { supabase } from '../lib/supabase';
@@ -17,11 +23,19 @@ import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
-import { CancelBookingModal } from '../components/CancelBookingModal';
+import { ExpandedBookingCard } from '../components/ExpandedBookingCard';
 import { formatPrice, formatTimeInZone, formatDateLong } from '../lib/format';
 import { colors, spacing, typography } from '../theme';
 import type { Booking, EventRegistration, ModifiedFromInfo } from '../types';
 import type { MainTabParamList, ModifyBookingParams } from '../navigation/types';
+
+// Enable LayoutAnimation on Android
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type FeedItem =
   | { kind: 'booking'; sortDate: string; booking: Booking }
@@ -31,6 +45,7 @@ export function MyBookingsScreen() {
   const { organization } = useFacility();
   const { user } = useAuth();
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
+  const route = useRoute<RouteProp<MainTabParamList, 'Bookings'>>();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [eventRegistrations, setEventRegistrations] = useState<EventRegistration[]>([]);
   const [bookingSlotIds, setBookingSlotIds] = useState<Record<string, string[]>>({});
@@ -38,7 +53,21 @@ export function MyBookingsScreen() {
   const [hasPaymentMode, setHasPaymentMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [cancelModalBooking, setCancelModalBooking] = useState<Booking | null>(null);
+  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+  const [pastTab, setPastTab] = useState<'past' | 'cancelled'>('past');
+  const sectionListRef = useRef<SectionList<FeedItem>>(null);
+  const pendingScrollId = useRef<string | null>(null);
+
+  // Auto-expand a booking when navigated to with expandBookingId param
+  useEffect(() => {
+    const targetId = route.params?.expandBookingId;
+    if (targetId) {
+      setExpandedBookingId(targetId);
+      pendingScrollId.current = targetId;
+      // Clear the param so it doesn't re-trigger on re-focus
+      navigation.setParams({ expandBookingId: undefined } as any);
+    }
+  }, [route.params?.expandBookingId]);
 
   const fetchData = useCallback(async () => {
     if (!user || !organization) return;
@@ -199,13 +228,20 @@ export function MyBookingsScreen() {
     navigation.navigate('Book', { modifyBooking: params });
   };
 
-  const handleCancelBooking = (booking: Booking) => {
-    setCancelModalBooking(booking);
+  const handleToggleExpand = (bookingId: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedBookingId((prev) => (prev === bookingId ? null : bookingId));
   };
 
-  const handleCancelComplete = () => {
-    setCancelModalBooking(null);
-    Alert.alert('Cancelled', `Booking ${cancelModalBooking?.confirmation_code} has been cancelled.`);
+  const handleCollapse = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedBookingId(null);
+  };
+
+  const handleCancelComplete = (booking: Booking) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedBookingId(null);
+    Alert.alert('Cancelled', `Booking ${booking.confirmation_code} has been cancelled.`);
     fetchData();
   };
 
@@ -235,6 +271,70 @@ export function MyBookingsScreen() {
     );
   };
 
+  // Scroll to the expanded booking after data loads
+  useEffect(() => {
+    const targetId = pendingScrollId.current;
+    if (!targetId || loading || bookings.length === 0) return;
+
+    // Build sections inline to find the target index
+    const now = new Date();
+    const upcomingItems: FeedItem[] = bookings
+      .filter((b) => b.status !== 'cancelled' && new Date(b.end_time).getTime() > now.getTime())
+      .map((b) => ({ kind: 'booking' as const, sortDate: b.start_time, booking: b }));
+    const pastItems: FeedItem[] = bookings
+      .filter((b) => b.status === 'cancelled' || new Date(b.end_time).getTime() <= now.getTime())
+      .map((b) => ({ kind: 'booking' as const, sortDate: b.start_time, booking: b }));
+
+    // Include event items in section calculation
+    const upcomingEvtItems: FeedItem[] = eventRegistrations
+      .filter((r) => r.status !== 'cancelled' && r.events && new Date(r.events.end_time) >= now)
+      .map((r) => ({ kind: 'event' as const, sortDate: r.events!.start_time, registration: r }));
+    const pastEvtItems: FeedItem[] = eventRegistrations
+      .filter((r) => r.status === 'cancelled' || (r.events && new Date(r.events.end_time) < now))
+      .filter((r) => r.events !== null)
+      .map((r) => ({ kind: 'event' as const, sortDate: r.events!.start_time, registration: r }));
+
+    const upcomingSorted = [...upcomingItems, ...upcomingEvtItems]
+      .sort((a, b) => new Date(a.sortDate).getTime() - new Date(b.sortDate).getTime());
+    const scrollSortDesc = (a: FeedItem, b: FeedItem) =>
+      new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime();
+    const scrollPastCompleted = [...pastItems, ...pastEvtItems]
+      .filter((item) => {
+        if (item.kind === 'booking') return item.booking.status !== 'cancelled';
+        return item.registration.status !== 'cancelled';
+      })
+      .sort(scrollSortDesc);
+    const activePast = pastTab === 'past' ? scrollPastCompleted : [...pastItems, ...pastEvtItems]
+      .filter((item) => {
+        if (item.kind === 'booking') return item.booking.status === 'cancelled';
+        return item.registration.status === 'cancelled';
+      })
+      .sort(scrollSortDesc);
+
+    const builtSections = [
+      ...(upcomingSorted.length > 0 ? [{ title: 'Upcoming', data: upcomingSorted }] : []),
+      ...(activePast.length > 0 ? [{ title: pastTab === 'past' ? 'Past' : 'Cancelled', data: activePast }] : []),
+    ];
+
+    for (let sectionIndex = 0; sectionIndex < builtSections.length; sectionIndex++) {
+      const itemIndex = builtSections[sectionIndex].data.findIndex(
+        (item) => item.kind === 'booking' && item.booking.id === targetId
+      );
+      if (itemIndex >= 0) {
+        pendingScrollId.current = null;
+        setTimeout(() => {
+          sectionListRef.current?.scrollToLocation({
+            sectionIndex,
+            itemIndex,
+            animated: true,
+            viewOffset: 0,
+          });
+        }, 300);
+        break;
+      }
+    }
+  }, [loading, bookings, eventRegistrations]);
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -247,13 +347,21 @@ export function MyBookingsScreen() {
   const todayStr = now.toISOString().slice(0, 10);
   const tz = organization?.timezone || 'America/New_York';
 
-  // Build unified feed items
+  // Build unified feed items — use time-based status (matching web behavior)
   const upcomingBookingItems: FeedItem[] = bookings
-    .filter((b) => b.status === 'confirmed' && b.date >= todayStr)
+    .filter((b) => {
+      if (b.status === 'cancelled') return false;
+      // "upcoming" means confirmed and end_time hasn't passed yet (active or future)
+      return new Date(b.end_time).getTime() > now.getTime();
+    })
     .map((b) => ({ kind: 'booking' as const, sortDate: b.start_time, booking: b }));
 
   const pastBookingItems: FeedItem[] = bookings
-    .filter((b) => b.status !== 'confirmed' || b.date < todayStr)
+    .filter((b) => {
+      if (b.status === 'cancelled') return true;
+      // "past" means confirmed but end_time has passed
+      return new Date(b.end_time).getTime() <= now.getTime();
+    })
     .map((b) => ({ kind: 'booking' as const, sortDate: b.start_time, booking: b }));
 
   const upcomingEventItems: FeedItem[] = eventRegistrations
@@ -269,13 +377,30 @@ export function MyBookingsScreen() {
   const upcoming = [...upcomingBookingItems, ...upcomingEventItems]
     .sort((a, b) => new Date(a.sortDate).getTime() - new Date(b.sortDate).getTime());
 
-  // Past: most recent first (descending)
-  const past = [...pastBookingItems, ...pastEventItems]
-    .sort((a, b) => new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime());
+  // Split past into completed vs cancelled, both sorted most recent first
+  const sortDesc = (a: FeedItem, b: FeedItem) =>
+    new Date(b.sortDate).getTime() - new Date(a.sortDate).getTime();
 
+  const pastCompleted = [...pastBookingItems, ...pastEventItems]
+    .filter((item) => {
+      if (item.kind === 'booking') return item.booking.status !== 'cancelled';
+      return item.registration.status !== 'cancelled';
+    })
+    .sort(sortDesc);
+
+  const pastCancelled = [...pastBookingItems, ...pastEventItems]
+    .filter((item) => {
+      if (item.kind === 'booking') return item.booking.status === 'cancelled';
+      return item.registration.status === 'cancelled';
+    })
+    .sort(sortDesc);
+
+  const activePastItems = pastTab === 'past' ? pastCompleted : pastCancelled;
+
+  const hasPastOrCancelled = pastCompleted.length > 0 || pastCancelled.length > 0;
   const sections = [
     ...(upcoming.length > 0 ? [{ title: 'Upcoming', data: upcoming }] : []),
-    ...(past.length > 0 ? [{ title: 'Past & Cancelled', data: past }] : []),
+    ...(hasPastOrCancelled ? [{ title: pastTab === 'past' ? 'Past' : 'Cancelled', data: activePastItems }] : []),
   ];
 
   const getBayNames = (reg: EventRegistration): string => {
@@ -304,73 +429,75 @@ export function MyBookingsScreen() {
     }
   };
 
-  const renderItem = ({ item, section }: { item: FeedItem; section: { title: string } }) => {
+  const renderItem = ({ item, section }: { item: FeedItem; section: any }) => {
     const isUpcoming = section.title === 'Upcoming';
 
     if (item.kind === 'booking') {
       const booking = item.booking;
-      return (
-        <Card style={[styles.bookingCard, !isUpcoming && styles.pastCard]}>
-          <View style={styles.bookingHeader}>
-            <Text style={styles.confirmationCode}>{booking.confirmation_code}</Text>
-            <Badge
-              label={booking.status === 'confirmed' ? 'Confirmed' : 'Cancelled'}
-              variant={booking.status === 'confirmed' ? 'success' : 'destructive'}
+      const isExpanded = expandedBookingId === booking.id;
+
+      if (isExpanded) {
+        return (
+          <Card style={[styles.bookingCard, styles.expandedCard]}>
+            <ExpandedBookingCard
+              booking={booking}
+              timezone={tz}
+              cancellationWindowHours={cancellationWindowHours}
+              hasPaymentMode={hasPaymentMode}
+              canModify={canModifyBooking(booking)}
+              onModify={() => handleModifyBooking(booking)}
+              onCancelled={() => handleCancelComplete(booking)}
+              onCollapse={handleCollapse}
             />
-          </View>
+          </Card>
+        );
+      }
 
-          {booking.modified_from_info && (
-            <Text style={styles.modifiedFrom}>
-              Modified from {formatTimeInZone(booking.modified_from_info.startTime, tz)} –{' '}
-              {formatTimeInZone(booking.modified_from_info.endTime, tz)},{' '}
-              {new Date(booking.modified_from_info.date + 'T12:00:00').toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-              })}
-              , {booking.modified_from_info.bayName}
+      return (
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => handleToggleExpand(booking.id)}
+        >
+          <Card style={[styles.bookingCard, !isUpcoming && styles.pastCard]}>
+            <View style={styles.bookingHeader}>
+              <Text style={styles.confirmationCode}>{booking.confirmation_code}</Text>
+              {(() => {
+                if (booking.status === 'cancelled') {
+                  return <Badge label="Cancelled" variant="destructive" />;
+                }
+                const nowMs = Date.now();
+                const startMs = new Date(booking.start_time).getTime();
+                const endMs = new Date(booking.end_time).getTime();
+                if (nowMs >= startMs && nowMs < endMs) {
+                  return (
+                    <View style={styles.activeBadge}>
+                      <View style={styles.activeDot} />
+                      <Text style={styles.activeBadgeText}>Active</Text>
+                    </View>
+                  );
+                }
+                if (nowMs >= endMs) {
+                  return <Badge label="Completed" variant="muted" />;
+                }
+                return <Badge label="Confirmed" variant="success" />;
+              })()}
+            </View>
+
+            <Text style={styles.bookingDate}>{formatDateLong(booking.date)}</Text>
+            <Text style={styles.bookingTime}>
+              {formatTimeInZone(booking.start_time, tz)} – {formatTimeInZone(booking.end_time, tz)}
             </Text>
-          )}
 
-          <Text style={styles.bookingDate}>{formatDateLong(booking.date)}</Text>
-          <Text style={styles.bookingTime}>
-            {formatTimeInZone(booking.start_time, tz)} – {formatTimeInZone(booking.end_time, tz)}
-          </Text>
+            {booking.bays && <Text style={styles.bookingBay}>{booking.bays.name}</Text>}
 
-          {booking.bays && <Text style={styles.bookingBay}>{booking.bays.name}</Text>}
-
-          <View style={styles.bookingFooter}>
-            <View>
-              {(booking.discount_cents > 0) && (
-                <Text style={styles.discountNote}>
-                  {booking.discount_description || 'Member discount'}: -{formatPrice(booking.discount_cents)}
-                </Text>
-              )}
+            <View style={styles.bookingFooter}>
               <Text style={styles.bookingPrice}>
                 {formatPrice(booking.total_price_cents - (booking.discount_cents || 0))}
               </Text>
+              <Text style={styles.tapHint}>Tap for details</Text>
             </View>
-            {isUpcoming && (
-              <View style={styles.bookingActions}>
-                {canModifyBooking(booking) && (
-                  <Button
-                    title="Modify"
-                    variant="secondary"
-                    size="sm"
-                    onPress={() => handleModifyBooking(booking)}
-                  />
-                )}
-                <Button
-                  title="Cancel"
-                  variant="destructive"
-                  size="sm"
-                  onPress={() => handleCancelBooking(booking)}
-                />
-              </View>
-            )}
-          </View>
-
-          {booking.notes && <Text style={styles.bookingNotes}>Note: {booking.notes}</Text>}
-        </Card>
+          </Card>
+        </TouchableOpacity>
       );
     }
 
@@ -425,21 +552,35 @@ export function MyBookingsScreen() {
 
   return (
     <View style={styles.container}>
-      <CancelBookingModal
-        visible={!!cancelModalBooking}
-        booking={cancelModalBooking}
-        timezone={tz}
-        cancellationWindowHours={cancellationWindowHours}
-        hasPaymentMode={hasPaymentMode}
-        onClose={() => setCancelModalBooking(null)}
-        onCancelled={handleCancelComplete}
-      />
       <SectionList
+        ref={sectionListRef}
         sections={sections}
         renderItem={renderItem}
-        renderSectionHeader={({ section: { title } }) => (
-          <Text style={styles.sectionHeader}>{title}</Text>
-        )}
+        renderSectionHeader={({ section: { title } }) => {
+          if (title === 'Past' || title === 'Cancelled') {
+            return (
+              <View style={styles.pastTabContainer}>
+                <TouchableOpacity
+                  style={[styles.pastTab, pastTab === 'past' && styles.pastTabActive]}
+                  onPress={() => setPastTab('past')}
+                >
+                  <Text style={[styles.pastTabText, pastTab === 'past' && styles.pastTabTextActive]}>
+                    Past{pastCompleted.length > 0 ? ` (${pastCompleted.length})` : ''}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.pastTab, pastTab === 'cancelled' && styles.pastTabActive]}
+                  onPress={() => setPastTab('cancelled')}
+                >
+                  <Text style={[styles.pastTabText, pastTab === 'cancelled' && styles.pastTabTextActive]}>
+                    Cancelled{pastCancelled.length > 0 ? ` (${pastCancelled.length})` : ''}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            );
+          }
+          return <Text style={styles.sectionHeader}>{title}</Text>;
+        }}
         keyExtractor={(item) =>
           item.kind === 'booking' ? item.booking.id : item.registration.id
         }
@@ -477,11 +618,65 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     marginTop: spacing.md,
   },
+  pastTabContainer: {
+    flexDirection: 'row',
+    backgroundColor: colors.muted,
+    borderRadius: 10,
+    padding: 3,
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  pastTab: {
+    flex: 1,
+    alignItems: 'center' as const,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  pastTabActive: {
+    backgroundColor: colors.background,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  pastTabText: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    color: colors.mutedForeground,
+  },
+  pastTabTextActive: {
+    color: colors.foreground,
+  },
   bookingCard: {
     marginBottom: spacing.md,
   },
+  expandedCard: {
+    borderColor: colors.primary,
+    borderWidth: 1.5,
+  },
   pastCard: {
     opacity: 0.6,
+  },
+  activeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#16a34a',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 999,
+    gap: 4,
+  },
+  activeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#ffffff',
+  },
+  activeBadgeText: {
+    ...typography.caption,
+    fontWeight: '600',
+    color: '#ffffff',
   },
   bookingHeader: {
     flexDirection: 'row',
@@ -527,25 +722,8 @@ const styles = StyleSheet.create({
     ...typography.h3,
     color: colors.foreground,
   },
-  discountNote: {
-    ...typography.caption,
-    color: '#0d9488',
-    marginBottom: 2,
-  },
-  bookingActions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  modifiedFrom: {
-    ...typography.caption,
-    color: '#2563eb',
-    marginTop: 2,
-    marginBottom: spacing.xs,
-  },
-  bookingNotes: {
+  tapHint: {
     ...typography.caption,
     color: colors.mutedForeground,
-    marginTop: spacing.sm,
-    fontStyle: 'italic',
   },
 });
