@@ -368,6 +368,20 @@ export function DynamicAvailabilityWidget(
   const [datePageStart, setDatePageStart] = useState(0);
   const DATES_PER_PAGE = 7;
 
+  const [chatFocused, setChatFocused] = useState(false);
+  const chatRef = useRef<HTMLDivElement>(null);
+
+  // Collapse chat focus when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (chatFocused && chatRef.current && !chatRef.current.contains(e.target as Node)) {
+        setChatFocused(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [chatFocused]);
+
   // Events for the selected date/facility
   const [dayEvents, setDayEvents] = useState<DayEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
@@ -1109,7 +1123,7 @@ export function DynamicAvailabilityWidget(
   return (
     <div className="flex items-start gap-6">
       {/* ===== Sidebar — Confirmed Bookings + Chat Assistant (desktop only) ===== */}
-      <div className="sticky top-[4.5rem] hidden w-72 shrink-0 flex-col rounded-xl border bg-card shadow-sm lg:flex max-h-[calc(100vh-5.5rem)]">
+      <div className="sticky top-[4.5rem] hidden w-72 shrink-0 flex-col rounded-xl border bg-card shadow-sm lg:flex h-[calc(100vh-5.5rem)]">
         {/* Bookings section — scrollable middle */}
         {isAuthenticated ? (
           <div className="flex min-h-0 flex-1 flex-col">
@@ -1197,7 +1211,11 @@ export function DynamicAvailabilityWidget(
 
         {/* Chat Assistant — always pinned to bottom */}
         {facilitySlug && (
-          <div className="shrink-0 border-t">
+          <div
+            ref={chatRef}
+            className="shrink-0 border-t"
+            onMouseDown={() => setChatFocused(true)}
+          >
             <button
               type="button"
               onClick={() => setChatExpanded((v) => !v)}
@@ -1212,7 +1230,7 @@ export function DynamicAvailabilityWidget(
               )}
             </button>
             {chatExpanded && (
-              <div className="h-[28rem] px-2 pb-2">
+              <div className={`px-2 pb-2 transition-all duration-200 ${chatFocused ? "h-[28rem]" : "h-[22.4rem]"}`}>
                 <ChatWidget
                   facilitySlug={facilitySlug}
                   orgName={orgName}
