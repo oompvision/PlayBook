@@ -254,8 +254,6 @@ export function BookingScreen({ route, navigation }: Props) {
       setSelectedOption(bookableOptions[0]);
     }
   }, [isDynamic, bookableOptions, route.params]);
-    setSelectedOption(bookableOptions[0]);
-  }, [isDynamic, bookableOptions, selectedOption]);
 
   // Update selected duration when available durations change
   useEffect(() => {
