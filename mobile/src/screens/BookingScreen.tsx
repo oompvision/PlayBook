@@ -117,6 +117,7 @@ export function BookingScreen({ route, navigation }: Props) {
   const [bookingStep, setBookingStep] = useState<BookingStep>('summary');
   const [successCode, setSuccessCode] = useState<string | null>(null);
   const [successOldCode, setSuccessOldCode] = useState<string | null>(null);
+  const [successBookingId, setSuccessBookingId] = useState<string | null>(null);
 
   // Payment info for modify mode
   const [modifyPaymentMode, setModifyPaymentMode] = useState<string>('none');
@@ -544,7 +545,7 @@ export function BookingScreen({ route, navigation }: Props) {
     }
 
     setBooking(false);
-    showBookingSuccess(result?.confirmation_code);
+    showBookingSuccess(result?.confirmation_code, undefined, result?.booking_id);
   };
 
   const handleDynamicBook = async () => {
@@ -636,12 +637,13 @@ export function BookingScreen({ route, navigation }: Props) {
     }
 
     setBooking(false);
-    showBookingSuccess((result as any)?.confirmation_code);
+    showBookingSuccess((result as any)?.confirmation_code, undefined, (result as any)?.booking_id);
   };
 
-  const showBookingSuccess = (confirmationCode?: string, oldCode?: string) => {
+  const showBookingSuccess = (confirmationCode?: string, oldCode?: string, bookingId?: string) => {
     setSuccessCode(confirmationCode || 'Confirmed');
     setSuccessOldCode(oldCode || null);
+    setSuccessBookingId(bookingId || null);
     setBookingStep('success');
   };
 
@@ -652,6 +654,7 @@ export function BookingScreen({ route, navigation }: Props) {
     setBookingStep('summary');
     setSuccessCode(null);
     setSuccessOldCode(null);
+    setSuccessBookingId(null);
     setNotes('');
   };
 
@@ -713,7 +716,7 @@ export function BookingScreen({ route, navigation }: Props) {
     }
 
     setBooking(false);
-    showBookingSuccess(result?.confirmation_code, modifyBooking.confirmationCode);
+    showBookingSuccess(result?.confirmation_code, modifyBooking.confirmationCode, result?.booking_id);
   };
 
   const handleDynamicModify = async () => {
@@ -767,7 +770,7 @@ export function BookingScreen({ route, navigation }: Props) {
     }
 
     setBooking(false);
-    showBookingSuccess(result?.confirmation_code, modifyBooking.confirmationCode);
+    showBookingSuccess(result?.confirmation_code, modifyBooking.confirmationCode, result?.booking_id);
   };
 
   const handleBook = isModifyMode
@@ -1439,13 +1442,16 @@ export function BookingScreen({ route, navigation }: Props) {
               </View>
               <View style={sheetStyles.footer}>
                 <Button
-                  title="View My Bookings"
+                  title="View Booking"
                   onPress={() => {
+                    const bookingId = successBookingId;
                     resetSelection();
                     if (isModifyMode) {
                       navigation.setParams({ modifyBooking: undefined } as any);
                     }
-                    (navigation as any).navigate('Bookings');
+                    (navigation as any).navigate('Bookings', {
+                      expandBookingId: bookingId || undefined,
+                    });
                   }}
                   size="lg"
                 />
