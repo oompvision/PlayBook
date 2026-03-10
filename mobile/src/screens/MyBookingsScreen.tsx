@@ -54,12 +54,15 @@ export function MyBookingsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+  const sectionListRef = useRef<SectionList<FeedItem>>(null);
+  const pendingScrollId = useRef<string | null>(null);
 
   // Auto-expand a booking when navigated to with expandBookingId param
   useEffect(() => {
     const targetId = route.params?.expandBookingId;
     if (targetId) {
       setExpandedBookingId(targetId);
+      pendingScrollId.current = targetId;
       // Clear the param so it doesn't re-trigger on re-focus
       navigation.setParams({ expandBookingId: undefined } as any);
     }
@@ -318,6 +321,31 @@ export function MyBookingsScreen() {
     ...(past.length > 0 ? [{ title: 'Past & Cancelled', data: past }] : []),
   ];
 
+  // Scroll to the expanded booking after data loads
+  useEffect(() => {
+    const targetId = pendingScrollId.current;
+    if (!targetId || sections.length === 0) return;
+
+    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+      const itemIndex = sections[sectionIndex].data.findIndex(
+        (item) => item.kind === 'booking' && item.booking.id === targetId
+      );
+      if (itemIndex >= 0) {
+        pendingScrollId.current = null;
+        // Delay to let the list render first
+        setTimeout(() => {
+          sectionListRef.current?.scrollToLocation({
+            sectionIndex,
+            itemIndex,
+            animated: true,
+            viewOffset: 0,
+          });
+        }, 300);
+        break;
+      }
+    }
+  }, [sections.length, bookings]);
+
   const getBayNames = (reg: EventRegistration): string => {
     if (!reg.events?.event_bays) return '';
     return reg.events.event_bays
@@ -468,6 +496,7 @@ export function MyBookingsScreen() {
   return (
     <View style={styles.container}>
       <SectionList
+        ref={sectionListRef}
         sections={sections}
         renderItem={renderItem}
         renderSectionHeader={({ section: { title } }) => (
