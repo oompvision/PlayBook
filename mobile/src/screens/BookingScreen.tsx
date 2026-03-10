@@ -66,6 +66,7 @@ export function BookingScreen({ route, navigation }: Props) {
 
   const initialDate = modifyBooking?.date || (route.params as any)?.date;
   const initialBayId = modifyBooking?.bayId || (route.params as any)?.bayId;
+  const initialFacilityGroupId = (route.params as any)?.facilityGroupId;
 
   const [selectedDate, setSelectedDate] = useState<string>(
     initialDate || (organization ? getTodayInTimezone(organization.timezone) : '')
@@ -215,11 +216,28 @@ export function BookingScreen({ route, navigation }: Props) {
     return opts;
   }, [isDynamic, facilityGroups, standaloneBays]);
 
-  // Auto-select first option for dynamic if only one exists
+  // Auto-select facility group/bay from nav params, or first option
   useEffect(() => {
-    if (isDynamic && bookableOptions.length > 0 && !selectedOption) {
-      setSelectedOption(bookableOptions[0]);
+    if (!isDynamic || bookableOptions.length === 0 || selectedOption) return;
+    if (initialFacilityGroupId) {
+      const match = bookableOptions.find(
+        (o) => o.type === 'group' && o.group.id === initialFacilityGroupId
+      );
+      if (match) {
+        setSelectedOption(match);
+        return;
+      }
     }
+    if (initialBayId) {
+      const match = bookableOptions.find(
+        (o) => o.type === 'bay' && o.bay.id === initialBayId
+      );
+      if (match) {
+        setSelectedOption(match);
+        return;
+      }
+    }
+    setSelectedOption(bookableOptions[0]);
   }, [isDynamic, bookableOptions, selectedOption]);
 
   // Update selected duration when available durations change

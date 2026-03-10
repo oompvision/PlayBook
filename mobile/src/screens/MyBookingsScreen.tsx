@@ -13,8 +13,9 @@ import {
   Platform,
   UIManager,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { RouteProp } from '@react-navigation/native';
 import { useFacility } from '../lib/facility-context';
 import { useAuth } from '../lib/auth-context';
 import { supabase } from '../lib/supabase';
@@ -44,6 +45,7 @@ export function MyBookingsScreen() {
   const { organization } = useFacility();
   const { user } = useAuth();
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
+  const route = useRoute<RouteProp<MainTabParamList, 'Bookings'>>();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [eventRegistrations, setEventRegistrations] = useState<EventRegistration[]>([]);
   const [bookingSlotIds, setBookingSlotIds] = useState<Record<string, string[]>>({});
@@ -52,6 +54,16 @@ export function MyBookingsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+
+  // Auto-expand a booking when navigated to with expandBookingId param
+  useEffect(() => {
+    const targetId = route.params?.expandBookingId;
+    if (targetId) {
+      setExpandedBookingId(targetId);
+      // Clear the param so it doesn't re-trigger on re-focus
+      navigation.setParams({ expandBookingId: undefined } as any);
+    }
+  }, [route.params?.expandBookingId]);
 
   const fetchData = useCallback(async () => {
     if (!user || !organization) return;

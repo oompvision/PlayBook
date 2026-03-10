@@ -18,8 +18,8 @@ export interface ModifyBookingParams {
 
 export type MainTabParamList = {
   Home: undefined;
-  Book: { date?: string; bayId?: string; modifyBooking?: ModifyBookingParams } | undefined;
-  Bookings: undefined;
+  Book: { date?: string; bayId?: string; facilityGroupId?: string; modifyBooking?: ModifyBookingParams } | undefined;
+  Bookings: { expandBookingId?: string } | undefined;
   Membership: undefined;
   Account: undefined;
 };
