@@ -1120,19 +1120,27 @@ export function DynamicAvailabilityWidget(
     ? ["Booking Details", "Payment Method", "Confirm Booking"]
     : ["Booking Details", "Confirm Booking"];
 
-  // Track sidebar left position for fixed positioning
+  // Track sidebar position for fixed positioning
   const sidebarSpacerRef = useRef<HTMLDivElement>(null);
   const [sidebarLeft, setSidebarLeft] = useState<number | null>(null);
+  const [sidebarTop, setSidebarTop] = useState(72); // 4.5rem fallback
 
   useEffect(() => {
-    function updateLeft() {
+    function updatePosition() {
       if (sidebarSpacerRef.current) {
-        setSidebarLeft(sidebarSpacerRef.current.getBoundingClientRect().left);
+        const rect = sidebarSpacerRef.current.getBoundingClientRect();
+        setSidebarLeft(rect.left);
+        // Align with the spacer's top, but never above the navbar (72px)
+        setSidebarTop(Math.max(72, rect.top));
       }
     }
-    updateLeft();
-    window.addEventListener("resize", updateLeft);
-    return () => window.removeEventListener("resize", updateLeft);
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, { passive: true });
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition);
+    };
   }, []);
 
   return (
@@ -1141,8 +1149,12 @@ export function DynamicAvailabilityWidget(
       {/* Spacer to reserve layout width */}
       <div ref={sidebarSpacerRef} className="hidden w-72 shrink-0 lg:block" />
       <div
-        style={sidebarLeft != null ? { left: sidebarLeft } : undefined}
-        className="fixed top-[4.5rem] z-30 hidden w-72 flex-col overflow-hidden rounded-xl border bg-card shadow-sm lg:flex h-[calc(100vh-5.5rem)]"
+        style={{
+          ...(sidebarLeft != null ? { left: sidebarLeft } : {}),
+          top: sidebarTop,
+          height: `calc(100vh - ${sidebarTop + 16}px)`,
+        }}
+        className="fixed z-30 hidden w-72 flex-col overflow-hidden rounded-xl border bg-card shadow-sm lg:flex"
       >
         {/* Bookings section — scrollable middle */}
         {isAuthenticated ? (
