@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,11 @@ import {
   RefreshControl,
   Alert,
   ActivityIndicator,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -17,11 +22,19 @@ import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
-import { CancelBookingModal } from '../components/CancelBookingModal';
+import { ExpandedBookingCard } from '../components/ExpandedBookingCard';
 import { formatPrice, formatTimeInZone, formatDateLong } from '../lib/format';
 import { colors, spacing, typography } from '../theme';
 import type { Booking, EventRegistration, ModifiedFromInfo } from '../types';
 import type { MainTabParamList, ModifyBookingParams } from '../navigation/types';
+
+// Enable LayoutAnimation on Android
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type FeedItem =
   | { kind: 'booking'; sortDate: string; booking: Booking }
@@ -38,7 +51,7 @@ export function MyBookingsScreen() {
   const [hasPaymentMode, setHasPaymentMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [cancelModalBooking, setCancelModalBooking] = useState<Booking | null>(null);
+  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!user || !organization) return;
@@ -199,13 +212,20 @@ export function MyBookingsScreen() {
     navigation.navigate('Book', { modifyBooking: params });
   };
 
-  const handleCancelBooking = (booking: Booking) => {
-    setCancelModalBooking(booking);
+  const handleToggleExpand = (bookingId: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedBookingId((prev) => (prev === bookingId ? null : bookingId));
   };
 
-  const handleCancelComplete = () => {
-    setCancelModalBooking(null);
-    Alert.alert('Cancelled', `Booking ${cancelModalBooking?.confirmation_code} has been cancelled.`);
+  const handleCollapse = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedBookingId(null);
+  };
+
+  const handleCancelComplete = (booking: Booking) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedBookingId(null);
+    Alert.alert('Cancelled', `Booking ${booking.confirmation_code} has been cancelled.`);
     fetchData();
   };
 
@@ -309,68 +329,54 @@ export function MyBookingsScreen() {
 
     if (item.kind === 'booking') {
       const booking = item.booking;
-      return (
-        <Card style={[styles.bookingCard, !isUpcoming && styles.pastCard]}>
-          <View style={styles.bookingHeader}>
-            <Text style={styles.confirmationCode}>{booking.confirmation_code}</Text>
-            <Badge
-              label={booking.status === 'confirmed' ? 'Confirmed' : 'Cancelled'}
-              variant={booking.status === 'confirmed' ? 'success' : 'destructive'}
+      const isExpanded = expandedBookingId === booking.id;
+
+      if (isExpanded) {
+        return (
+          <Card style={[styles.bookingCard, styles.expandedCard]}>
+            <ExpandedBookingCard
+              booking={booking}
+              timezone={tz}
+              cancellationWindowHours={cancellationWindowHours}
+              hasPaymentMode={hasPaymentMode}
+              canModify={canModifyBooking(booking)}
+              onModify={() => handleModifyBooking(booking)}
+              onCancelled={() => handleCancelComplete(booking)}
+              onCollapse={handleCollapse}
             />
-          </View>
+          </Card>
+        );
+      }
 
-          {booking.modified_from_info && (
-            <Text style={styles.modifiedFrom}>
-              Modified from {formatTimeInZone(booking.modified_from_info.startTime, tz)} –{' '}
-              {formatTimeInZone(booking.modified_from_info.endTime, tz)},{' '}
-              {new Date(booking.modified_from_info.date + 'T12:00:00').toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-              })}
-              , {booking.modified_from_info.bayName}
+      return (
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => handleToggleExpand(booking.id)}
+        >
+          <Card style={[styles.bookingCard, !isUpcoming && styles.pastCard]}>
+            <View style={styles.bookingHeader}>
+              <Text style={styles.confirmationCode}>{booking.confirmation_code}</Text>
+              <Badge
+                label={booking.status === 'confirmed' ? 'Confirmed' : 'Cancelled'}
+                variant={booking.status === 'confirmed' ? 'success' : 'destructive'}
+              />
+            </View>
+
+            <Text style={styles.bookingDate}>{formatDateLong(booking.date)}</Text>
+            <Text style={styles.bookingTime}>
+              {formatTimeInZone(booking.start_time, tz)} – {formatTimeInZone(booking.end_time, tz)}
             </Text>
-          )}
 
-          <Text style={styles.bookingDate}>{formatDateLong(booking.date)}</Text>
-          <Text style={styles.bookingTime}>
-            {formatTimeInZone(booking.start_time, tz)} – {formatTimeInZone(booking.end_time, tz)}
-          </Text>
+            {booking.bays && <Text style={styles.bookingBay}>{booking.bays.name}</Text>}
 
-          {booking.bays && <Text style={styles.bookingBay}>{booking.bays.name}</Text>}
-
-          <View style={styles.bookingFooter}>
-            <View>
-              {(booking.discount_cents > 0) && (
-                <Text style={styles.discountNote}>
-                  {booking.discount_description || 'Member discount'}: -{formatPrice(booking.discount_cents)}
-                </Text>
-              )}
+            <View style={styles.bookingFooter}>
               <Text style={styles.bookingPrice}>
                 {formatPrice(booking.total_price_cents - (booking.discount_cents || 0))}
               </Text>
+              <Text style={styles.tapHint}>Tap for details</Text>
             </View>
-            {isUpcoming && (
-              <View style={styles.bookingActions}>
-                {canModifyBooking(booking) && (
-                  <Button
-                    title="Modify"
-                    variant="secondary"
-                    size="sm"
-                    onPress={() => handleModifyBooking(booking)}
-                  />
-                )}
-                <Button
-                  title="Cancel"
-                  variant="destructive"
-                  size="sm"
-                  onPress={() => handleCancelBooking(booking)}
-                />
-              </View>
-            )}
-          </View>
-
-          {booking.notes && <Text style={styles.bookingNotes}>Note: {booking.notes}</Text>}
-        </Card>
+          </Card>
+        </TouchableOpacity>
       );
     }
 
@@ -425,15 +431,6 @@ export function MyBookingsScreen() {
 
   return (
     <View style={styles.container}>
-      <CancelBookingModal
-        visible={!!cancelModalBooking}
-        booking={cancelModalBooking}
-        timezone={tz}
-        cancellationWindowHours={cancellationWindowHours}
-        hasPaymentMode={hasPaymentMode}
-        onClose={() => setCancelModalBooking(null)}
-        onCancelled={handleCancelComplete}
-      />
       <SectionList
         sections={sections}
         renderItem={renderItem}
@@ -479,6 +476,10 @@ const styles = StyleSheet.create({
   },
   bookingCard: {
     marginBottom: spacing.md,
+  },
+  expandedCard: {
+    borderColor: colors.primary,
+    borderWidth: 1.5,
   },
   pastCard: {
     opacity: 0.6,
@@ -527,25 +528,8 @@ const styles = StyleSheet.create({
     ...typography.h3,
     color: colors.foreground,
   },
-  discountNote: {
-    ...typography.caption,
-    color: '#0d9488',
-    marginBottom: 2,
-  },
-  bookingActions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  modifiedFrom: {
-    ...typography.caption,
-    color: '#2563eb',
-    marginTop: 2,
-    marginBottom: spacing.xs,
-  },
-  bookingNotes: {
+  tapHint: {
     ...typography.caption,
     color: colors.mutedForeground,
-    marginTop: spacing.sm,
-    fontStyle: 'italic',
   },
 });
