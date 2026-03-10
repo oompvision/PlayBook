@@ -317,7 +317,19 @@ export function AvailabilityWidget({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, orgId, ...opts }),
-    }).catch(() => {});
+    })
+      .then((res) => {
+        if (!res.ok) {
+          res.json().then((body) => {
+            console.error("[fireNotification] API error:", res.status, body);
+          }).catch(() => {
+            console.error("[fireNotification] API error:", res.status);
+          });
+        }
+      })
+      .catch((err) => {
+        console.error("[fireNotification] Network error:", err);
+      });
   }
   const [selectedDate, setSelectedDate] = useState(
     isModify && originalBooking ? originalBooking.date : todayStr
