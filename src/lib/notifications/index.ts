@@ -1,5 +1,7 @@
 import { Resend } from "resend";
 import { createServiceClient } from "@/lib/supabase/service";
+import { renderNotificationEmail, guestBookingConfirmedEmail } from "@/lib/emails/templates/notification-emails";
+import type { OrgBranding } from "@/lib/emails/types";
 import type {
   CreateNotificationParams,
   NotificationRecord,
@@ -15,12 +17,13 @@ const resend = process.env.RESEND_API_KEY
   : null;
 
 const FROM_EMAIL = "noreply@updates.ezbooker.app";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://ezbooker.app";
 
 /**
  * Single entry point for creating notifications.
  * 1. Inserts a row into the notifications table (via service role)
  * 2. Checks org_email_settings to decide whether to send email
- * 3. If email is enabled + recipientEmail provided, sends via Resend
+ * 3. If email is enabled + recipientEmail provided, renders HTML template and sends via Resend
  * 4. Updates the notification row with email_sent status
  */
 export async function createNotification(
@@ -59,15 +62,37 @@ export async function createNotification(
     );
 
     if (emailEnabled) {
-      // 3. Send email via Resend
-      const emailSent = await sendEmail({
-        to: params.recipientEmail,
-        toName: params.recipientName,
-        subject: params.title,
-        body: params.message,
-        link: params.link,
-        orgName: params.orgName,
+      // 3. Resolve org branding for templated email
+      const orgBranding = await getOrgBranding(supabase, params.orgId);
+
+      // Try HTML template first, fall back to plain text
+      const rendered = renderNotificationEmail(params.type, orgBranding, {
+        message: params.message,
+        metadata: params.metadata,
+        recipientName: params.recipientName,
+        siteUrl: SITE_URL,
       });
+
+      let emailSent: boolean;
+      if (rendered) {
+        // Send templated HTML email
+        emailSent = await sendHtmlEmail({
+          to: params.recipientEmail,
+          fromName: orgBranding?.emailFromName || orgBranding?.name || params.orgName,
+          subject: rendered.subject,
+          html: rendered.html,
+        });
+      } else {
+        // Fallback: plain text for types without templates
+        emailSent = await sendPlainEmail({
+          to: params.recipientEmail,
+          toName: params.recipientName,
+          subject: params.title,
+          body: params.message,
+          link: params.link,
+          orgName: params.orgName,
+        });
+      }
 
       // 4. Update notification with email status
       if (emailSent) {
@@ -125,21 +150,77 @@ export async function notifyOrgAdmins(
 }
 
 /**
- * Send an email to a specific address (for guest bookings).
- * Does NOT create a notification row — use this only for guests without accounts.
+ * Send a templated email to a guest (no in-app notification row).
+ * Used for guest booking confirmations.
  */
 export async function sendGuestEmail(params: {
   to: string;
   toName?: string;
   subject: string;
   body: string;
-  link?: string;
   orgName?: string;
+  orgId?: string;
+  metadata?: Record<string, unknown>;
+  claimUrl?: string | null;
 }): Promise<boolean> {
-  return sendEmail(params);
+  // Try templated HTML email
+  if (params.orgId) {
+    const supabase = createServiceClient();
+    const orgBranding = await getOrgBranding(supabase, params.orgId);
+
+    const rendered = guestBookingConfirmedEmail(
+      orgBranding,
+      {
+        bayName: (params.metadata?.bay ?? params.metadata?.bayName) as string | undefined,
+        dateStr: params.metadata?.dateStr as string | undefined,
+        timeStr: params.metadata?.timeStr as string | undefined,
+        confirmationCode: params.metadata?.confirmation_code as string | undefined,
+        totalPrice: params.metadata?.totalPrice as string | undefined,
+      },
+      params.claimUrl ?? null,
+      SITE_URL,
+    );
+
+    return sendHtmlEmail({
+      to: params.to,
+      fromName: orgBranding?.emailFromName || orgBranding?.name || params.orgName,
+      subject: rendered.subject,
+      html: rendered.html,
+    });
+  }
+
+  // Fallback: plain text
+  return sendPlainEmail({
+    to: params.to,
+    toName: params.toName,
+    subject: params.subject,
+    body: params.body,
+    orgName: params.orgName,
+  });
 }
 
 // ── Internal helpers ────────────────────────────────────────
+
+async function getOrgBranding(
+  supabase: ReturnType<typeof createServiceClient>,
+  orgId: string,
+): Promise<OrgBranding | null> {
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("name, slug, logo_url, brand_color, email_from_name")
+    .eq("id", orgId)
+    .single();
+
+  if (!org) return null;
+
+  return {
+    name: org.name,
+    slug: org.slug,
+    logoUrl: org.logo_url,
+    brandColor: org.brand_color || "#18181b",
+    emailFromName: org.email_from_name,
+  };
+}
 
 async function isEmailEnabled(
   supabase: ReturnType<typeof createServiceClient>,
@@ -161,7 +242,37 @@ async function isEmailEnabled(
     : setting.email_to_admin;
 }
 
-async function sendEmail(params: {
+async function sendHtmlEmail(params: {
+  to: string;
+  fromName?: string;
+  subject: string;
+  html: string;
+}): Promise<boolean> {
+  if (!resend) {
+    console.warn("[notifications] Resend not configured (RESEND_API_KEY missing), skipping email");
+    return false;
+  }
+
+  try {
+    const fromName = params.fromName
+      ? `${params.fromName} via EZBooker`
+      : "EZBooker";
+
+    await resend.emails.send({
+      from: `${fromName} <${FROM_EMAIL}>`,
+      to: params.to,
+      subject: params.subject,
+      html: params.html,
+    });
+
+    return true;
+  } catch (err) {
+    console.error("[notifications] Failed to send email:", err);
+    return false;
+  }
+}
+
+async function sendPlainEmail(params: {
   to: string;
   toName?: string;
   subject: string;

@@ -101,6 +101,17 @@ export async function POST(request: Request) {
 
     const code = booking.confirmation_code;
 
+    // Shared metadata for email templates
+    const bookingMeta = {
+      confirmation_code: code,
+      bay: bayName,
+      dateStr,
+      timeStr,
+      totalPrice: priceStr,
+      notes: booking.notes ?? undefined,
+      customerName,
+    };
+
     if (action === "confirmed") {
       const bookingDetails = `${bayName} — ${dateStr}, ${timeStr}\nConfirmation: ${code}\nTotal: ${priceStr}`;
 
@@ -117,20 +128,24 @@ export async function POST(request: Request) {
           recipientEmail: customerEmail,
           recipientName: customerName,
           orgName,
-          metadata: { confirmation_code: code, bay: bayName },
+          metadata: bookingMeta,
         });
       } else if (booking.is_guest && booking.guest_email) {
-        // Guest: send email only (no in-app notification)
-        const claimLink = booking.claim_token
-          ? `\n\nSign up to manage your booking online:\n${process.env.NEXT_PUBLIC_SITE_URL || "https://ezbooker.app"}/auth/signup?claim=${booking.claim_token}`
-          : "\n\nCreate an EZBooker account to manage your bookings online.";
+        // Guest: send templated email (no in-app notification)
+        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://ezbooker.app";
+        const claimUrl = booking.claim_token
+          ? `${siteUrl}/auth/signup?claim=${booking.claim_token}`
+          : null;
 
         await sendGuestEmail({
           to: booking.guest_email,
           toName: booking.guest_name ?? undefined,
           subject: `Booking Confirmed — ${orgName}`,
-          body: `Your booking has been confirmed!\n\n${bookingDetails}${claimLink}`,
+          body: `Your booking has been confirmed!\n\n${bookingDetails}`,
           orgName,
+          orgId,
+          metadata: bookingMeta,
+          claimUrl,
         });
 
         // Admin notification for guest booking
@@ -139,7 +154,7 @@ export async function POST(request: Request) {
           title: `Guest Booking: ${code}`,
           message: `Guest invitation sent to ${booking.guest_email} for ${bayName} — ${dateStr}, ${timeStr}`,
           link: `/admin/bookings?booking=${code}`,
-          metadata: { confirmation_code: code, guest_email: booking.guest_email },
+          metadata: { ...bookingMeta, guest_email: booking.guest_email },
         });
       }
 
@@ -149,7 +164,7 @@ export async function POST(request: Request) {
         title: `New Booking: ${code}`,
         message: `${customerName} booked ${bayName} — ${dateStr}, ${timeStr} (${priceStr})`,
         link: `/admin/bookings?booking=${code}`,
-        metadata: { confirmation_code: code, customer: customerName },
+        metadata: bookingMeta,
       });
     } else if (action === "canceled") {
       // Customer notification
@@ -165,7 +180,7 @@ export async function POST(request: Request) {
           recipientEmail: customerEmail,
           recipientName: customerName,
           orgName,
-          metadata: { confirmation_code: code },
+          metadata: bookingMeta,
         });
       }
 
@@ -175,11 +190,12 @@ export async function POST(request: Request) {
         title: `Booking Cancelled: ${code}`,
         message: `${customerName} cancelled ${bayName} — ${dateStr}, ${timeStr}`,
         link: `/admin/bookings?booking=${code}`,
-        metadata: { confirmation_code: code, customer: customerName },
+        metadata: bookingMeta,
       });
     } else if (action === "modified") {
       // For modifications, include old booking info if available
       let oldDetails = "";
+      let oldMeta: Record<string, unknown> = {};
       if (oldConfirmationCode) {
         const { data: oldBooking } = await supabase
           .from("bookings")
@@ -203,10 +219,17 @@ export async function POST(request: Request) {
             day: "numeric",
           });
           oldDetails = `Previous: ${oldBayName} — ${oldDateStr}, ${oldTimeStr} (${oldConfirmationCode})\n`;
+          oldMeta = {
+            old_confirmation_code: oldConfirmationCode,
+            old_bay: oldBayName,
+            old_dateStr: oldDateStr,
+            old_timeStr: oldTimeStr,
+          };
         }
       }
 
       const newDetails = `New: ${bayName} — ${dateStr}, ${timeStr} (${code})`;
+      const modifyMeta = { ...bookingMeta, ...oldMeta };
 
       // Customer notification
       if (booking.customer_id) {
@@ -221,10 +244,7 @@ export async function POST(request: Request) {
           recipientEmail: customerEmail,
           recipientName: customerName,
           orgName,
-          metadata: {
-            confirmation_code: code,
-            old_confirmation_code: oldConfirmationCode,
-          },
+          metadata: modifyMeta,
         });
       }
 
@@ -234,11 +254,7 @@ export async function POST(request: Request) {
         title: `Booking Modified: ${code}`,
         message: `${customerName}: ${oldDetails}${newDetails}`,
         link: `/admin/bookings?booking=${code}`,
-        metadata: {
-          confirmation_code: code,
-          old_confirmation_code: oldConfirmationCode,
-          customer: customerName,
-        },
+        metadata: modifyMeta,
       });
     }
 

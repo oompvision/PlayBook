@@ -334,6 +334,7 @@ export default async function MyBookingsPage({
       const dateStr = new Date(bookingInfo.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
       const code = bookingInfo.confirmation_code;
 
+      const cancelMeta = { confirmation_code: code, bay: bayName, dateStr, timeStr };
       createNotification({
         orgId: bookingInfo.org_id,
         recipientId: bookingInfo.customer_id,
@@ -345,6 +346,7 @@ export default async function MyBookingsPage({
         recipientEmail: customerProfile?.email,
         recipientName: customerProfile?.full_name ?? undefined,
         orgName,
+        metadata: cancelMeta,
       }).catch(() => {});
 
       notifyOrgAdmins(bookingInfo.org_id, orgName, {
@@ -352,6 +354,7 @@ export default async function MyBookingsPage({
         title: `Booking Cancelled: ${code}`,
         message: `${customerProfile?.full_name || customerProfile?.email || "Customer"} cancelled ${bayName} — ${dateStr}, ${timeStr}`,
         link: `/admin/bookings?booking=${code}`,
+        metadata: cancelMeta,
       }).catch(() => {});
     }
 

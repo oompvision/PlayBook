@@ -243,6 +243,15 @@ async function fireBookingNotifications(params: {
   const code = confirmationCode ?? "";
   const bookingDetails = `${bayName} — ${dateStr}, ${timeStr}\nConfirmation: ${code}\nTotal: ${priceStr}`;
 
+  const bookingMeta = {
+    confirmation_code: code,
+    bay: bayName,
+    dateStr,
+    timeStr,
+    totalPrice: priceStr,
+    customerName,
+  };
+
   // Customer notification
   await createNotification({
     orgId,
@@ -255,7 +264,7 @@ async function fireBookingNotifications(params: {
     recipientEmail: customerEmail,
     recipientName: customerName,
     orgName,
-    metadata: { confirmation_code: code, bay: bayName },
+    metadata: bookingMeta,
   });
 
   // Admin notification
@@ -264,6 +273,6 @@ async function fireBookingNotifications(params: {
     title: `New Booking: ${code}`,
     message: `${customerName} booked ${bayName} — ${dateStr}, ${timeStr} (${priceStr})`,
     link: `/admin/bookings?booking=${code}`,
-    metadata: { confirmation_code: code, customer: customerName },
+    metadata: bookingMeta,
   });
 }
