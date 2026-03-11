@@ -6,6 +6,7 @@ export type Message = {
   role: "user" | "model";
   content: string;
   quickReplies?: string[];
+  bookingLink?: string;
 };
 
 type ChatMessageProps = {
@@ -66,9 +67,20 @@ export function ChatMessage({ message, compact, onQuickReply }: ChatMessageProps
           </span>
         ))}
       </div>
-      {onQuickReply && message.quickReplies && message.quickReplies.length > 0 && (
+      {(message.bookingLink || (onQuickReply && message.quickReplies && message.quickReplies.length > 0)) && (
         <div className="mt-1 flex flex-wrap gap-1">
-          {message.quickReplies.map((reply) => (
+          {message.bookingLink && (
+            <a
+              href={message.bookingLink}
+              className={cn(
+                "rounded-full border border-green-600/30 bg-green-600 font-medium text-white transition-colors hover:bg-green-700 inline-block",
+                compact ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
+              )}
+            >
+              Go to Confirmation
+            </a>
+          )}
+          {onQuickReply && message.quickReplies?.map((reply) => (
             <button
               key={reply}
               type="button"

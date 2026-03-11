@@ -19,7 +19,7 @@ const BAR_PATHS = ["/my-bookings"];
 
 export function ChatBubble({ facilitySlug, orgName }: ChatBubbleProps) {
   const pathname = usePathname();
-  const useBarStyle = BAR_PATHS.some(
+  const useBarStyle = pathname === "/" || BAR_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/")
   );
 
@@ -40,9 +40,7 @@ export function ChatBubble({ facilitySlug, orgName }: ChatBubbleProps) {
   // Avoid flash before hydration when using conditional default state
   if (!hasMounted) return null;
 
-  const visibilityClass = "";
-
-  // Bar style for /my-bookings
+  // Bar style for homepage and /my-bookings
   if (useBarStyle) {
     return (
       <>
@@ -105,7 +103,7 @@ export function ChatBubble({ facilitySlug, orgName }: ChatBubbleProps) {
 
   // Floating bubble style for other pages
   return (
-    <div className={`fixed bottom-4 right-4 z-50 ${visibilityClass}`}>
+    <div className="fixed bottom-4 right-4 z-50">
       {/* Chat panel */}
       {isOpen && (
         <div className="mb-3 flex h-[500px] w-[380px] max-w-[calc(100vw-2rem)] flex-col rounded-2xl border bg-card shadow-2xl">

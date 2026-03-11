@@ -8,6 +8,7 @@ import { SendHorizontal, MessageSquare } from "lucide-react";
 
 const QUICK_REPLIES_DELIMITER = "\n\n<<QUICK_REPLIES>>\n";
 const BOOKING_ACTION_DELIMITER = "\n\n<<BOOKING_ACTION>>\n";
+const BOOKING_LINK_DELIMITER = "\n\n<<BOOKING_LINK>>\n";
 
 export type BookingAction = {
   date: string;
@@ -96,6 +97,7 @@ export function ChatWidget({
           // Strip action delimiters from display during streaming
           const displayText = assistantText
             .split(BOOKING_ACTION_DELIMITER)[0]
+            .split(BOOKING_LINK_DELIMITER)[0]
             .split(QUICK_REPLIES_DELIMITER)[0];
           setMessages((prev) => {
             const updated = [...prev];
@@ -107,21 +109,34 @@ export function ChatWidget({
           });
         }
 
-        // Parse booking action from the final text
+        // Parse booking action from the final text (legacy — kept for backward compat)
         let cleanedText = assistantText;
         if (cleanedText.includes(BOOKING_ACTION_DELIMITER)) {
           const delimIndex = cleanedText.indexOf(BOOKING_ACTION_DELIMITER);
           const afterDelim = cleanedText.slice(delimIndex + BOOKING_ACTION_DELIMITER.length);
           cleanedText = cleanedText.slice(0, delimIndex);
-          // The booking action JSON may be followed by quick replies
-          const actionJson = afterDelim.split(QUICK_REPLIES_DELIMITER)[0];
+          const actionJson = afterDelim.split(QUICK_REPLIES_DELIMITER)[0].split(BOOKING_LINK_DELIMITER)[0];
           try {
             const action = JSON.parse(actionJson) as BookingAction;
             onBookingAction?.(action);
           } catch {
             // JSON parse failed — ignore
           }
-          // Re-attach quick replies portion if present
+          if (afterDelim.includes(QUICK_REPLIES_DELIMITER)) {
+            const qrIndex = afterDelim.indexOf(QUICK_REPLIES_DELIMITER);
+            cleanedText += afterDelim.slice(qrIndex);
+          }
+        }
+
+        // Parse booking link from the final text
+        let parsedBookingLink: string | undefined;
+        if (cleanedText.includes(BOOKING_LINK_DELIMITER)) {
+          const delimIndex = cleanedText.indexOf(BOOKING_LINK_DELIMITER);
+          const afterDelim = cleanedText.slice(delimIndex + BOOKING_LINK_DELIMITER.length);
+          cleanedText = cleanedText.slice(0, delimIndex);
+          // Extract the URL (everything before the next delimiter or end)
+          parsedBookingLink = afterDelim.split(QUICK_REPLIES_DELIMITER)[0].trim();
+          // Re-attach quick replies if present
           if (afterDelim.includes(QUICK_REPLIES_DELIMITER)) {
             const qrIndex = afterDelim.indexOf(QUICK_REPLIES_DELIMITER);
             cleanedText += afterDelim.slice(qrIndex);
@@ -144,6 +159,7 @@ export function ChatWidget({
                   role: "model",
                   content: displayText,
                   quickReplies,
+                  bookingLink: parsedBookingLink,
                 };
                 return updated;
               });
@@ -151,13 +167,14 @@ export function ChatWidget({
           } catch {
             // JSON parse failed — just show the text without buttons
           }
-        } else if (cleanedText !== assistantText) {
-          // Booking action was stripped — update display with clean text
+        } else if (parsedBookingLink || cleanedText !== assistantText) {
+          // Booking link or action was stripped — update display with clean text
           setMessages((prev) => {
             const updated = [...prev];
             updated[updated.length - 1] = {
               role: "model",
               content: cleanedText,
+              bookingLink: parsedBookingLink,
             };
             return updated;
           });
