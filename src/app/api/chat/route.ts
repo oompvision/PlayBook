@@ -963,7 +963,7 @@ async function executeCreateBookingSlotBased(
     const slotTimeStr = `${b.start_time} – ${b.end_time}`;
     const slotMeta = {
       confirmation_code: code,
-      bay: bayName,
+      bay: args.bay_name || "Facility",
       dateStr: slotDateStr,
       timeStr: slotTimeStr,
       totalPrice: b.total_price,
