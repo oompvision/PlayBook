@@ -99,25 +99,13 @@ export async function notifyOrgAdmins(
 ): Promise<void> {
   const supabase = createServiceClient();
 
-  // Include both org admins and super_admins (who manage all orgs)
-  const { data: orgAdmins } = await supabase
+  const { data: admins } = await supabase
     .from("profiles")
     .select("id, email, full_name")
     .eq("org_id", orgId)
     .eq("role", "admin");
 
-  const { data: superAdmins } = await supabase
-    .from("profiles")
-    .select("id, email, full_name")
-    .eq("role", "super_admin");
-
-  // Merge and deduplicate by id
-  const adminMap = new Map<string, { id: string; email: string; full_name: string | null }>();
-  for (const a of orgAdmins ?? []) adminMap.set(a.id, a);
-  for (const a of superAdmins ?? []) adminMap.set(a.id, a);
-  const admins = Array.from(adminMap.values());
-
-  if (admins.length === 0) return;
+  if (!admins || admins.length === 0) return;
 
   for (const admin of admins) {
     await createNotification({
