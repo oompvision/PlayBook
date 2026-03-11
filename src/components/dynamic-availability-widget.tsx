@@ -1604,92 +1604,94 @@ export function DynamicAvailabilityWidget(
         <div className="rounded-xl border bg-card shadow-sm">
           {/* Widget header */}
           <div className="border-b px-4 py-3">
-            <h3 className="text-sm font-semibold">Book a Session</h3>
+            <h3 className="text-sm font-semibold">Booking Details</h3>
           </div>
 
-          <div className="p-4 space-y-4">
-            {/* Date */}
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</p>
-              <p className="mt-1 text-sm font-medium">
-                {formatShortDate(selectedDate)}
-              </p>
-            </div>
-
-            {/* Facility */}
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Facility</p>
-              <p className="mt-1 text-sm font-medium">
-                {selectedSlot?.bay_name || (bays.length === 1 ? bays[0].name : "Select from availability")}
-              </p>
-            </div>
-
-            {/* Duration */}
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Duration</p>
-              <p className="mt-1 text-sm font-medium">
-                {formatDurationLong(selectedDuration)}
-              </p>
-            </div>
-
-            {/* Time */}
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Start Time</p>
-              <p className="mt-1 text-sm font-medium">
-                {selectedSlot
-                  ? `${formatTime(selectedSlot.start_time, timezone)} – ${formatTime(selectedSlot.end_time, timezone)}`
-                  : "Select a time slot"
-                }
-              </p>
-            </div>
-
-            {/* Pricing */}
-            {selectedSlot && (
-              <div className="border-t pt-3">
-                {(() => {
-                  const { discountCents, finalCents, label } = calcDiscount(selectedSlot.price_cents);
-                  return (
-                    <>
-                      {discountCents > 0 && (
-                        <>
-                          <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>Subtotal</span>
-                            <span>${(selectedSlot.price_cents / 100).toFixed(2)}</span>
-                          </div>
-                          <div className="flex items-center justify-between text-xs text-teal-600 dark:text-teal-400">
-                            <span className="flex items-center gap-1">
-                              <Crown className="h-3 w-3" />
-                              {label}
-                            </span>
-                            <span>-${(discountCents / 100).toFixed(2)}</span>
-                          </div>
-                        </>
-                      )}
-                      <div className="flex items-center justify-between text-sm font-bold mt-1">
-                        <span>Total</span>
-                        <span>${(finalCents / 100).toFixed(2)}</span>
-                      </div>
-                    </>
-                  );
-                })()}
+          <div className="px-4 py-3">
+            {/* Details table */}
+            <div className="rounded-lg bg-muted/50 px-4 py-3 space-y-2.5">
+              {/* Date */}
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-muted-foreground">Date</span>
+                <span className="text-sm font-medium text-right">
+                  {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", {
+                    weekday: "long",
+                    month: "long",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </span>
               </div>
-            )}
 
-            {/* Notes */}
-            {selectedSlot && bookingStep === 1 && (
-              <div>
-                <Label htmlFor="desktop-notes-dynamic" className="text-xs text-muted-foreground">
-                  Notes (optional)
-                </Label>
-                <Input
-                  id="desktop-notes-dynamic"
-                  value={bookingNotes}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBookingNotes(e.target.value)}
-                  placeholder="Special requests..."
-                  className="mt-1 h-8 text-xs"
-                />
+              {/* Time */}
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-muted-foreground">Time</span>
+                <span className="text-sm font-medium text-right">
+                  {selectedSlot
+                    ? `${formatTime(selectedSlot.start_time, timezone)} – ${formatTime(selectedSlot.end_time, timezone)}`
+                    : "—"
+                  }
+                </span>
               </div>
-            )}
+
+              {/* Duration */}
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-muted-foreground">Duration</span>
+                <span className="text-sm font-medium">
+                  {formatDurationLong(selectedDuration)}
+                </span>
+              </div>
+
+              {/* Facility */}
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-muted-foreground">Facility</span>
+                <span className="text-sm font-medium">
+                  {selectedSlot?.bay_name
+                    || (selectedGroupId
+                      ? facilityGroups.find((g) => g.id === selectedGroupId)?.name
+                      : selectedBayId
+                        ? bays.find((b) => b.id === selectedBayId)?.name
+                        : bays.length === 1 ? bays[0].name : "—"
+                    )
+                  }
+                </span>
+              </div>
+
+              {/* Total */}
+              {selectedSlot && (
+                <div className="border-t pt-2.5 mt-2.5">
+                  {(() => {
+                    const { discountCents, finalCents, label } = calcDiscount(selectedSlot.price_cents);
+                    return (
+                      <>
+                        {discountCents > 0 && (
+                          <>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                              <span>Subtotal</span>
+                              <span>${(selectedSlot.price_cents / 100).toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs text-teal-600 dark:text-teal-400 mb-1">
+                              <span className="flex items-center gap-1">
+                                <Crown className="h-3 w-3" />
+                                {label}
+                              </span>
+                              <span>-${(discountCents / 100).toFixed(2)}</span>
+                            </div>
+                          </>
+                        )}
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold">Total</span>
+                          <span className="text-sm font-bold">${(finalCents / 100).toFixed(2)}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {/* Action area below the details card */}
+            <div className="mt-4 space-y-3">
 
             {/* Payment section — Step 2 */}
             {bookingStep >= 2 && requiresPayment && checkoutIntent && (
@@ -1871,6 +1873,7 @@ export function DynamicAvailabilityWidget(
             {paymentValidationError && (
               <p className="text-xs text-red-600">{paymentValidationError}</p>
             )}
+            </div>
           </div>
         </div>
       </div>

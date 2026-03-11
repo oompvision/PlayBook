@@ -1971,88 +1971,106 @@ export function AvailabilityWidget({
           <div className="rounded-xl border bg-card shadow-sm">
             {/* Widget header */}
             <div className="border-b px-4 py-3">
-              <h3 className="text-sm font-semibold">Book a Session</h3>
+              <h3 className="text-sm font-semibold">Booking Details</h3>
             </div>
 
-            <div className="p-4 space-y-4">
-              {/* Date */}
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</p>
-                <p className="mt-1 text-sm font-medium">
-                  {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </p>
-              </div>
-
-              {/* Facility */}
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Facility</p>
-                <p className="mt-1 text-sm font-medium">
-                  {selectedBayObj?.name || (bays.length === 1 ? bays[0].name : "Select from availability")}
-                </p>
-              </div>
-
-              {/* Duration / Slots */}
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Duration</p>
-                <p className="mt-1 text-sm font-medium">
-                  {selectedTimeKeys.size > 0
-                    ? `${selectedTimeKeys.size} slot${selectedTimeKeys.size !== 1 ? "s" : ""} · ${selectedSlotInfo.length > 0 ? `${formatTime(selectedSlotInfo[0].start_time, timezone)} – ${formatTime(selectedSlotInfo[selectedSlotInfo.length - 1].end_time, timezone)}` : ""}`
-                    : "Select time slots"
-                  }
-                </p>
-              </div>
-
-              {/* Pricing */}
-              {selectedTimeKeys.size > 0 && (
-                <div className="border-t pt-3">
-                  {(() => {
-                    const { discountCents, finalCents, label } = calcDiscount(totalCents);
-                    return (
-                      <>
-                        {discountCents > 0 && (
-                          <>
-                            <div className="flex items-center justify-between text-xs text-muted-foreground">
-                              <span>Subtotal</span>
-                              <span>${(totalCents / 100).toFixed(2)}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-xs text-teal-600 dark:text-teal-400">
-                              <span className="flex items-center gap-1">
-                                <Crown className="h-3 w-3" />
-                                {label}
-                              </span>
-                              <span>-${(discountCents / 100).toFixed(2)}</span>
-                            </div>
-                          </>
-                        )}
-                        <div className="flex items-center justify-between text-sm font-bold mt-1">
-                          <span>Total</span>
-                          <span>${(finalCents / 100).toFixed(2)}</span>
-                        </div>
-                      </>
-                    );
-                  })()}
+            <div className="px-4 py-3">
+              {/* Details table */}
+              <div className="rounded-lg bg-muted/50 px-4 py-3 space-y-2.5">
+                {/* Date */}
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm text-muted-foreground">Date</span>
+                  <span className="text-sm font-medium text-right">
+                    {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </span>
                 </div>
-              )}
 
-              {/* Notes */}
-              {selectedTimeKeys.size > 0 && bookingStep === 1 && (
-                <div>
-                  <Label htmlFor="desktop-notes" className="text-xs text-muted-foreground">
-                    Notes (optional)
-                  </Label>
-                  <Input
-                    id="desktop-notes"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Special requests..."
-                    className="mt-1 h-8 text-xs"
-                  />
+                {/* Time */}
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm text-muted-foreground">Time</span>
+                  <span className="text-sm font-medium text-right">
+                    {selectedGroups.length > 0
+                      ? selectedGroups.map((g, i) => (
+                          <span key={i} className={i > 0 ? "block" : ""}>
+                            {formatTime(g.start_time, timezone)} – {formatTime(g.end_time, timezone)}
+                          </span>
+                        ))
+                      : "—"
+                    }
+                  </span>
                 </div>
-              )}
+
+                {/* Duration */}
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm text-muted-foreground">Duration</span>
+                  <span className="text-sm font-medium">
+                    {selectedTimeKeys.size > 0
+                      ? (() => {
+                          const totalMinutes = selectedSlotInfo.reduce((sum, s) => {
+                            const start = new Date(s.start_time).getTime();
+                            const end = new Date(s.end_time).getTime();
+                            return sum + (end - start) / 60000;
+                          }, 0);
+                          if (totalMinutes >= 60) {
+                            const hrs = Math.floor(totalMinutes / 60);
+                            const mins = totalMinutes % 60;
+                            return mins > 0 ? `${hrs} hr ${mins} min` : `${hrs} hr`;
+                          }
+                          return `${totalMinutes} min`;
+                        })()
+                      : "—"
+                    }
+                  </span>
+                </div>
+
+                {/* Facility */}
+                <div className="flex items-baseline justify-between">
+                  <span className="text-sm text-muted-foreground">Facility</span>
+                  <span className="text-sm font-medium">
+                    {selectedBayObj?.name || (bays.length === 1 ? bays[0].name : "—")}
+                  </span>
+                </div>
+
+                {/* Total */}
+                {selectedTimeKeys.size > 0 && (
+                  <div className="border-t pt-2.5 mt-2.5">
+                    {(() => {
+                      const { discountCents, finalCents, label } = calcDiscount(totalCents);
+                      return (
+                        <>
+                          {discountCents > 0 && (
+                            <>
+                              <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                                <span>Subtotal</span>
+                                <span>${(totalCents / 100).toFixed(2)}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs text-teal-600 dark:text-teal-400 mb-1">
+                                <span className="flex items-center gap-1">
+                                  <Crown className="h-3 w-3" />
+                                  {label}
+                                </span>
+                                <span>-${(discountCents / 100).toFixed(2)}</span>
+                              </div>
+                            </>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold">Total</span>
+                            <span className="text-sm font-bold">${(finalCents / 100).toFixed(2)}</span>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+
+              {/* Action area below the details card */}
+              <div className="mt-4 space-y-3">
 
               {/* Payment section — Step 2 */}
               {bookingStep >= 2 && requiresPayment && checkoutIntent && (
@@ -2264,6 +2282,7 @@ export function AvailabilityWidget({
               {paymentValidationError && (
                 <p className="text-xs text-red-600">{paymentValidationError}</p>
               )}
+              </div>
             </div>
           </div>
         </div>
