@@ -37,6 +37,40 @@ type BookableOption =
   | { type: 'group'; group: FacilityGroup }
   | { type: 'bay'; bay: Bay };
 
+type TimePeriod = 'morning' | 'midday' | 'evening';
+
+function getTimePeriod(timestamp: string, timezone: string): TimePeriod {
+  const hour = new Date(timestamp).toLocaleString('en-US', {
+    timeZone: timezone,
+    hour: 'numeric',
+    hour12: false,
+  });
+  const h = parseInt(hour, 10);
+  if (h < 12) return 'morning';
+  if (h < 17) return 'midday';
+  return 'evening';
+}
+
+const timePeriodLabels: Record<TimePeriod, { label: string; emoji: string }> = {
+  morning: { label: 'Morning', emoji: '\u2600\ufe0f' },
+  midday: { label: 'Midday', emoji: '\u26c5' },
+  evening: { label: 'Evening', emoji: '\ud83c\udf19' },
+};
+
+function groupSlotsByTimePeriod<T extends { start_time: string }>(
+  items: T[],
+  timezone: string
+): { period: TimePeriod; items: T[] }[] {
+  const buckets: Record<TimePeriod, T[]> = { morning: [], midday: [], evening: [] };
+  for (const item of items) {
+    buckets[getTimePeriod(item.start_time, timezone)].push(item);
+  }
+  const order: TimePeriod[] = ['morning', 'midday', 'evening'];
+  return order
+    .filter((p) => buckets[p].length > 0)
+    .map((p) => ({ period: p, items: buckets[p] }));
+}
+
 export function BookingScreen({ route, navigation }: Props) {
   const {
     organization,
@@ -1105,26 +1139,37 @@ export function BookingScreen({ route, navigation }: Props) {
                   <Text style={styles.emptyText}>No available times for this date.</Text>
                 </Card>
               ) : (
-                <View style={styles.slotsGrid}>
-                  {dynamicSlots.map((slot) => {
-                    const isSelected = selectedDynamicSlot?.start_time === slot.start_time;
-                    return (
-                      <TouchableOpacity
-                        key={slot.start_time}
-                        onPress={() =>
-                          setSelectedDynamicSlot(isSelected ? null : slot)
-                        }
-                        style={[styles.slotChip, isSelected && styles.slotChipSelected]}
-                      >
-                        <Text style={[styles.slotTime, isSelected && styles.slotTimeSelected]}>
-                          {formatTimeInZone(slot.start_time, organization.timezone)}
-                        </Text>
-                        <Text style={[styles.slotPrice, isSelected && styles.slotPriceSelected]}>
-                          {formatPrice(slot.price_cents)}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                <View>
+                  {groupSlotsByTimePeriod(dynamicSlots, organization.timezone).map(({ period, items: periodSlots }) => (
+                    <View key={period} style={periodStyles.section}>
+                      <View style={periodStyles.header}>
+                        <Text style={periodStyles.emoji}>{timePeriodLabels[period].emoji}</Text>
+                        <Text style={periodStyles.label}>{timePeriodLabels[period].label}</Text>
+                        <View style={periodStyles.divider} />
+                      </View>
+                      <View style={styles.slotsGrid}>
+                        {periodSlots.map((slot) => {
+                          const isSelected = selectedDynamicSlot?.start_time === slot.start_time;
+                          return (
+                            <TouchableOpacity
+                              key={slot.start_time}
+                              onPress={() =>
+                                setSelectedDynamicSlot(isSelected ? null : slot)
+                              }
+                              style={[styles.slotChip, isSelected && styles.slotChipSelected]}
+                            >
+                              <Text style={[styles.slotTime, isSelected && styles.slotTimeSelected]}>
+                                {formatTimeInZone(slot.start_time, organization.timezone)}
+                              </Text>
+                              <Text style={[styles.slotPrice, isSelected && styles.slotPriceSelected]}>
+                                {formatPrice(slot.price_cents)}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  ))}
                 </View>
               )}
             </>
@@ -1145,24 +1190,35 @@ export function BookingScreen({ route, navigation }: Props) {
                 <Text style={styles.emptyText}>No available slots for this date and bay.</Text>
               </Card>
             ) : (
-              <View style={styles.slotsGrid}>
-                {slots.map((slot) => {
-                  const isSelected = selectedSlotIds.has(slot.id);
-                  return (
-                    <TouchableOpacity
-                      key={slot.id}
-                      onPress={() => toggleSlot(slot.id)}
-                      style={[styles.slotChip, isSelected && styles.slotChipSelected]}
-                    >
-                      <Text style={[styles.slotTime, isSelected && styles.slotTimeSelected]}>
-                        {formatTimeInZone(slot.start_time, organization.timezone)}
-                      </Text>
-                      <Text style={[styles.slotPrice, isSelected && styles.slotPriceSelected]}>
-                        {formatPrice(slot.price_cents)}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+              <View>
+                {groupSlotsByTimePeriod(slots, organization!.timezone).map(({ period, items: periodSlots }) => (
+                  <View key={period} style={periodStyles.section}>
+                    <View style={periodStyles.header}>
+                      <Text style={periodStyles.emoji}>{timePeriodLabels[period].emoji}</Text>
+                      <Text style={periodStyles.label}>{timePeriodLabels[period].label}</Text>
+                      <View style={periodStyles.divider} />
+                    </View>
+                    <View style={styles.slotsGrid}>
+                      {periodSlots.map((slot) => {
+                        const isSelected = selectedSlotIds.has(slot.id);
+                        return (
+                          <TouchableOpacity
+                            key={slot.id}
+                            onPress={() => toggleSlot(slot.id)}
+                            style={[styles.slotChip, isSelected && styles.slotChipSelected]}
+                          >
+                            <Text style={[styles.slotTime, isSelected && styles.slotTimeSelected]}>
+                              {formatTimeInZone(slot.start_time, organization!.timezone)}
+                            </Text>
+                            <Text style={[styles.slotPrice, isSelected && styles.slotPriceSelected]}>
+                              {formatPrice(slot.price_cents)}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ))}
               </View>
             )}
           </>
@@ -2123,6 +2179,33 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.primaryForeground,
     fontWeight: '600',
+  },
+});
+
+const periodStyles = StyleSheet.create({
+  section: {
+    marginBottom: spacing.lg,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  emoji: {
+    fontSize: 14,
+  },
+  label: {
+    ...typography.caption,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    color: colors.mutedForeground,
+  },
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
   },
 });
 
