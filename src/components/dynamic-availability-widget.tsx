@@ -48,6 +48,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   Sparkles,
+  SendHorizontal,
   Crown,
   Users,
   Sun,
@@ -453,7 +454,7 @@ export function DynamicAvailabilityWidget(
   const [selectedEventForPanel, setSelectedEventForPanel] = useState<EventForPanel | null>(null);
 
   // Sidebar: confirmed bookings + chat
-  const [chatExpanded, setChatExpanded] = useState(true);
+  const [chatExpanded, setChatExpanded] = useState(false);
   const pendingBookingAction = useRef<BookingAction | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
@@ -1223,135 +1224,65 @@ export function DynamicAvailabilityWidget(
 
   return (
     <div className="flex items-start gap-6">
-      {/* ===== Sidebar — Confirmed Bookings + Chat Assistant (desktop only) ===== */}
+      {/* ===== Sidebar — Chat Assistant (desktop only) ===== */}
       {/* Spacer to reserve layout width */}
-      <div ref={sidebarSpacerRef} className="hidden w-72 shrink-0 lg:block" />
+      {facilitySlug && (
+        <div ref={sidebarSpacerRef} className="hidden w-72 shrink-0 lg:block" />
+      )}
+      {facilitySlug && (
       <div
+        ref={chatRef}
         style={{
           ...(sidebarLeft != null ? { left: sidebarLeft } : {}),
           top: sidebarTop,
-          height: `calc(100vh - ${sidebarTop + 16}px)`,
         }}
         className="fixed z-30 hidden w-72 flex-col overflow-hidden rounded-xl border bg-card shadow-sm lg:flex"
+        onMouseDown={() => setChatFocused(true)}
       >
-        {/* Bookings section — scrollable middle */}
-        {isAuthenticated ? (
-          <div className="flex min-h-0 flex-1 flex-col">
-            {/* Sticky header */}
-            <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-card px-4 py-3">
-              <CalendarCheck className="h-4 w-4 text-muted-foreground" />
-              <h3 className="flex-1 text-sm font-semibold">Confirmed Bookings</h3>
-              <a
-                href="/my-bookings"
-                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                title="View all bookings"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            </div>
-            {/* Scrollable booking cards */}
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              {bookingsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : bookings.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 py-8 text-center">
-                  <CalendarCheck className="h-8 w-8 text-muted-foreground/20" />
-                  <p className="text-xs text-muted-foreground">
-                    No upcoming bookings
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {bookings.map((booking) => {
-                    const bayName =
-                      bays.find((b) => b.id === booking.bay_id)?.name ??
-                      "Unknown Bay";
-                    const price = `$${((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}`;
-                    const isHighlighted = highlightedBookingIds.has(booking.id);
+        {/* Chat header — clickable to expand/collapse */}
+        <button
+          type="button"
+          onClick={() => setChatExpanded((v) => !v)}
+          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          <span className="flex-1">Booking Assistant AI</span>
+          {chatExpanded ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronUp className="h-3.5 w-3.5" />
+          )}
+        </button>
 
-                    return (
-                      <button
-                        type="button"
-                        key={booking.id}
-                        onClick={() => openSidebarBooking(booking)}
-                        className={`block w-full rounded-lg border bg-background p-3 text-left transition-all duration-700 hover:bg-muted/50 ${
-                          isHighlighted
-                            ? "border-green-400 shadow-[0_0_8px_rgba(74,222,128,0.3)]"
-                            : ""
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-[11px] text-muted-foreground">
-                            {booking.confirmation_code}
-                          </span>
-                          <ArrowUpRight className="h-3 w-3 text-muted-foreground" />
-                        </div>
-                        <p className="mt-1 text-sm font-medium">{bayName}</p>
-                        <div className="mt-1 flex items-center justify-between">
-                          <p className="text-xs text-muted-foreground">
-                            {formatBookingDate(booking.date)} &middot;{" "}
-                            {formatTime(booking.start_time, timezone)}{" "}
-                            &ndash;{" "}
-                            {formatTime(booking.end_time, timezone)}
-                          </p>
-                          <span className="text-xs font-semibold">
-                            {price}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+        {chatExpanded ? (
+          /* Expanded: full chat widget */
+          <div className={`border-t px-2 pb-2 transition-all duration-200 ${chatFocused ? "h-[28rem]" : "h-[22.4rem]"}`}>
+            <ChatWidget
+              facilitySlug={facilitySlug}
+              orgName={orgName}
+              mode="sidebar"
+              onBookingAction={handleBookingAction}
+            />
           </div>
         ) : (
-          <div className="flex flex-1 flex-col items-center gap-3 p-6 text-center">
-            <LogIn className="h-8 w-8 text-muted-foreground/20" />
-            <div>
-              <p className="text-sm font-medium">Your Bookings</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Sign in to see your confirmed bookings
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Chat Assistant — always pinned to bottom */}
-        {facilitySlug && (
-          <div
-            ref={chatRef}
-            className="shrink-0 border-t"
-            onMouseDown={() => setChatFocused(true)}
-          >
+          /* Collapsed: just the input box */
+          <div className="border-t px-2 pb-2 pt-2">
             <button
               type="button"
-              onClick={() => setChatExpanded((v) => !v)}
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              onClick={() => setChatExpanded(true)}
+              className="flex w-full items-center gap-1.5"
             >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span className="flex-1">Booking Assistant</span>
-              {chatExpanded ? (
-                <ChevronDown className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronUp className="h-3.5 w-3.5" />
-              )}
-            </button>
-            {chatExpanded && (
-              <div className={`px-2 pb-2 transition-all duration-200 ${chatFocused ? "h-[28rem]" : "h-[22.4rem]"}`}>
-                <ChatWidget
-                  facilitySlug={facilitySlug}
-                  orgName={orgName}
-                  mode="sidebar"
-                  onBookingAction={handleBookingAction}
-                />
+              <div className="flex h-8 flex-1 items-center rounded-md border bg-background px-3 text-xs text-muted-foreground">
+                Ask anything...
               </div>
-            )}
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                <SendHorizontal className="h-3.5 w-3.5" />
+              </div>
+            </button>
           </div>
         )}
       </div>
+      )}
 
       {/* ═══ Main Content ═══ */}
       <div className="min-w-0 flex-1 space-y-4">

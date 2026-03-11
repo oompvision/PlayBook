@@ -7,6 +7,7 @@ import { OrgHeader } from "@/components/org-header";
 import { AuthModal } from "@/components/auth-modal";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { CustomerAvatarMenu } from "@/components/customer-avatar-menu";
+import { MyBookingsDropdown } from "@/components/my-bookings-dropdown";
 
 export default async function CustomerLayout({
   children,
@@ -58,11 +59,7 @@ export default async function CustomerLayout({
             )}
             {auth ? (
               <>
-                <Link href="/my-bookings">
-                  <Button variant="ghost" size="sm">
-                    My Bookings
-                  </Button>
-                </Link>
+                <MyBookingsDropdown orgId={org.id} />
                 <NotificationBell
                   userId={auth.user.id}
                   viewAllHref="/notifications"

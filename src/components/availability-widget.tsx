@@ -34,7 +34,8 @@ import {
   ArrowRight,
   ArrowLeft,
   ArrowUpRight,
-  MessageSquare,
+  SendHorizontal,
+  Sparkles,
   LogIn,
   X,
   ExternalLink,
@@ -1626,166 +1627,49 @@ export function AvailabilityWidget({
 
   return (
     <div className={hideSidebar ? "" : "flex items-start gap-6"}>
-      {/* ===== Sidebar — Upcoming Bookings & Events + Chat Assistant (desktop only, hidden in admin-guest/modify mode) ===== */}
-      {!hideSidebar && (
+      {/* ===== Sidebar — Chat Assistant (desktop only, hidden in admin-guest/modify mode) ===== */}
+      {!hideSidebar && facilitySlug && (
       <div className="sticky top-[4.5rem] hidden w-72 shrink-0 flex-col rounded-xl border bg-card shadow-sm lg:flex max-h-[calc(100vh-5.5rem)]">
-        {/* Bookings + Events section — scrollable */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {isAuthenticated ? (
-            <div className="p-3">
-              <div className="mb-3 flex items-center gap-2 px-1">
-                <CalendarCheck className="h-4 w-4 text-muted-foreground" />
-                <h3 className="flex-1 text-sm font-semibold">Upcoming</h3>
-                <a
-                  href="/my-bookings"
-                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  title="View all bookings"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
-              </div>
-              {bookingsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : sidebarItems.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 py-8 text-center">
-                  <CalendarCheck className="h-8 w-8 text-muted-foreground/20" />
-                  <p className="text-xs text-muted-foreground">
-                    No upcoming bookings or events
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {sidebarItems.map((item) => {
-                    if (item.kind === "booking") {
-                      const booking = item.booking;
-                      const bayName =
-                        bays.find((b) => b.id === booking.bay_id)?.name ??
-                        "Unknown Bay";
-                      const price = `$${((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}`;
-                      const isHighlighted = highlightedBookingIds.has(booking.id);
-
-                      return (
-                        <button
-                          type="button"
-                          key={`b-${booking.id}`}
-                          onClick={() => openSidebarBooking(booking)}
-                          className={`block w-full rounded-lg border bg-background p-3 text-left transition-all duration-700 hover:bg-muted/50 ${
-                            isHighlighted
-                              ? "border-green-400 shadow-[0_0_8px_rgba(74,222,128,0.3)]"
-                              : ""
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono text-[11px] text-muted-foreground">
-                              {booking.confirmation_code}
-                            </span>
-                            <ArrowUpRight className="h-3 w-3 text-muted-foreground" />
-                          </div>
-                          <p className="mt-1 text-sm font-medium">{bayName}</p>
-                          <div className="mt-1 flex items-center justify-between">
-                            <p className="text-xs text-muted-foreground">
-                              {formatBookingDate(booking.date)} &middot;{" "}
-                              {formatTime(booking.start_time, timezone)}{" "}
-                              &ndash;{" "}
-                              {formatTime(booking.end_time, timezone)}
-                            </p>
-                            <span className="text-xs font-semibold">
-                              {price}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    }
-
-                    // Event registration
-                    const reg = item.reg;
-                    const evt = reg.event;
-                    const eventDateStr = new Date(evt.start_time).toLocaleDateString("en-US", {
-                      timeZone: timezone,
-                      month: "short",
-                      day: "numeric",
-                    });
-
-                    return (
-                      <button
-                        type="button"
-                        key={`e-${reg.id}`}
-                        onClick={() => openSidebarEvent(reg)}
-                        className="block w-full rounded-lg border bg-background p-3 text-left transition-all hover:bg-muted/50"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                            Event
-                          </span>
-                          <ArrowUpRight className="h-3 w-3 text-muted-foreground" />
-                        </div>
-                        <p className="mt-1 text-sm font-medium">{evt.name}</p>
-                        <div className="mt-1 flex items-center justify-between">
-                          <p className="text-xs text-muted-foreground">
-                            {eventDateStr} &middot;{" "}
-                            {formatTime(evt.start_time, timezone)}{" "}
-                            &ndash;{" "}
-                            {formatTime(evt.end_time, timezone)}
-                          </p>
-                          <span className="text-xs font-semibold">
-                            {evt.price_cents > 0 ? `$${(evt.price_cents / 100).toFixed(2)}` : "Free"}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+        {/* Chat header — clickable to expand/collapse */}
+        <button
+          type="button"
+          onClick={() => setChatExpanded((v) => !v)}
+          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          <span className="flex-1">Booking Assistant AI</span>
+          {chatExpanded ? (
+            <ChevronDown className="h-3.5 w-3.5" />
           ) : (
-            <div className="flex flex-col items-center gap-3 p-6 text-center">
-              <LogIn className="h-8 w-8 text-muted-foreground/20" />
-              <div>
-                <p className="text-sm font-medium">Your Bookings</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Sign in to see your confirmed bookings
-                </p>
-              </div>
-              <AuthModal
-                trigger={
-                  <Button variant="outline" size="sm" className="gap-2">
-                    <LogIn className="h-3.5 w-3.5" />
-                    Sign In
-                  </Button>
-                }
-              />
-            </div>
+            <ChevronUp className="h-3.5 w-3.5" />
           )}
-        </div>
+        </button>
 
-        {/* Chat Assistant — pinned to bottom of sidebar */}
-        {facilitySlug && (
-          <div className="shrink-0 border-t">
+        {chatExpanded ? (
+          /* Expanded: full chat widget */
+          <div className="min-h-0 flex-1 border-t px-2 pb-2">
+            <ChatWidget
+              facilitySlug={facilitySlug}
+              orgName={orgName}
+              mode="sidebar"
+              onBookingAction={handleBookingAction}
+            />
+          </div>
+        ) : (
+          /* Collapsed: just the input box */
+          <div className="border-t px-2 pb-2 pt-2">
             <button
               type="button"
-              onClick={() => setChatExpanded((v) => !v)}
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              onClick={() => setChatExpanded(true)}
+              className="flex w-full items-center gap-1.5"
             >
-              <MessageSquare className="h-3.5 w-3.5" />
-              <span className="flex-1">Availability Assistant</span>
-              {chatExpanded ? (
-                <ChevronDown className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronUp className="h-3.5 w-3.5" />
-              )}
-            </button>
-            {chatExpanded && (
-              <div className="h-[28rem] px-2 pb-2">
-                <ChatWidget
-                  facilitySlug={facilitySlug}
-                  orgName={orgName}
-                  mode="sidebar"
-                  onBookingAction={handleBookingAction}
-                />
+              <div className="flex h-8 flex-1 items-center rounded-md border bg-background px-3 text-xs text-muted-foreground">
+                Ask anything...
               </div>
-            )}
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                <SendHorizontal className="h-3.5 w-3.5" />
+              </div>
+            </button>
           </div>
         )}
       </div>
