@@ -19,7 +19,6 @@ import { fetchDynamicAvailability, pickBayForGroupBooking } from '../lib/availab
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
-import { Input } from '../components/Input';
 import { formatPrice, formatTimeInZone, getTodayInTimezone, formatDate } from '../lib/format';
 import { usePayment } from '../lib/use-payment';
 import { colors, spacing, typography, borderRadius, shadows } from '../theme';
@@ -895,34 +894,36 @@ export function BookingScreen({ route, navigation }: Props) {
         )}
 
         {/* Date Picker */}
-        <Text style={styles.sectionTitle}>Select Date</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.dateRow}
-        >
-          {dateOptions.map((date) => {
-            const isSelected = date === selectedDate;
-            return (
-              <TouchableOpacity
-                key={date}
-                onPress={() => setSelectedDate(date)}
-                style={[styles.dateChip, isSelected && styles.dateChipSelected]}
-              >
-                <Text style={[styles.dateChipDay, isSelected && styles.dateChipTextSelected]}>
-                  {new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' })}
-                </Text>
-                <Text style={[styles.dateChipDate, isSelected && styles.dateChipTextSelected]}>
-                  {new Date(date + 'T12:00:00').getDate()}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>Select Date</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.dateRow}
+          >
+            {dateOptions.map((date) => {
+              const isSelected = date === selectedDate;
+              return (
+                <TouchableOpacity
+                  key={date}
+                  onPress={() => setSelectedDate(date)}
+                  style={[styles.dateChip, isSelected && styles.dateChipSelected]}
+                >
+                  <Text style={[styles.dateChipDay, isSelected && styles.dateChipTextSelected]}>
+                    {new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' })}
+                  </Text>
+                  <Text style={[styles.dateChipDate, isSelected && styles.dateChipTextSelected]}>
+                    {new Date(date + 'T12:00:00').getDate()}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
 
         {/* Facility / Bay Picker */}
         {isDynamic ? (
-          <>
+          <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Select Facility</Text>
             <ScrollView
               horizontal
@@ -954,7 +955,7 @@ export function BookingScreen({ route, navigation }: Props) {
             {/* Duration Picker */}
             {availableDurations.length > 1 && (
               <>
-                <Text style={styles.sectionTitle}>
+                <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>
                   Play for {selectedDuration >= 60
                     ? selectedDuration % 60 === 0
                       ? `${selectedDuration / 60}h`
@@ -994,9 +995,9 @@ export function BookingScreen({ route, navigation }: Props) {
                 </ScrollView>
               </>
             )}
-          </>
+          </View>
         ) : (
-          <>
+          <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Select Bay</Text>
             <ScrollView
               horizontal
@@ -1023,7 +1024,7 @@ export function BookingScreen({ route, navigation }: Props) {
                 );
               })}
             </ScrollView>
-          </>
+          </View>
         )}
 
         {/* Date-specific events — filtered to selected facility/group */}
@@ -1129,16 +1130,14 @@ export function BookingScreen({ route, navigation }: Props) {
         {/* Time Slots */}
         {isDynamic ? (
           selectedOption ? (
-            <>
+            <View style={styles.sectionCard}>
               <Text style={styles.sectionTitle}>
                 Available Times — {formatDate(selectedDate)}
               </Text>
               {loading ? (
                 <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
               ) : dynamicSlots.length === 0 ? (
-                <Card>
-                  <Text style={styles.emptyText}>No available times for this date.</Text>
-                </Card>
+                <Text style={styles.emptyText}>No available times for this date.</Text>
               ) : (
                 <View>
                   {groupSlotsByTimePeriod(dynamicSlots, organization.timezone).map(({ period, items: periodSlots }) => (
@@ -1173,23 +1172,21 @@ export function BookingScreen({ route, navigation }: Props) {
                   ))}
                 </View>
               )}
-            </>
+            </View>
           ) : (
-            <Card style={{ marginTop: spacing.lg }}>
+            <Card style={{ marginTop: spacing.md }}>
               <Text style={styles.emptyText}>Select a facility to view available times.</Text>
             </Card>
           )
         ) : selectedBay ? (
-          <>
+          <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>
               Available Slots — {formatDate(selectedDate)}
             </Text>
             {loading ? (
               <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
             ) : slots.length === 0 ? (
-              <Card>
-                <Text style={styles.emptyText}>No available slots for this date and bay.</Text>
-              </Card>
+              <Text style={styles.emptyText}>No available slots for this date and bay.</Text>
             ) : (
               <View>
                 {groupSlotsByTimePeriod(slots, organization!.timezone).map(({ period, items: periodSlots }) => (
@@ -1222,9 +1219,9 @@ export function BookingScreen({ route, navigation }: Props) {
                 ))}
               </View>
             )}
-          </>
+          </View>
         ) : (
-          <Card style={{ marginTop: spacing.lg }}>
+          <Card style={{ marginTop: spacing.md }}>
             <Text style={styles.emptyText}>Select a bay to view available time slots.</Text>
           </Card>
         )}
@@ -1400,15 +1397,6 @@ export function BookingScreen({ route, navigation }: Props) {
                     return null;
                   })()}
                 </Card>
-
-                <Input
-                  label="Notes (optional)"
-                  placeholder="Any special requests?"
-                  value={notes}
-                  onChangeText={setNotes}
-                  multiline
-                  numberOfLines={2}
-                />
 
                 {/* Within cancellation window warning */}
                 {isWithinCancellationWindow && (
@@ -1906,11 +1894,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  sectionCard: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    marginTop: spacing.md,
+    ...shadows.surface1,
+  },
   sectionTitle: {
     ...typography.h3,
     color: colors.foreground,
     marginBottom: spacing.md,
-    marginTop: spacing.lg,
   },
   dateRow: {
     gap: spacing.sm,
@@ -1954,7 +1950,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   bayChipSelected: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#f0fdf4',
     borderColor: colors.primary,
   },
   bayChipText: {
@@ -1967,7 +1963,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   bayChipTextSelected: {
-    color: colors.primaryForeground,
+    color: colors.primary,
   },
   durationChip: {
     paddingHorizontal: spacing.lg,
