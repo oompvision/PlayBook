@@ -50,6 +50,9 @@ import {
   Sparkles,
   Crown,
   Users,
+  Sun,
+  Sunset,
+  Moon,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────
@@ -180,6 +183,44 @@ function formatTime(timestamp: string, timezone: string) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+type TimePeriod = "morning" | "midday" | "evening";
+
+function getTimePeriod(timestamp: string, timezone: string): TimePeriod {
+  const hour = new Date(timestamp).toLocaleString("en-US", {
+    timeZone: timezone,
+    hour: "numeric",
+    hour12: false,
+  });
+  const h = parseInt(hour, 10);
+  if (h < 12) return "morning";
+  if (h < 17) return "midday";
+  return "evening";
+}
+
+const timePeriodConfig: Record<TimePeriod, { label: string; icon: typeof Sun }> = {
+  morning: { label: "Morning", icon: Sun },
+  midday: { label: "Midday", icon: Sunset },
+  evening: { label: "Evening", icon: Moon },
+};
+
+function groupSlotsByTimePeriod(
+  slots: AvailableSlot[],
+  timezone: string,
+): { period: TimePeriod; slots: AvailableSlot[] }[] {
+  const buckets: Record<TimePeriod, AvailableSlot[]> = {
+    morning: [],
+    midday: [],
+    evening: [],
+  };
+  for (const s of slots) {
+    buckets[getTimePeriod(s.start_time, timezone)].push(s);
+  }
+  const order: TimePeriod[] = ["morning", "midday", "evening"];
+  return order
+    .filter((p) => buckets[p].length > 0)
+    .map((p) => ({ period: p, slots: buckets[p] }));
 }
 
 function formatDateLabel(dateStr: string): string {
@@ -1324,7 +1365,7 @@ export function DynamicAvailabilityWidget(
         </div>
       )}
       {/* Select Date */}
-      <div className="rounded-xl border bg-card p-4">
+      <div className="rounded-xl border bg-card p-4 shadow-sm">
         <p className="mb-3 text-sm font-medium text-foreground">Select Date</p>
         <div className="flex items-center gap-1.5">
           {canPageBack && (
@@ -1363,16 +1404,16 @@ export function DynamicAvailabilityWidget(
                   }}
                   className={`flex flex-1 flex-col items-center rounded-lg border py-2 text-center transition-colors ${
                     isSelected
-                      ? "border-primary bg-primary text-primary-foreground"
+                      ? "border-primary bg-primary/10 text-primary"
                       : !isBookable
                         ? "border-border opacity-35 cursor-not-allowed"
                         : "border-border hover:border-primary/50 hover:bg-accent"
                   }`}
                 >
-                  <span className={`text-[11px] font-medium ${isSelected ? "text-primary-foreground" : "text-muted-foreground"}`}>
+                  <span className={`text-[11px] font-medium ${isSelected ? "text-primary" : "text-muted-foreground"}`}>
                     {d.toLocaleDateString("en-US", { weekday: "short" })}
                   </span>
-                  <span className={`text-lg font-semibold leading-tight ${isSelected ? "text-primary-foreground" : "text-foreground"}`}>
+                  <span className={`text-lg font-semibold leading-tight ${isSelected ? "text-primary" : "text-foreground"}`}>
                     {d.getDate()}
                   </span>
                   {isToday && !isSelected && (
@@ -1395,7 +1436,7 @@ export function DynamicAvailabilityWidget(
 
       {/* Select Facility (if needed) */}
       {hasMultipleOptions && (
-        <div className="rounded-xl border bg-card p-4">
+        <div className="rounded-xl border bg-card p-4 shadow-sm">
           <p className="mb-3 text-sm font-medium text-foreground">
             Select Facility
           </p>
@@ -1442,7 +1483,7 @@ export function DynamicAvailabilityWidget(
       )}
 
       {/* Play for [duration] */}
-      <div className="rounded-xl border bg-card p-4">
+      <div className="rounded-xl border bg-card p-4 shadow-sm">
         <p className="mb-2 text-sm font-medium text-foreground">
           Play for {formatDuration(selectedDuration)}
         </p>
@@ -1456,7 +1497,7 @@ export function DynamicAvailabilityWidget(
               }}
               className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${
                 selectedDuration === dur
-                  ? "border-primary bg-primary text-primary-foreground"
+                  ? "border-primary bg-primary/10 text-primary"
                   : "border-border hover:border-primary/50 hover:bg-accent"
               }`}
             >
@@ -1467,7 +1508,7 @@ export function DynamicAvailabilityWidget(
       </div>
 
       {/* Step 3: Available Times */}
-      <div className="rounded-xl border bg-card p-4">
+      <div className="rounded-xl border bg-card p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-medium text-muted-foreground">
             Available Times
@@ -1506,27 +1547,44 @@ export function DynamicAvailabilityWidget(
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
-            {availableSlots.map((slot) => {
-              const isSelected =
-                selectedSlot?.start_time === slot.start_time;
+          <div className="space-y-5">
+            {groupSlotsByTimePeriod(availableSlots, timezone).map(({ period, slots: periodSlots }) => {
+              const config = timePeriodConfig[period];
+              const PeriodIcon = config.icon;
               return (
-                <button
-                  key={slot.start_time}
-                  onClick={() => handleSelectSlot(slot)}
-                  className={`rounded-lg border px-3 py-3 text-center transition-colors ${
-                    isSelected
-                      ? "border-primary bg-primary/10 ring-2 ring-primary/20"
-                      : "border-border hover:border-primary/50 hover:bg-accent"
-                  }`}
-                >
-                  <div className="text-sm font-semibold">
-                    {formatTime(slot.start_time, timezone)}
+                <div key={period}>
+                  <div className="mb-2 flex items-center gap-2">
+                    <PeriodIcon className="h-4 w-4 text-primary" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      {config.label}
+                    </span>
+                    <div className="h-px flex-1 bg-border" />
                   </div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    ${(slot.price_cents / 100).toFixed(2)}
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+                    {periodSlots.map((slot) => {
+                      const isSelected =
+                        selectedSlot?.start_time === slot.start_time;
+                      return (
+                        <button
+                          key={slot.start_time}
+                          onClick={() => handleSelectSlot(slot)}
+                          className={`rounded-xl border px-3 py-3 text-center transition-colors ${
+                            isSelected
+                              ? "border-primary bg-primary/10 ring-2 ring-primary/20"
+                              : "border-border hover:border-primary/50 hover:bg-accent"
+                          }`}
+                        >
+                          <div className="text-sm font-semibold">
+                            {formatTime(slot.start_time, timezone)}
+                          </div>
+                          <div className="mt-0.5 text-xs text-muted-foreground">
+                            ${(slot.price_cents / 100).toFixed(2)}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -1535,7 +1593,7 @@ export function DynamicAvailabilityWidget(
 
       {/* Step 4: Events on this date for the selected facility */}
       {(dayEvents.length > 0 || loadingEvents) && (
-        <div className="rounded-xl border bg-card p-4">
+        <div className="rounded-xl border bg-card p-4 shadow-sm">
           <div className="mb-3 flex items-center gap-2">
             <CalendarDays className="h-4 w-4 text-green-600 dark:text-green-400" />
             <h3 className="text-sm font-medium text-muted-foreground">

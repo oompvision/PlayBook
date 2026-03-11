@@ -46,6 +46,9 @@ import {
   Crown,
   Users,
   CalendarDays,
+  Sun,
+  Sunset,
+  Moon,
 } from "lucide-react";
 import { ChatWidget, type BookingAction } from "@/components/chat/chat-widget";
 import { AuthModal } from "@/components/auth-modal";
@@ -177,6 +180,50 @@ function formatTime(timestamp: string, timezone: string) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+type TimePeriod = "morning" | "midday" | "evening";
+
+function getTimePeriod(timestamp: string, timezone: string): TimePeriod {
+  const hour = new Date(timestamp).toLocaleString("en-US", {
+    timeZone: timezone,
+    hour: "numeric",
+    hour12: false,
+  });
+  const h = parseInt(hour, 10);
+  if (h < 12) return "morning";
+  if (h < 17) return "midday";
+  return "evening";
+}
+
+const timePeriodConfig: Record<
+  TimePeriod,
+  { label: string; icon: typeof Sun }
+> = {
+  morning: { label: "Morning", icon: Sun },
+  midday: { label: "Midday", icon: Sunset },
+  evening: { label: "Evening", icon: Moon },
+};
+
+function groupByTimePeriod(
+  groups: TimeGroup[],
+  timezone: string
+): { period: TimePeriod; items: TimeGroup[] }[] {
+  const buckets: Record<TimePeriod, TimeGroup[]> = {
+    morning: [],
+    midday: [],
+    evening: [],
+  };
+  for (const g of groups) {
+    const period = g.isEvent
+      ? getTimePeriod(g.start_time, timezone)
+      : getTimePeriod(g.start_time, timezone);
+    buckets[period].push(g);
+  }
+  const order: TimePeriod[] = ["morning", "midday", "evening"];
+  return order
+    .filter((p) => buckets[p].length > 0)
+    .map((p) => ({ period: p, items: buckets[p] }));
 }
 
 function formatDateLabel(dateStr: string): string {
@@ -1835,8 +1882,22 @@ export function AvailabilityWidget({
               </p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {timeGroups.map((group) => {
+            <div className="space-y-5">
+              {groupByTimePeriod(timeGroups, timezone).map(({ period, items }) => {
+                const config = timePeriodConfig[period];
+                const PeriodIcon = config.icon;
+                return (
+                  <div key={period}>
+                    {/* Time period header */}
+                    <div className="mb-2 flex items-center gap-2">
+                      <PeriodIcon className="h-4 w-4 text-primary" />
+                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {config.label}
+                      </span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+                    <div className="space-y-2">
+              {items.map((group) => {
                 const startTime = formatTime(group.start_time, timezone);
                 const endTime = formatTime(group.end_time, timezone);
 
@@ -2008,6 +2069,10 @@ export function AvailabilityWidget({
                       </div>
                     </div>
                   </button>
+                );
+              })}
+                    </div>
+                  </div>
                 );
               })}
             </div>

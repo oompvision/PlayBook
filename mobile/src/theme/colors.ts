@@ -3,8 +3,8 @@
  */
 export const colors = {
   // Core
-  primary: '#1a1a1a',
-  primaryForeground: '#fafafa',
+  primary: '#16A34A',
+  primaryForeground: '#ffffff',
   background: '#ffffff',
   foreground: '#0a0a0a',
 
@@ -41,7 +41,7 @@ export const colors = {
   available: '#22c55e',
   booked: '#ef4444',
   blocked: '#9ca3af',
-  selected: '#1a1a1a',
+  selected: '#16A34A',
 } as const;
 
 export type ColorName = keyof typeof colors;
