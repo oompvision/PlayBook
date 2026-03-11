@@ -51,10 +51,10 @@ function getTimePeriod(timestamp: string, timezone: string): TimePeriod {
   return 'evening';
 }
 
-const timePeriodLabels: Record<TimePeriod, { label: string; emoji: string }> = {
-  morning: { label: 'Morning', emoji: '\u2600\ufe0f' },
-  midday: { label: 'Midday', emoji: '\u26c5' },
-  evening: { label: 'Evening', emoji: '\ud83c\udf19' },
+const timePeriodLabels: Record<TimePeriod, { label: string }> = {
+  morning: { label: 'Morning' },
+  midday: { label: 'Midday' },
+  evening: { label: 'Evening' },
 };
 
 function groupSlotsByTimePeriod<T extends { start_time: string }>(
@@ -1143,7 +1143,7 @@ export function BookingScreen({ route, navigation }: Props) {
                   {groupSlotsByTimePeriod(dynamicSlots, organization.timezone).map(({ period, items: periodSlots }) => (
                     <View key={period} style={periodStyles.section}>
                       <View style={periodStyles.header}>
-                        <Text style={periodStyles.emoji}>{timePeriodLabels[period].emoji}</Text>
+                        <View style={periodStyles.dot} />
                         <Text style={periodStyles.label}>{timePeriodLabels[period].label}</Text>
                         <View style={periodStyles.divider} />
                       </View>
@@ -1926,7 +1926,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   dateChipSelected: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#f0fdf4',
     borderColor: colors.primary,
   },
   dateChipDay: {
@@ -1938,7 +1938,7 @@ const styles = StyleSheet.create({
     color: colors.foreground,
   },
   dateChipTextSelected: {
-    color: colors.primaryForeground,
+    color: colors.primary,
   },
   bayRow: {
     gap: spacing.sm,
@@ -1979,7 +1979,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   durationChipSelected: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#f0fdf4',
     borderColor: colors.primary,
   },
   durationChipText: {
@@ -1987,7 +1987,7 @@ const styles = StyleSheet.create({
     color: colors.foreground,
   },
   durationChipTextSelected: {
-    color: colors.primaryForeground,
+    color: colors.primary,
   },
   slotsGrid: {
     flexDirection: 'row',
@@ -1997,7 +1997,7 @@ const styles = StyleSheet.create({
   slotChip: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.background,
@@ -2005,15 +2005,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   slotChipSelected: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#f0fdf4',
     borderColor: colors.primary,
+    borderWidth: 2,
   },
   slotTime: {
     ...typography.label,
     color: colors.foreground,
   },
   slotTimeSelected: {
-    color: colors.primaryForeground,
+    color: colors.primary,
   },
   slotPrice: {
     ...typography.caption,
@@ -2021,7 +2022,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   slotPriceSelected: {
-    color: colors.primaryForeground,
+    color: colors.primary,
   },
   emptyText: {
     ...typography.body,
@@ -2192,8 +2193,11 @@ const periodStyles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.sm,
   },
-  emoji: {
-    fontSize: 14,
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.primary,
   },
   label: {
     ...typography.caption,
