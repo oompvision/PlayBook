@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { getAuthUser } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -8,6 +9,8 @@ import {
   type BlockOut,
   type BayInfo,
 } from "@/lib/availability-engine";
+import { createNotification, notifyOrgAdmins } from "@/lib/notifications";
+import { formatTimeInZone } from "@/lib/utils";
 
 /**
  * POST /api/bookings/dynamic
@@ -175,9 +178,92 @@ export async function POST(request: NextRequest) {
     .eq("id", targetBayId)
     .single();
 
+  const bayName = bayData?.name || "Facility";
+
+  // Fire booking notifications (non-blocking)
+  fireBookingNotifications({
+    orgId: org_id,
+    timezone: org.timezone,
+    customerId: auth.profile.id,
+    customerEmail: auth.profile.email,
+    customerName: auth.profile.full_name || auth.profile.email,
+    bookingId: data?.booking_id,
+    confirmationCode: data?.confirmation_code,
+    bayName,
+    date,
+    startTime: start_time,
+    endTime: end_time,
+    totalPriceCents: price_cents,
+  }).catch((err) => {
+    console.error("[bookings/dynamic] Notification error:", err);
+  });
+
   return NextResponse.json({
     ...data,
     bay_id: targetBayId,
-    bay_name: bayData?.name || "Facility",
+    bay_name: bayName,
+  });
+}
+
+// ── Non-blocking notification helper ──────────────────────
+async function fireBookingNotifications(params: {
+  orgId: string;
+  timezone: string;
+  customerId: string;
+  customerEmail: string;
+  customerName: string;
+  bookingId?: string;
+  confirmationCode?: string;
+  bayName: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  totalPriceCents: number;
+}) {
+  const {
+    orgId, timezone, customerId, customerEmail, customerName,
+    confirmationCode, bayName, date, startTime, endTime, totalPriceCents,
+  } = params;
+
+  const svc = createServiceClient();
+  const { data: org } = await svc
+    .from("organizations")
+    .select("name")
+    .eq("id", orgId)
+    .single();
+  const orgName = org?.name ?? "EZBooker";
+
+  const timeStr = `${formatTimeInZone(startTime, timezone)} – ${formatTimeInZone(endTime, timezone)}`;
+  const dateStr = new Date(date + "T12:00:00").toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  const priceStr = `$${(totalPriceCents / 100).toFixed(2)}`;
+  const code = confirmationCode ?? "";
+  const bookingDetails = `${bayName} — ${dateStr}, ${timeStr}\nConfirmation: ${code}\nTotal: ${priceStr}`;
+
+  // Customer notification
+  await createNotification({
+    orgId,
+    recipientId: customerId,
+    recipientType: "customer",
+    type: "booking_confirmed",
+    title: "Booking Confirmed",
+    message: bookingDetails,
+    link: `/my-bookings?booking=${code}`,
+    recipientEmail: customerEmail,
+    recipientName: customerName,
+    orgName,
+    metadata: { confirmation_code: code, bay: bayName },
+  });
+
+  // Admin notification
+  await notifyOrgAdmins(orgId, orgName, {
+    type: "booking_confirmed",
+    title: `New Booking: ${code}`,
+    message: `${customerName} booked ${bayName} — ${dateStr}, ${timeStr} (${priceStr})`,
+    link: `/admin/bookings?booking=${code}`,
+    metadata: { confirmation_code: code, customer: customerName },
   });
 }

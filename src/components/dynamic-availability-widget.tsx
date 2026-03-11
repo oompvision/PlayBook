@@ -287,6 +287,30 @@ export function DynamicAvailabilityWidget(
   const router = useRouter();
   const requiresPayment = paymentMode !== "none";
 
+  // Fire-and-forget notification to server (non-blocking)
+  function fireNotification(
+    action: "confirmed" | "canceled" | "modified",
+    opts: { bookingId?: string; confirmationCode?: string; oldConfirmationCode?: string }
+  ) {
+    fetch("/api/notifications/booking", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, orgId, ...opts }),
+    })
+      .then((res) => {
+        if (!res.ok) {
+          res.json().then((body) => {
+            console.error("[fireNotification] API error:", res.status, body);
+          }).catch(() => {
+            console.error("[fireNotification] API error:", res.status);
+          });
+        }
+      })
+      .catch((err) => {
+        console.error("[fireNotification] Network error:", err);
+      });
+  }
+
   // Whether we need to show a facility/group picker
   const hasMultipleOptions =
     facilityGroups.length > 1 ||
@@ -860,6 +884,7 @@ export function DynamicAvailabilityWidget(
     const supabase = createClient();
     const { error } = await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
     if (!error) {
+      fireNotification("canceled", { bookingId });
       setBookings((prev) => prev.filter((b) => b.id !== bookingId));
       setSidebarModalOpen(false);
       setSidebarBooking(null);
@@ -963,6 +988,13 @@ export function DynamicAvailabilityWidget(
             console.error("Failed to adjust payment for modification");
           }
         }
+
+        // Fire modification notification
+        fireNotification("modified", {
+          bookingId: result.booking_id,
+          confirmationCode: result.confirmation_code,
+          oldConfirmationCode: result.old_confirmation_code,
+        });
 
         const redirectBase = modifyRedirectBase || "/my-bookings";
         const facilityParam = facilitySlug ? `&facility=${facilitySlug}` : "";
