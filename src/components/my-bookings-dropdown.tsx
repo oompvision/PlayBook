@@ -35,6 +35,24 @@ type Bay = {
   name: string;
 };
 
+type RawEventReg = {
+  id: string;
+  event_id: string;
+  status: string;
+  waitlist_position: number | null;
+  registered_at: string;
+  events: {
+    name: string;
+    description: string | null;
+    start_time: string;
+    end_time: string;
+    price_cents: number;
+    capacity: number;
+    registered_count: number;
+    event_bays: { bay_id: string; bays: { name: string } | null }[];
+  } | null;
+};
+
 type EventReg = {
   id: string;
   event_id: string;
@@ -138,11 +156,20 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
     setBays(baysResult.data || []);
     setBookings(bookingsResult.data || []);
 
-    // Process event regs - filter to upcoming only
+    // Process event regs - map `events` (Supabase join name) to `event`, filter to upcoming
     const now = new Date().toISOString();
-    const regs = (eventRegsResult.data || [])
-      .filter((r: EventReg) => r.event && r.event.start_time > now)
-      .sort((a: EventReg, b: EventReg) => a.event.start_time.localeCompare(b.event.start_time));
+    const rawRegs = (eventRegsResult.data || []) as unknown as RawEventReg[];
+    const regs: EventReg[] = rawRegs
+      .filter((r) => r.events && r.events.start_time > now)
+      .map((r) => ({
+        id: r.id,
+        event_id: r.event_id,
+        status: r.status,
+        waitlist_position: r.waitlist_position,
+        registered_at: r.registered_at,
+        event: r.events!,
+      }))
+      .sort((a, b) => a.event.start_time.localeCompare(b.event.start_time));
     setEventRegs(regs);
 
     // Fetch payment mode
