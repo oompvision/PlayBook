@@ -2,6 +2,7 @@ import { getFacilitySlug } from "@/lib/facility";
 import { getAuthUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
+import { ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OrgHeader } from "@/components/org-header";
 import { AuthModal } from "@/components/auth-modal";
@@ -59,7 +60,18 @@ export default async function CustomerLayout({
             )}
             {auth ? (
               <>
-                <MyBookingsDropdown orgId={org.id} />
+                {/* Mobile: icon link to /my-bookings */}
+                <Link
+                  href="/my-bookings"
+                  className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 sm:hidden"
+                  aria-label="My Bookings"
+                >
+                  <ClipboardList className="h-5 w-5" />
+                </Link>
+                {/* Desktop: popover dropdown */}
+                <div className="hidden sm:block">
+                  <MyBookingsDropdown orgId={org.id} />
+                </div>
                 <NotificationBell
                   userId={auth.user.id}
                   viewAllHref="/notifications"
