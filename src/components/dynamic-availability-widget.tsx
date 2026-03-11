@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   StripeCheckoutWrapper,
   CheckoutForm,
@@ -20,7 +20,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ChatWidget, type BookingAction } from "@/components/chat/chat-widget";
+import { type BookingAction } from "@/components/chat/chat-widget";
+import { AuthModal } from "@/components/auth-modal";
 import {
   BookingDetailsModal,
   type BookingDetailData,
@@ -47,7 +48,6 @@ import {
   Check,
   ShieldCheck,
   AlertTriangle,
-  Sparkles,
   Crown,
   Users,
   Sun,
@@ -326,6 +326,7 @@ export function DynamicAvailabilityWidget(
   }
 
   const router = useRouter();
+  const searchParams = useSearchParams();
   const requiresPayment = paymentMode !== "none";
 
   // Fire-and-forget notification to server (non-blocking)
@@ -433,27 +434,12 @@ export function DynamicAvailabilityWidget(
   const [datePageStart, setDatePageStart] = useState(0);
   const DATES_PER_PAGE = 7;
 
-  const [chatFocused, setChatFocused] = useState(false);
-  const chatRef = useRef<HTMLDivElement>(null);
-
-  // Collapse chat focus when clicking outside
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (chatFocused && chatRef.current && !chatRef.current.contains(e.target as Node)) {
-        setChatFocused(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [chatFocused]);
-
   // Events for the selected date/facility
   const [dayEvents, setDayEvents] = useState<DayEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [selectedEventForPanel, setSelectedEventForPanel] = useState<EventForPanel | null>(null);
 
   // Sidebar: confirmed bookings + chat
-  const [chatExpanded, setChatExpanded] = useState(true);
   const pendingBookingAction = useRef<BookingAction | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
@@ -480,11 +466,66 @@ export function DynamicAvailabilityWidget(
       cancellationWindowHours * 60 * 60 * 1000
     : false;
 
+  // Show toast when user selects slots within the non-refundable window
+  const prevWithinWindow = useRef(false);
+  useEffect(() => {
+    if (isWithinCancellationWindow && !prevWithinWindow.current) {
+      setToast({ message: "This booking cannot be modified or refunded" });
+    }
+    prevWithinWindow.current = isWithinCancellationWindow;
+  }, [isWithinCancellationWindow]);
+
   // ─── Mounted guard for portal rendering ─────────────────
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Pre-fill from URL query params (e.g. from AI chat "Go to Confirmation" link)
+  const bookParamProcessed = useRef(false);
+  useEffect(() => {
+    if (!mounted || bookParamProcessed.current) return;
+    if (searchParams.get("book") !== "1") return;
+    bookParamProcessed.current = true;
+
+    const date = searchParams.get("date");
+    const bay = searchParams.get("bay");
+    const time = searchParams.get("time");
+    const endTime = searchParams.get("end_time");
+    const duration = searchParams.get("duration");
+    const priceCents = searchParams.get("price");
+
+    if (date && bay && time) {
+      const action: BookingAction = {
+        date,
+        bay_name: bay,
+        start_time: time,
+      };
+      if (endTime) action.end_time = endTime;
+      if (duration) action.duration = parseInt(duration, 10);
+      if (priceCents) action.price_cents = parseInt(priceCents, 10);
+
+      pendingBookingAction.current = action;
+      if (date !== selectedDate) {
+        setSelectedDate(date);
+      }
+      if (duration) {
+        setSelectedDuration(parseInt(duration, 10));
+      }
+    }
+
+    // Clean up URL params without triggering a page reload
+    const url = new URL(window.location.href);
+    url.searchParams.delete("book");
+    url.searchParams.delete("date");
+    url.searchParams.delete("bay");
+    url.searchParams.delete("time");
+    url.searchParams.delete("end_time");
+    url.searchParams.delete("duration");
+    url.searchParams.delete("price");
+    url.searchParams.delete("slot_ids");
+    window.history.replaceState({}, "", url.pathname + url.search);
+  }, [mounted, searchParams, selectedDate]);
 
   // ─── Restore pending booking after auth ─────────────────
 
@@ -933,7 +974,7 @@ export function DynamicAvailabilityWidget(
     }
   }
 
-  async function handleConfirmBooking() {
+  async function handleConfirmBooking(overridePaymentMethodId?: string | null) {
     if (!selectedSlot || !userProfileId) return;
 
     setBookingLoading(true);
@@ -947,8 +988,9 @@ export function DynamicAvailabilityWidget(
         setPolicyAgreedAt(new Date().toISOString());
       }
 
-      if (confirmedPaymentMethodId) {
-        paymentMethodId = confirmedPaymentMethodId;
+      const resolvedPmId = overridePaymentMethodId ?? confirmedPaymentMethodId;
+      if (resolvedPmId) {
+        paymentMethodId = resolvedPmId;
       } else {
         // Fallback: confirm payment now
         if (!checkoutFormRef.current) {
@@ -1198,166 +1240,15 @@ export function DynamicAvailabilityWidget(
     ? ["Booking Details", "Payment Method", "Confirm Booking"]
     : ["Booking Details", "Confirm Booking"];
 
-  // Track sidebar position for fixed positioning
-  const sidebarSpacerRef = useRef<HTMLDivElement>(null);
-  const [sidebarLeft, setSidebarLeft] = useState<number | null>(null);
-  const [sidebarTop, setSidebarTop] = useState(72); // 4.5rem fallback
-
-  useEffect(() => {
-    function updatePosition() {
-      if (sidebarSpacerRef.current) {
-        const rect = sidebarSpacerRef.current.getBoundingClientRect();
-        setSidebarLeft(rect.left);
-        // Align with the spacer's top, but never above the navbar (72px)
-        setSidebarTop(Math.max(72, rect.top));
-      }
-    }
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, { passive: true });
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition);
-    };
-  }, []);
 
   return (
-    <div className="flex items-start gap-6">
-      {/* ===== Sidebar — Confirmed Bookings + Chat Assistant (desktop only) ===== */}
-      {/* Spacer to reserve layout width */}
-      <div ref={sidebarSpacerRef} className="hidden w-72 shrink-0 lg:block" />
-      <div
-        style={{
-          ...(sidebarLeft != null ? { left: sidebarLeft } : {}),
-          top: sidebarTop,
-          height: `calc(100vh - ${sidebarTop + 16}px)`,
-        }}
-        className="fixed z-30 hidden w-72 flex-col overflow-hidden rounded-xl border bg-card shadow-sm lg:flex"
-      >
-        {/* Bookings section — scrollable middle */}
-        {isAuthenticated ? (
-          <div className="flex min-h-0 flex-1 flex-col">
-            {/* Sticky header */}
-            <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-card px-4 py-3">
-              <CalendarCheck className="h-4 w-4 text-muted-foreground" />
-              <h3 className="flex-1 text-sm font-semibold">Confirmed Bookings</h3>
-              <a
-                href="/my-bookings"
-                className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                title="View all bookings"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            </div>
-            {/* Scrollable booking cards */}
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              {bookingsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : bookings.length === 0 ? (
-                <div className="flex flex-col items-center gap-2 py-8 text-center">
-                  <CalendarCheck className="h-8 w-8 text-muted-foreground/20" />
-                  <p className="text-xs text-muted-foreground">
-                    No upcoming bookings
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {bookings.map((booking) => {
-                    const bayName =
-                      bays.find((b) => b.id === booking.bay_id)?.name ??
-                      "Unknown Bay";
-                    const price = `$${((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}`;
-                    const isHighlighted = highlightedBookingIds.has(booking.id);
-
-                    return (
-                      <button
-                        type="button"
-                        key={booking.id}
-                        onClick={() => openSidebarBooking(booking)}
-                        className={`block w-full rounded-lg border bg-background p-3 text-left transition-all duration-700 hover:bg-muted/50 ${
-                          isHighlighted
-                            ? "border-green-400 shadow-[0_0_8px_rgba(74,222,128,0.3)]"
-                            : ""
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-[11px] text-muted-foreground">
-                            {booking.confirmation_code}
-                          </span>
-                          <ArrowUpRight className="h-3 w-3 text-muted-foreground" />
-                        </div>
-                        <p className="mt-1 text-sm font-medium">{bayName}</p>
-                        <div className="mt-1 flex items-center justify-between">
-                          <p className="text-xs text-muted-foreground">
-                            {formatBookingDate(booking.date)} &middot;{" "}
-                            {formatTime(booking.start_time, timezone)}{" "}
-                            &ndash;{" "}
-                            {formatTime(booking.end_time, timezone)}
-                          </p>
-                          <span className="text-xs font-semibold">
-                            {price}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-1 flex-col items-center gap-3 p-6 text-center">
-            <LogIn className="h-8 w-8 text-muted-foreground/20" />
-            <div>
-              <p className="text-sm font-medium">Your Bookings</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Sign in to see your confirmed bookings
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Chat Assistant — always pinned to bottom */}
-        {facilitySlug && (
-          <div
-            ref={chatRef}
-            className="shrink-0 border-t"
-            onMouseDown={() => setChatFocused(true)}
-          >
-            <button
-              type="button"
-              onClick={() => setChatExpanded((v) => !v)}
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              <span className="flex-1">Booking Assistant</span>
-              {chatExpanded ? (
-                <ChevronDown className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronUp className="h-3.5 w-3.5" />
-              )}
-            </button>
-            {chatExpanded && (
-              <div className={`px-2 pb-2 transition-all duration-200 ${chatFocused ? "h-[28rem]" : "h-[22.4rem]"}`}>
-                <ChatWidget
-                  facilitySlug={facilitySlug}
-                  orgName={orgName}
-                  mode="sidebar"
-                  onBookingAction={handleBookingAction}
-                />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ═══ Main Content ═══ */}
+    <div>
+      {/* ═══ Main Content + Desktop Booking Widget ═══ */}
+      <div className="flex items-start gap-6">
       <div className="min-w-0 flex-1 space-y-4">
-      {/* Location Switcher (multi-location orgs only) */}
+      {/* Location Switcher — mobile only (desktop shows in header) */}
       {locationsEnabled && locations.length > 1 && locationId && (
-        <div className="flex items-center gap-2 rounded-xl border bg-card px-4 py-2.5">
+        <div className="flex items-center gap-2 rounded-xl border bg-card px-4 py-2.5 lg:hidden">
           <LocationSwitcher
             locations={locations}
             activeLocationId={locationId}
@@ -1365,8 +1256,8 @@ export function DynamicAvailabilityWidget(
         </div>
       )}
       {/* Select Date */}
-      <div className="rounded-xl border bg-card p-4 shadow-sm">
-        <p className="mb-3 text-sm font-medium text-foreground">Select Date</p>
+      <div className="surface-1 rounded-xl bg-card px-4 py-3">
+        <p className="mb-2.5 text-sm font-medium text-foreground">Select Date</p>
         <div className="flex items-center gap-1.5">
           {canPageBack && (
             <button
@@ -1402,9 +1293,9 @@ export function DynamicAvailabilityWidget(
                       });
                     }
                   }}
-                  className={`flex flex-1 flex-col items-center rounded-lg border py-2 text-center transition-colors ${
+                  className={`flex flex-1 flex-col items-center rounded-lg border py-2 text-center hover-lift press-feedback ${
                     isSelected
-                      ? "border-primary bg-primary/10 text-primary"
+                      ? "selection-active text-primary"
                       : !isBookable
                         ? "border-border opacity-35 cursor-not-allowed"
                         : "border-border hover:border-primary/50 hover:bg-accent"
@@ -1436,8 +1327,8 @@ export function DynamicAvailabilityWidget(
 
       {/* Select Facility (if needed) */}
       {hasMultipleOptions && (
-        <div className="rounded-xl border bg-card p-4 shadow-sm">
-          <p className="mb-3 text-sm font-medium text-foreground">
+        <div className="surface-1 rounded-xl bg-card px-4 py-3">
+          <p className="mb-2.5 text-sm font-medium text-foreground">
             Select Facility
           </p>
           <div className="flex flex-wrap gap-2">
@@ -1449,9 +1340,9 @@ export function DynamicAvailabilityWidget(
                   setSelectedBayId(null);
                   setSelectedSlot(null);
                 }}
-                className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
+                className={`rounded-lg border px-4 py-2.5 text-sm font-medium hover-lift press-feedback ${
                   selectedGroupId === group.id
-                    ? "border-primary bg-primary/10 text-primary"
+                    ? "selection-active text-primary"
                     : "border-border hover:border-primary/50 hover:bg-accent"
                 }`}
               >
@@ -1469,9 +1360,9 @@ export function DynamicAvailabilityWidget(
                   setSelectedGroupId(null);
                   setSelectedSlot(null);
                 }}
-                className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
+                className={`rounded-lg border px-4 py-2.5 text-sm font-medium hover-lift press-feedback ${
                   selectedBayId === bay.id
-                    ? "border-primary bg-primary/10 text-primary"
+                    ? "selection-active text-primary"
                     : "border-border hover:border-primary/50 hover:bg-accent"
                 }`}
               >
@@ -1483,7 +1374,7 @@ export function DynamicAvailabilityWidget(
       )}
 
       {/* Play for [duration] */}
-      <div className="rounded-xl border bg-card p-4 shadow-sm">
+      <div className="surface-1 rounded-xl bg-card px-4 py-3">
         <p className="mb-2 text-sm font-medium text-foreground">
           Play for {formatDuration(selectedDuration)}
         </p>
@@ -1495,9 +1386,9 @@ export function DynamicAvailabilityWidget(
                 setSelectedDuration(dur);
                 setSelectedSlot(null);
               }}
-              className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${
+              className={`rounded-full border px-4 py-1.5 text-sm font-medium hover-lift press-feedback ${
                 selectedDuration === dur
-                  ? "border-primary bg-primary/10 text-primary"
+                  ? "selection-active text-primary"
                   : "border-border hover:border-primary/50 hover:bg-accent"
               }`}
             >
@@ -1508,15 +1399,10 @@ export function DynamicAvailabilityWidget(
       </div>
 
       {/* Step 3: Available Times */}
-      <div className="rounded-xl border bg-card p-4 shadow-sm">
-        <div className="mb-3 flex items-center justify-between">
+      <div className="surface-1 rounded-xl bg-card px-4 py-3">
+        <div className="mb-2.5 flex items-center justify-between">
           <h3 className="text-sm font-medium text-muted-foreground">
-            Available Times
-            {selectedOption && (
-              <span className="ml-1.5">
-                &middot; {selectedOption}
-              </span>
-            )}
+            {selectedOption ? `Select a time – ${selectedOption}` : "Select a time"}
           </h3>
           {!loadingSlots && availableSlots.length > 0 && (
             <span className="text-xs text-muted-foreground">
@@ -1568,9 +1454,9 @@ export function DynamicAvailabilityWidget(
                         <button
                           key={slot.start_time}
                           onClick={() => handleSelectSlot(slot)}
-                          className={`rounded-xl border px-3 py-3 text-center transition-colors ${
+                          className={`rounded-[10px] border px-3 py-2.5 text-center hover-lift press-feedback ${
                             isSelected
-                              ? "border-primary bg-primary/10 ring-2 ring-primary/20"
+                              ? "selection-active text-primary"
                               : "border-border hover:border-primary/50 hover:bg-accent"
                           }`}
                         >
@@ -1593,8 +1479,8 @@ export function DynamicAvailabilityWidget(
 
       {/* Step 4: Events on this date for the selected facility */}
       {(dayEvents.length > 0 || loadingEvents) && (
-        <div className="rounded-xl border bg-card p-4 shadow-sm">
-          <div className="mb-3 flex items-center gap-2">
+        <div className="surface-1 rounded-xl bg-card px-4 py-3">
+          <div className="mb-2.5 flex items-center gap-2">
             <CalendarDays className="h-4 w-4 text-green-600 dark:text-green-400" />
             <h3 className="text-sm font-medium text-muted-foreground">
               Events
@@ -1692,15 +1578,262 @@ export function DynamicAvailabilityWidget(
         />
       )}
 
-      {/* Spacer for CTA bar when a slot is selected */}
-      {selectedSlot && <div className="h-20" />}
+      {/* Spacer for CTA bar when a slot is selected (mobile only) */}
+      {selectedSlot && <div className="h-20 lg:hidden" />}
       </div>{/* end Main Content */}
 
-      {/* ===== Booking bar / slide-up panel — portalled to body ===== */}
+      {/* ===== Desktop Booking Widget (right sidebar) ===== */}
+      <div className="sticky top-[4.5rem] hidden w-80 shrink-0 lg:block max-h-[calc(100vh-5.5rem)] overflow-y-auto">
+        <div className="surface-2 rounded-xl border border-[var(--surface-1-border)] bg-card">
+          {/* Widget header */}
+          <div className="border-b px-4 py-3">
+            <h3 className="text-sm font-semibold">Booking Details</h3>
+          </div>
+
+          <div className="px-4 py-3">
+            {/* Details table */}
+            <div className="rounded-lg bg-muted/50 px-4 py-3 space-y-2.5">
+              {/* Date */}
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-muted-foreground">Date</span>
+                <span className="text-sm font-medium text-right">
+                  {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", {
+                    weekday: "long",
+                    month: "long",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </span>
+              </div>
+
+              {/* Time */}
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-muted-foreground">Time</span>
+                <span className="text-sm font-medium text-right">
+                  {selectedSlot
+                    ? `${formatTime(selectedSlot.start_time, timezone)} – ${formatTime(selectedSlot.end_time, timezone)}`
+                    : "—"
+                  }
+                </span>
+              </div>
+
+              {/* Duration */}
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-muted-foreground">Duration</span>
+                <span className="text-sm font-medium">
+                  {formatDurationLong(selectedDuration)}
+                </span>
+              </div>
+
+              {/* Facility */}
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-muted-foreground">Facility</span>
+                <span className="text-sm font-medium">
+                  {selectedSlot?.bay_name
+                    || (selectedGroupId
+                      ? facilityGroups.find((g) => g.id === selectedGroupId)?.name
+                      : selectedBayId
+                        ? bays.find((b) => b.id === selectedBayId)?.name
+                        : bays.length === 1 ? bays[0].name : "—"
+                    )
+                  }
+                </span>
+              </div>
+
+              {/* Total */}
+              {selectedSlot && (
+                <div className="border-t pt-2.5 mt-2.5">
+                  {(() => {
+                    const { discountCents, finalCents, label } = calcDiscount(selectedSlot.price_cents);
+                    return (
+                      <>
+                        {discountCents > 0 && (
+                          <>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                              <span>Subtotal</span>
+                              <span>${(selectedSlot.price_cents / 100).toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs text-teal-600 dark:text-teal-400 mb-1">
+                              <span className="flex items-center gap-1">
+                                <Crown className="h-3 w-3" />
+                                {label}
+                              </span>
+                              <span>-${(discountCents / 100).toFixed(2)}</span>
+                            </div>
+                          </>
+                        )}
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold">Total</span>
+                          <span className="text-sm font-bold">${(finalCents / 100).toFixed(2)}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {/* Action area below the details card */}
+            <div className="mt-4 space-y-3">
+
+            {/* Payment section — Step 2 */}
+            {bookingStep === 2 && requiresPayment && checkoutIntent && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment Method</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetPaymentState();
+                      setBookingStep(1);
+                    }}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Edit booking
+                  </button>
+                </div>
+                <StripeCheckoutWrapper
+                  stripeAccountId={checkoutIntent.stripe_account_id}
+                  clientSecret={checkoutIntent.client_secret}
+                  customerSessionClientSecret={checkoutIntent.customer_session_client_secret}
+                >
+                  <CheckoutForm
+                    ref={checkoutFormRef}
+                    intentType={checkoutIntent.intent_type}
+                  />
+                </StripeCheckoutWrapper>
+              </div>
+            )}
+
+            {/* Cancellation policy notice */}
+            {selectedSlot && bookingStep >= (requiresPayment ? 2 : 1) && (
+              <p className="text-[11px] text-muted-foreground">
+                By booking you agree to the{" "}
+                <button type="button" onClick={() => setConfirmPolicyModalOpen(true)} className="underline hover:text-foreground">
+                  cancellation policy
+                </button>
+              </p>
+            )}
+
+            {/* CTA Button */}
+            <div>
+              {(() => {
+                const hasSlot = !!selectedSlot;
+                const { finalCents } = selectedSlot ? calcDiscount(selectedSlot.price_cents) : { finalCents: 0 };
+                const paymentStepActive = requiresPayment && bookingStep === 2;
+
+                if (!isAuthenticated && hasSlot) {
+                  return (
+                    <AuthModal
+                      trigger={
+                        <Button className="w-full bg-green-600 hover:bg-green-700 text-white">
+                          Sign in to Book
+                        </Button>
+                      }
+                    />
+                  );
+                }
+
+                // Step 2: Payment form visible — validate card + confirm booking in one click
+                if (paymentStepActive) {
+                  return (
+                    <Button
+                      className="w-full bg-green-600 hover:bg-green-700 text-white"
+                      disabled={bookingLoading}
+                      onClick={async () => {
+                        if (!checkoutFormRef.current) return;
+                        setBookingLoading(true);
+                        try {
+                          const result = await checkoutFormRef.current.confirmAndGetCardInfo();
+                          if (result.success) {
+                            setCardBrand(result.cardBrand ?? null);
+                            setCardLast4(result.cardLast4 ?? null);
+                            setConfirmedPaymentMethodId(result.paymentMethodId ?? null);
+                            setPaymentValidated(true);
+                            // Directly confirm booking after card validation
+                            await handleConfirmBooking(result.paymentMethodId ?? null);
+                          } else {
+                            setPaymentValidationError("Payment validation failed. Please try again.");
+                            setBookingLoading(false);
+                          }
+                        } catch {
+                          setPaymentValidationError("Payment validation failed. Please try again.");
+                          setBookingLoading(false);
+                        }
+                      }}
+                    >
+                      {bookingLoading ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
+                      ) : (
+                        `Confirm & Pay $${(finalCents / 100).toFixed(2)}`
+                      )}
+                    </Button>
+                  );
+                }
+
+                // No-payment flow: confirm directly
+                if (hasSlot && !requiresPayment && isAuthenticated) {
+                  return (
+                    <Button
+                      className="w-full bg-green-600 hover:bg-green-700 text-white"
+                      disabled={bookingLoading}
+                      onClick={() => handleConfirmBooking()}
+                    >
+                      {bookingLoading ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
+                      ) : (
+                        "Confirm Booking"
+                      )}
+                    </Button>
+                  );
+                }
+
+                // Step 1: Ready to proceed to payment
+                if (hasSlot && requiresPayment && isAuthenticated && bookingStep === 1) {
+                  return (
+                    <Button
+                      className="w-full bg-green-600 hover:bg-green-700 text-white"
+                      disabled={bookingLoading || checkoutLoading}
+                      onClick={async () => {
+                        if (!checkoutIntent) {
+                          await createCheckoutIntent();
+                        }
+                        setBookingStep(2);
+                      }}
+                    >
+                      {checkoutLoading ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Preparing...</>
+                      ) : (
+                        "Continue to Payment"
+                      )}
+                    </Button>
+                  );
+                }
+
+                // Default: no selection
+                return (
+                  <Button className="w-full" disabled>
+                    Select a time slot to book
+                  </Button>
+                );
+              })()}
+            </div>
+
+            {/* Error display */}
+            {paymentValidationError && (
+              <p className="text-xs text-red-600">{paymentValidationError}</p>
+            )}
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>{/* end flex wrapper */}
+
+      {/* ===== Booking bar / slide-up panel — MOBILE ONLY (portalled to body) ===== */}
       {selectedSlot &&
         mounted &&
         createPortal(
-          <>
+          <div className="lg:hidden">
             {/* Backdrop overlay when panel is open */}
             {panelOpen && (
               <div
@@ -2398,7 +2531,7 @@ export function DynamicAvailabilityWidget(
                               className="flex-1"
                               size="lg"
                               disabled={bookingLoading}
-                              onClick={handleConfirmBooking}
+                              onClick={() => handleConfirmBooking()}
                             >
                               {bookingLoading ? (
                                 <>
@@ -2429,7 +2562,7 @@ export function DynamicAvailabilityWidget(
                 </div>
               )}
             </div>
-          </>,
+          </div>,
           document.body
         )}
 

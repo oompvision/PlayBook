@@ -12,15 +12,14 @@ type ChatBubbleProps = {
 };
 
 // Pages where the floating bubble should NOT appear at all
-const HIDDEN_PATHS = ["/", "/admin", "/super-admin"];
+const HIDDEN_PATHS = ["/admin", "/super-admin"];
 
 // Pages where we show the bottom bar style instead of floating bubble
 const BAR_PATHS = ["/my-bookings"];
 
 export function ChatBubble({ facilitySlug, orgName }: ChatBubbleProps) {
   const pathname = usePathname();
-  const isHomepage = pathname === "/";
-  const useBarStyle = BAR_PATHS.some(
+  const useBarStyle = pathname === "/" || BAR_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/")
   );
 
@@ -41,11 +40,7 @@ export function ChatBubble({ facilitySlug, orgName }: ChatBubbleProps) {
   // Avoid flash before hydration when using conditional default state
   if (!hasMounted) return null;
 
-  // On homepage: only show on desktop (lg+) since mobile has its own inline ChatWidget
-  // On other pages: show on all screen sizes
-  const visibilityClass = isHomepage ? "hidden lg:block" : "";
-
-  // Bar style for /my-bookings
+  // Bar style for homepage and /my-bookings
   if (useBarStyle) {
     return (
       <>
@@ -108,7 +103,7 @@ export function ChatBubble({ facilitySlug, orgName }: ChatBubbleProps) {
 
   // Floating bubble style for other pages
   return (
-    <div className={`fixed bottom-4 right-4 z-50 ${visibilityClass}`}>
+    <div className="fixed bottom-4 right-4 z-50">
       {/* Chat panel */}
       {isOpen && (
         <div className="mb-3 flex h-[500px] w-[380px] max-w-[calc(100vw-2rem)] flex-col rounded-2xl border bg-card shadow-2xl">

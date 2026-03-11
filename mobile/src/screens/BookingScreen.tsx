@@ -22,7 +22,8 @@ import { Badge } from '../components/Badge';
 import { Input } from '../components/Input';
 import { formatPrice, formatTimeInZone, getTodayInTimezone, formatDate } from '../lib/format';
 import { usePayment } from '../lib/use-payment';
-import { colors, spacing, typography, borderRadius } from '../theme';
+import { colors, spacing, typography, borderRadius, shadows } from '../theme';
+import { PressableScale } from '../components/PressableScale';
 import type { MainTabParamList, ModifyBookingParams } from '../navigation/types';
 import type { Bay, BayScheduleSlot, FacilityGroup, AvailableTimeSlot, FacilityEvent } from '../types';
 
@@ -1151,7 +1152,7 @@ export function BookingScreen({ route, navigation }: Props) {
                         {periodSlots.map((slot) => {
                           const isSelected = selectedDynamicSlot?.start_time === slot.start_time;
                           return (
-                            <TouchableOpacity
+                            <PressableScale
                               key={slot.start_time}
                               onPress={() =>
                                 setSelectedDynamicSlot(isSelected ? null : slot)
@@ -1164,7 +1165,7 @@ export function BookingScreen({ route, navigation }: Props) {
                               <Text style={[styles.slotPrice, isSelected && styles.slotPriceSelected]}>
                                 {formatPrice(slot.price_cents)}
                               </Text>
-                            </TouchableOpacity>
+                            </PressableScale>
                           );
                         })}
                       </View>
@@ -1202,7 +1203,7 @@ export function BookingScreen({ route, navigation }: Props) {
                       {periodSlots.map((slot) => {
                         const isSelected = selectedSlotIds.has(slot.id);
                         return (
-                          <TouchableOpacity
+                          <PressableScale
                             key={slot.id}
                             onPress={() => toggleSlot(slot.id)}
                             style={[styles.slotChip, isSelected && styles.slotChipSelected]}
@@ -1213,7 +1214,7 @@ export function BookingScreen({ route, navigation }: Props) {
                             <Text style={[styles.slotPrice, isSelected && styles.slotPriceSelected]}>
                               {formatPrice(slot.price_cents)}
                             </Text>
-                          </TouchableOpacity>
+                          </PressableScale>
                         );
                       })}
                     </View>
@@ -2000,14 +2001,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.card,
     minWidth: 100,
     alignItems: 'center',
+    ...shadows.surface1,
   },
   slotChipSelected: {
-    backgroundColor: '#f0fdf4',
+    backgroundColor: colors.selectionBg,
     borderColor: colors.primary,
     borderWidth: 2,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
   },
   slotTime: {
     ...typography.label,

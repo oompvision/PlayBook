@@ -145,7 +145,7 @@ export function EventCard({
 
   return (
     <>
-      <div className="flex flex-col rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.03]">
+      <div className="flex flex-col surface-1 rounded-xl bg-card p-5 hover-lift press-feedback dark:bg-white/[0.03]">
         {/* Event badge */}
         <div className="mb-3 flex items-center justify-between">
           <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">

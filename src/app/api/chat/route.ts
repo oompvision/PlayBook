@@ -188,7 +188,7 @@ const toolDeclarations: FunctionDeclaration[] = [
   {
     name: "start_checkout",
     description:
-      "Open the booking checkout flow for the customer with specific time slots pre-selected. Use this INSTEAD of create_booking when the facility requires payment. This will open the booking wizard on the main page with the correct date, bay, and time slots already selected so the customer can enter payment details and confirm. Call this after the customer confirms they want to book the discussed time slots.",
+      "Generate a confirmation link for the customer to complete their booking with payment. Use this INSTEAD of create_booking when the facility requires payment. Returns a URL that pre-fills the booking form with the correct date, facility, and time slots. The customer clicks the link to review details and enter payment. Call this after the customer confirms the booking details. ALWAYS also call suggest_quick_replies with ['Go to Confirmation', 'Cancel'] alongside this tool.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -1577,9 +1577,10 @@ ${requiresPayment ? `
 Payment policy:
 - This facility requires payment to complete a booking (mode: ${paymentMode}).
 - You CANNOT complete bookings directly in chat. Do NOT use create_booking — it will not work.
-- Instead, use the start_checkout tool to open the booking form with the correct slots pre-selected.
-- Flow: help the customer find the right time slots → confirm the details (date, bay, time, price) → when they agree, call start_checkout with the date, bay_name, and start_time${isDynamic ? ", end_time, duration, and price_cents" : ""}. This will automatically open the booking form for them with payment entry.
-- After calling start_checkout, tell the customer something like "I've opened the booking form for you — just add your payment details and confirm!"
+- Instead, use the start_checkout tool to generate a confirmation link for the customer.
+- Flow: help the customer find the right time slots → confirm the details (date, bay, time, price) → when they agree, call start_checkout with the date, bay_name, and start_time${isDynamic ? ", end_time, duration, and price_cents" : ""}. The tool will return a confirmation URL.
+- After calling start_checkout, tell the customer their booking is ready for confirmation. Do NOT include any URL or link in your message text — the system automatically generates a clickable "Go to Confirmation" button for the customer.
+- ALWAYS call suggest_quick_replies with ["Cancel"] after calling start_checkout. The "Go to Confirmation" link button is added automatically by the system.
 ` : `
 Payment policy:
 - This facility does not require payment at booking time. You can complete bookings directly in chat using create_booking.
@@ -1592,7 +1593,7 @@ ${(org.events_enabled ?? true) ? `Event guidelines:
 - For members, show both the regular price and their discounted member price.
 - If enrollment isn't open yet, tell the customer when registration opens.
 - For free events, you can register the customer directly using register_for_event (after confirming with them).
-- For paid events, direct the customer to the events section on the facility page to register and pay.
+- For paid events, direct the customer to the facility homepage where they can register through the availability widget and complete payment. Do NOT attempt to register in chat — use start_checkout with the event details instead.
 - BEFORE calling register_for_event, summarize the event and confirm that the customer wants to register.
 - Members-only events: if the customer is not a member, let them know the event is members-only and suggest checking out the membership at /membership.
 ` : `This facility does not have events enabled. If the customer asks about events, let them know this facility doesn't currently offer events.
@@ -1618,7 +1619,7 @@ Quick reply buttons:
   try {
     let finalText = "";
     let quickReplies: string[] = [];
-    let bookingAction: { date: string; bay_name: string; start_time: string; end_time?: string; duration?: number; price_cents?: number; slot_ids?: string[] } | null = null;
+    let bookingLink: string | null = null;
 
     // Filter out event tools if events are disabled for this org
     const eventToolNames = new Set(["get_events", "register_for_event"]);
@@ -1666,19 +1667,20 @@ Quick reply buttons:
         }
       }
 
-      // Capture booking checkout action if present
+      // Build booking confirmation link from start_checkout args
       if (checkoutCall) {
         const args = checkoutCall.functionCall?.args as Record<string, unknown> | undefined;
         if (args) {
-          bookingAction = {
-            date: String(args.date ?? ""),
-            bay_name: String(args.bay_name ?? ""),
-            start_time: String(args.start_time ?? ""),
-            end_time: args.end_time ? String(args.end_time) : undefined,
-            duration: typeof args.duration === "number" ? args.duration : undefined,
-            price_cents: typeof args.price_cents === "number" ? args.price_cents : undefined,
-            slot_ids: Array.isArray(args.slot_ids) ? args.slot_ids.map(String) : undefined,
-          };
+          const params = new URLSearchParams();
+          params.set("book", "1");
+          if (args.date) params.set("date", String(args.date));
+          if (args.bay_name) params.set("bay", String(args.bay_name));
+          if (args.start_time) params.set("time", String(args.start_time));
+          if (args.end_time) params.set("end_time", String(args.end_time));
+          if (typeof args.duration === "number") params.set("duration", String(args.duration));
+          if (typeof args.price_cents === "number") params.set("price", String(args.price_cents));
+          if (Array.isArray(args.slot_ids)) params.set("slot_ids", args.slot_ids.join(","));
+          bookingLink = `/?${params.toString()}`;
         }
       }
 
@@ -1790,14 +1792,21 @@ Quick reply buttons:
       currentMessages.push({ role: "user", parts: responseParts });
     }
 
-    // Append booking action delimiter if present (before quick replies)
-    if (bookingAction) {
-      finalText += `\n\n<<BOOKING_ACTION>>\n${JSON.stringify(bookingAction)}`;
+    // Append booking link delimiter if present (before quick replies)
+    if (bookingLink) {
+      finalText += `\n\n<<BOOKING_LINK>>\n${bookingLink}`;
     }
 
     // Append quick replies delimiter if present
     if (quickReplies.length > 0) {
-      finalText += `\n\n<<QUICK_REPLIES>>\n${JSON.stringify(quickReplies)}`;
+      // Filter out "Go to Confirmation" from quick replies when a booking link exists
+      // (it will be rendered as a hyperlink instead)
+      const filteredReplies = bookingLink
+        ? quickReplies.filter((r) => r.toLowerCase() !== "go to confirmation")
+        : quickReplies;
+      if (filteredReplies.length > 0) {
+        finalText += `\n\n<<QUICK_REPLIES>>\n${JSON.stringify(filteredReplies)}`;
+      }
     }
 
     // Stream the final text back to the client

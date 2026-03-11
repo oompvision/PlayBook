@@ -40,7 +40,7 @@ export function BookingCardExpandable({
 
   return (
     <div
-      className="rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]"
+      className="surface-1 rounded-xl bg-card dark:bg-white/[0.03]"
     >
       <button
         type="button"

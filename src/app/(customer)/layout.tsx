@@ -1,12 +1,16 @@
 import { getFacilitySlug } from "@/lib/facility";
 import { getAuthUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getOrgLocations } from "@/lib/location";
 import Link from "next/link";
+import { ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OrgHeader } from "@/components/org-header";
 import { AuthModal } from "@/components/auth-modal";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { CustomerAvatarMenu } from "@/components/customer-avatar-menu";
+import { MyBookingsDropdown } from "@/components/my-bookings-dropdown";
+import { HeaderLocationSwitcher } from "@/components/header-location-switcher";
 
 export default async function CustomerLayout({
   children,
@@ -23,7 +27,7 @@ export default async function CustomerLayout({
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, logo_url, membership_tiers_enabled, events_enabled")
+    .select("id, name, slug, logo_url, membership_tiers_enabled, events_enabled, locations_enabled")
     .eq("slug", slug)
     .single();
 
@@ -33,11 +37,32 @@ export default async function CustomerLayout({
 
   const auth = await getAuthUser();
 
+  // Check active membership status for the avatar menu
+  let isActiveMember = false;
+  if (auth && org.membership_tiers_enabled) {
+    const { data } = await supabase.rpc("is_active_member", {
+      p_org_id: org.id,
+      p_user_id: auth.user.id,
+    });
+    isActiveMember = !!data;
+  }
+
+  // Fetch locations for header switcher (desktop)
+  const locationsEnabled = org.locations_enabled ?? false;
+  const locations = locationsEnabled ? await getOrgLocations(org.id) : [];
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <OrgHeader name={org.name} logoUrl={org.logo_url} />
+          <div className="flex items-center gap-4">
+            <OrgHeader name={org.name} logoUrl={org.logo_url} />
+            {locationsEnabled && locations.length > 1 && (
+              <div className="hidden lg:block">
+                <HeaderLocationSwitcher locations={locations} />
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-2 sm:gap-3">
             {(org.events_enabled ?? true) && (
               <Link href="/events">
@@ -48,18 +73,18 @@ export default async function CustomerLayout({
             )}
             {auth ? (
               <>
-                <Link href="/my-bookings">
-                  <Button variant="ghost" size="sm">
-                    My Bookings
-                  </Button>
+                {/* Mobile: icon link to /my-bookings */}
+                <Link
+                  href="/my-bookings"
+                  className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 sm:hidden"
+                  aria-label="My Bookings"
+                >
+                  <ClipboardList className="h-5 w-5" />
                 </Link>
-                {org.membership_tiers_enabled && (
-                  <Link href="/membership">
-                    <Button variant="ghost" size="sm">
-                      Membership
-                    </Button>
-                  </Link>
-                )}
+                {/* Desktop: popover dropdown */}
+                <div className="hidden sm:block">
+                  <MyBookingsDropdown orgId={org.id} />
+                </div>
                 <NotificationBell
                   userId={auth.user.id}
                   viewAllHref="/notifications"
@@ -68,6 +93,7 @@ export default async function CustomerLayout({
                   userName={auth.profile.full_name}
                   userEmail={auth.profile.email}
                   membershipEnabled={org.membership_tiers_enabled ?? false}
+                  isActiveMember={isActiveMember}
                 />
               </>
             ) : (

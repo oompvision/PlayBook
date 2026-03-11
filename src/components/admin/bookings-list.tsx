@@ -589,7 +589,7 @@ export function AdminBookingsList({
     <>
       {/* Desktop Table */}
       <div className="hidden md:block">
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+        <div className="overflow-hidden surface-1 rounded-xl bg-card dark:bg-white/[0.03]">
           {sorted.length === 0 && !hasLoadMore ? (
             <div className="px-5 py-16 text-center text-sm text-gray-500 dark:text-gray-400">
               No bookings found.
@@ -981,7 +981,7 @@ export function AdminBookingsList({
               key={booking.id}
               type="button"
               onClick={() => openBooking(booking)}
-              className="w-full rounded-xl border border-gray-200 bg-white p-4 text-left transition-colors hover:bg-gray-50 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]"
+              className="w-full surface-1 rounded-xl bg-card p-4 text-left hover-lift press-feedback hover:bg-gray-50 dark:bg-white/[0.03] dark:hover:bg-white/[0.05]"
             >
               <div className="flex items-center justify-between">
                 <div className="min-w-0 flex-1">
