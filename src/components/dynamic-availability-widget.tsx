@@ -1256,7 +1256,7 @@ export function DynamicAvailabilityWidget(
         </div>
       )}
       {/* Select Date */}
-      <div className="rounded-xl border bg-card px-4 py-3 shadow-sm">
+      <div className="surface-1 rounded-xl bg-card px-4 py-3">
         <p className="mb-2.5 text-sm font-medium text-foreground">Select Date</p>
         <div className="flex items-center gap-1.5">
           {canPageBack && (
@@ -1293,9 +1293,9 @@ export function DynamicAvailabilityWidget(
                       });
                     }
                   }}
-                  className={`flex flex-1 flex-col items-center rounded-lg border py-2 text-center transition-colors ${
+                  className={`flex flex-1 flex-col items-center rounded-lg border py-2 text-center hover-lift press-feedback ${
                     isSelected
-                      ? "border-primary bg-primary/10 text-primary"
+                      ? "selection-active text-primary"
                       : !isBookable
                         ? "border-border opacity-35 cursor-not-allowed"
                         : "border-border hover:border-primary/50 hover:bg-accent"
@@ -1327,7 +1327,7 @@ export function DynamicAvailabilityWidget(
 
       {/* Select Facility (if needed) */}
       {hasMultipleOptions && (
-        <div className="rounded-xl border bg-card px-4 py-3 shadow-sm">
+        <div className="surface-1 rounded-xl bg-card px-4 py-3">
           <p className="mb-2.5 text-sm font-medium text-foreground">
             Select Facility
           </p>
@@ -1340,9 +1340,9 @@ export function DynamicAvailabilityWidget(
                   setSelectedBayId(null);
                   setSelectedSlot(null);
                 }}
-                className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
+                className={`rounded-lg border px-4 py-2.5 text-sm font-medium hover-lift press-feedback ${
                   selectedGroupId === group.id
-                    ? "border-primary bg-primary/10 text-primary"
+                    ? "selection-active text-primary"
                     : "border-border hover:border-primary/50 hover:bg-accent"
                 }`}
               >
@@ -1360,9 +1360,9 @@ export function DynamicAvailabilityWidget(
                   setSelectedGroupId(null);
                   setSelectedSlot(null);
                 }}
-                className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
+                className={`rounded-lg border px-4 py-2.5 text-sm font-medium hover-lift press-feedback ${
                   selectedBayId === bay.id
-                    ? "border-primary bg-primary/10 text-primary"
+                    ? "selection-active text-primary"
                     : "border-border hover:border-primary/50 hover:bg-accent"
                 }`}
               >
@@ -1374,7 +1374,7 @@ export function DynamicAvailabilityWidget(
       )}
 
       {/* Play for [duration] */}
-      <div className="rounded-xl border bg-card px-4 py-3 shadow-sm">
+      <div className="surface-1 rounded-xl bg-card px-4 py-3">
         <p className="mb-2 text-sm font-medium text-foreground">
           Play for {formatDuration(selectedDuration)}
         </p>
@@ -1386,9 +1386,9 @@ export function DynamicAvailabilityWidget(
                 setSelectedDuration(dur);
                 setSelectedSlot(null);
               }}
-              className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${
+              className={`rounded-full border px-4 py-1.5 text-sm font-medium hover-lift press-feedback ${
                 selectedDuration === dur
-                  ? "border-primary bg-primary/10 text-primary"
+                  ? "selection-active text-primary"
                   : "border-border hover:border-primary/50 hover:bg-accent"
               }`}
             >
@@ -1399,7 +1399,7 @@ export function DynamicAvailabilityWidget(
       </div>
 
       {/* Step 3: Available Times */}
-      <div className="rounded-xl border bg-card px-4 py-3 shadow-sm">
+      <div className="surface-1 rounded-xl bg-card px-4 py-3">
         <div className="mb-2.5 flex items-center justify-between">
           <h3 className="text-sm font-medium text-muted-foreground">
             {selectedOption ? `Select a time – ${selectedOption}` : "Select a time"}
@@ -1454,9 +1454,9 @@ export function DynamicAvailabilityWidget(
                         <button
                           key={slot.start_time}
                           onClick={() => handleSelectSlot(slot)}
-                          className={`rounded-[10px] border px-3 py-2.5 text-center transition-colors ${
+                          className={`rounded-[10px] border px-3 py-2.5 text-center hover-lift press-feedback ${
                             isSelected
-                              ? "border-primary bg-primary/10 ring-2 ring-primary/20"
+                              ? "selection-active text-primary"
                               : "border-border hover:border-primary/50 hover:bg-accent"
                           }`}
                         >
@@ -1479,7 +1479,7 @@ export function DynamicAvailabilityWidget(
 
       {/* Step 4: Events on this date for the selected facility */}
       {(dayEvents.length > 0 || loadingEvents) && (
-        <div className="rounded-xl border bg-card px-4 py-3 shadow-sm">
+        <div className="surface-1 rounded-xl bg-card px-4 py-3">
           <div className="mb-2.5 flex items-center gap-2">
             <CalendarDays className="h-4 w-4 text-green-600 dark:text-green-400" />
             <h3 className="text-sm font-medium text-muted-foreground">
@@ -1584,7 +1584,7 @@ export function DynamicAvailabilityWidget(
 
       {/* ===== Desktop Booking Widget (right sidebar) ===== */}
       <div className="sticky top-[4.5rem] hidden w-80 shrink-0 lg:block max-h-[calc(100vh-5.5rem)] overflow-y-auto">
-        <div className="rounded-xl border bg-card shadow-sm">
+        <div className="surface-2 rounded-xl border border-[var(--surface-1-border)] bg-card">
           {/* Widget header */}
           <div className="border-b px-4 py-3">
             <h3 className="text-sm font-semibold">Booking Details</h3>

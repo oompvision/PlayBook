@@ -320,7 +320,7 @@ export function MyBookingsList({
           key={booking.id}
           type="button"
           onClick={() => openBooking(booking, true)}
-          className="w-full rounded-lg border p-4 text-left transition-colors hover:bg-muted/50"
+          className="w-full rounded-lg border p-4 text-left hover-lift press-feedback hover:bg-muted/50"
         >
           <div className="flex items-center justify-between">
             <div>
@@ -374,7 +374,7 @@ export function MyBookingsList({
         key={booking.id}
         type="button"
         onClick={() => openBooking(booking, false)}
-        className="w-full rounded-lg border p-4 text-left opacity-60 transition-colors hover:bg-muted/50"
+        className="w-full rounded-lg border p-4 text-left opacity-60 hover-lift press-feedback hover:bg-muted/50"
       >
         <div className="flex items-center justify-between">
           <div>
@@ -440,7 +440,7 @@ export function MyBookingsList({
         key={reg.id}
         type="button"
         onClick={() => openEvent(reg, eventData)}
-        className={`w-full rounded-lg border p-4 text-left transition-colors hover:bg-muted/50 ${!isUpcoming ? "opacity-60" : ""}`}
+        className={`w-full rounded-lg border p-4 text-left hover-lift press-feedback hover:bg-muted/50 ${!isUpcoming ? "opacity-60" : ""}`}
       >
         <div>
           <div className="flex items-center gap-2">

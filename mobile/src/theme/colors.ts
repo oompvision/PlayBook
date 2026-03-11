@@ -5,7 +5,7 @@ export const colors = {
   // Core
   primary: '#16A34A',
   primaryForeground: '#ffffff',
-  background: '#ffffff',
+  background: '#F6F7F8',
   foreground: '#0a0a0a',
 
   // Surfaces
@@ -36,6 +36,10 @@ export const colors = {
   white: '#ffffff',
   black: '#000000',
   transparent: 'transparent',
+
+  // Elevation & selection
+  surface0: '#F6F7F8',
+  selectionBg: '#F0FDF4',
 
   // Status colors (for booking slots)
   available: '#22c55e',

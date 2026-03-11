@@ -1676,7 +1676,7 @@ export function AvailabilityWidget({
     <div>
       {/* ===== Main content + Desktop Booking Widget ===== */}
       <div className="flex items-start gap-6">
-      <div className="min-w-0 flex-1 overflow-hidden rounded-xl border bg-card shadow-sm">
+      <div className="min-w-0 flex-1 overflow-hidden surface-1 rounded-xl bg-card">
         {/* Location Switcher (multi-location orgs only) */}
         {locationsEnabled && locations.length > 1 && locationId && (
           <div className="flex items-center gap-2 border-b px-5 py-2.5">
@@ -1892,9 +1892,9 @@ export function AvailabilityWidget({
                     type="button"
                     onClick={() => toggleTimeSlot(group.key)}
                     disabled={!wouldBeEligible}
-                    className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left transition-all ${
+                    className={`flex w-full items-center justify-between rounded-lg border px-4 py-3 text-left hover-lift press-feedback ${
                       isSelected
-                        ? "border-primary bg-primary/5 ring-1 ring-primary"
+                        ? "selection-active text-primary"
                         : !wouldBeEligible
                           ? "cursor-not-allowed opacity-40"
                           : "hover:border-foreground/20 hover:bg-accent"
@@ -1967,7 +1967,7 @@ export function AvailabilityWidget({
       {/* ===== Desktop Booking Widget (right sidebar) ===== */}
       {!hideSidebar && (
         <div className="sticky top-[4.5rem] hidden w-80 shrink-0 lg:block max-h-[calc(100vh-5.5rem)] overflow-y-auto">
-          <div className="rounded-xl border bg-card shadow-sm">
+          <div className="surface-2 rounded-xl border border-[var(--surface-1-border)] bg-card">
             {/* Widget header */}
             <div className="border-b px-4 py-3">
               <h3 className="text-sm font-semibold">Booking Details</h3>
@@ -2408,9 +2408,9 @@ export function AvailabilityWidget({
                             {eligibleBays.map((bay) => (
                               <label
                                 key={bay.bay_id}
-                                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 hover-lift press-feedback ${
                                   effectiveBayId === bay.bay_id
-                                    ? "border-primary bg-primary/5 ring-1 ring-primary"
+                                    ? "selection-active text-primary"
                                     : "hover:bg-accent"
                                 }`}
                               >
@@ -2591,9 +2591,9 @@ export function AvailabilityWidget({
                             {eligibleBays.map((bay) => (
                               <label
                                 key={bay.bay_id}
-                                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                                className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 hover-lift press-feedback ${
                                   effectiveBayId === bay.bay_id
-                                    ? "border-primary bg-primary/5 ring-1 ring-primary"
+                                    ? "selection-active text-primary"
                                     : "hover:bg-accent"
                                 }`}
                               >
@@ -2908,9 +2908,9 @@ export function AvailabilityWidget({
                                 {eligibleBays.map((bay) => (
                                   <label
                                     key={bay.bay_id}
-                                    className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                                    className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 hover-lift press-feedback ${
                                       effectiveBayId === bay.bay_id
-                                        ? "border-primary bg-primary/5 ring-1 ring-primary"
+                                        ? "selection-active text-primary"
                                         : "hover:bg-accent"
                                     }`}
                                   >
