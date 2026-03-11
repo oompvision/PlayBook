@@ -93,6 +93,27 @@ export function EventRegistrationPanel({
     };
   }, []);
 
+  // Cancel a pending_payment registration that was never completed
+  async function cancelPendingRegistration() {
+    if (!registrationId || confirmed) return;
+    try {
+      const supabase = createClient();
+      await supabase.rpc("cancel_event_registration", {
+        p_registration_id: registrationId,
+      });
+    } catch {
+      // Best-effort cleanup — don't block the user from closing
+    }
+  }
+
+  function handleClose() {
+    // If user is on a payment step with an uncommitted registration, cancel it
+    if (step > 1 && registrationId && !confirmed) {
+      cancelPendingRegistration();
+    }
+    onClose();
+  }
+
   const formatDate = (iso: string) =>
     new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
@@ -279,7 +300,7 @@ export function EventRegistrationPanel({
       {/* Backdrop */}
       <div
         className="fixed inset-0 z-50 bg-black/40 transition-opacity"
-        onClick={onClose}
+        onClick={handleClose}
       />
 
       {/* Panel */}
@@ -290,7 +311,16 @@ export function EventRegistrationPanel({
             <div className="flex items-center gap-3">
               {step > 1 && !confirmed && (
                 <button
-                  onClick={() => setStep(step - 1)}
+                  onClick={() => {
+                    // Going back from payment step 2 → cancel the pending registration
+                    // so user doesn't end up with a dangling pending_payment record
+                    if (step === 2 && registrationId) {
+                      cancelPendingRegistration();
+                      setRegistrationId(null);
+                      setCheckoutIntent(null);
+                    }
+                    setStep(step - 1);
+                  }}
                   className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
                 >
                   <ArrowLeft className="h-4 w-4" />
@@ -308,7 +338,7 @@ export function EventRegistrationPanel({
               </div>
             </div>
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
             >
               <X className="h-4 w-4" />
