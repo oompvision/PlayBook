@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   StripeCheckoutWrapper,
@@ -34,8 +34,6 @@ import {
   ArrowRight,
   ArrowLeft,
   ArrowUpRight,
-  SendHorizontal,
-  Sparkles,
   LogIn,
   X,
   ExternalLink,
@@ -51,7 +49,7 @@ import {
   Sunset,
   Moon,
 } from "lucide-react";
-import { ChatWidget, type BookingAction } from "@/components/chat/chat-widget";
+import { type BookingAction } from "@/components/chat/chat-widget";
 import { AuthModal } from "@/components/auth-modal";
 import {
   BookingDetailsModal,
@@ -332,6 +330,7 @@ export function AvailabilityWidget({
   membership,
 }: AvailabilityWidgetProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const isModify = mode === "modify";
 
   // Membership discount calculation
@@ -389,7 +388,6 @@ export function AvailabilityWidget({
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [autoAdvancedFrom, setAutoAdvancedFrom] = useState<string | null>(null);
-  const [chatExpanded, setChatExpanded] = useState(false);
   const [selectedEventForPanel, setSelectedEventForPanel] = useState<EventForPanel | null>(null);
 
   // Booking panel state
@@ -486,6 +484,45 @@ export function AvailabilityWidget({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Pre-fill from URL query params (e.g. from AI chat "Go to Confirmation" link)
+  const bookParamProcessed = useRef(false);
+  useEffect(() => {
+    if (!mounted || isModify || bookParamProcessed.current) return;
+    if (searchParams.get("book") !== "1") return;
+    bookParamProcessed.current = true;
+
+    const date = searchParams.get("date");
+    const bay = searchParams.get("bay");
+    const time = searchParams.get("time");
+    const slotIds = searchParams.get("slot_ids");
+
+    if (date && bay && time) {
+      // Use the existing booking action mechanism to select the right slots
+      const action: BookingAction = {
+        date,
+        bay_name: bay,
+        start_time: time,
+      };
+      if (slotIds) {
+        action.slot_ids = slotIds.split(",");
+      }
+      // Set date first (may trigger availability reload), then the pending action effect handles the rest
+      pendingBookingAction.current = action;
+      if (date !== selectedDate) {
+        setSelectedDate(date);
+      }
+    }
+
+    // Clean up URL params without triggering a page reload
+    const url = new URL(window.location.href);
+    url.searchParams.delete("book");
+    url.searchParams.delete("date");
+    url.searchParams.delete("bay");
+    url.searchParams.delete("time");
+    url.searchParams.delete("slot_ids");
+    window.history.replaceState({}, "", url.pathname + url.search);
+  }, [mounted, isModify, searchParams, selectedDate]);
 
   // Restore slot selection from localStorage after auth reload (skip in modify mode)
   useEffect(() => {
@@ -1637,54 +1674,6 @@ export function AvailabilityWidget({
 
   return (
     <div>
-      {/* ===== Chat Assistant — fixed bottom-left (desktop only) ===== */}
-      {!hideSidebar && facilitySlug && (
-      <div className="fixed bottom-4 left-4 z-40 hidden w-72 flex-col rounded-xl border bg-card shadow-lg lg:flex">
-        {/* Chat header — clickable to expand/collapse */}
-        <button
-          type="button"
-          onClick={() => setChatExpanded((v) => !v)}
-          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        >
-          <Sparkles className="h-3.5 w-3.5" />
-          <span className="flex-1">Booking Assistant AI</span>
-          {chatExpanded ? (
-            <ChevronDown className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronUp className="h-3.5 w-3.5" />
-          )}
-        </button>
-
-        {chatExpanded ? (
-          /* Expanded: full chat widget */
-          <div className="h-[28rem] border-t px-2 pb-2">
-            <ChatWidget
-              facilitySlug={facilitySlug}
-              orgName={orgName}
-              mode="sidebar"
-              onBookingAction={handleBookingAction}
-            />
-          </div>
-        ) : (
-          /* Collapsed: just the input box */
-          <div className="border-t px-2 pb-2 pt-2">
-            <button
-              type="button"
-              onClick={() => setChatExpanded(true)}
-              className="flex w-full items-center gap-1.5"
-            >
-              <div className="flex h-8 flex-1 items-center rounded-md border bg-background px-3 text-xs text-muted-foreground">
-                Ask anything...
-              </div>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                <SendHorizontal className="h-3.5 w-3.5" />
-              </div>
-            </button>
-          </div>
-        )}
-      </div>
-      )}
-
       {/* ===== Main content + Desktop Booking Widget ===== */}
       <div className="flex items-start gap-6">
       <div className="min-w-0 flex-1 overflow-hidden rounded-xl border bg-card shadow-sm">

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   StripeCheckoutWrapper,
   CheckoutForm,
@@ -20,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ChatWidget, type BookingAction } from "@/components/chat/chat-widget";
+import { type BookingAction } from "@/components/chat/chat-widget";
 import { AuthModal } from "@/components/auth-modal";
 import {
   BookingDetailsModal,
@@ -48,8 +48,6 @@ import {
   Check,
   ShieldCheck,
   AlertTriangle,
-  Sparkles,
-  SendHorizontal,
   Crown,
   Users,
   Sun,
@@ -328,6 +326,7 @@ export function DynamicAvailabilityWidget(
   }
 
   const router = useRouter();
+  const searchParams = useSearchParams();
   const requiresPayment = paymentMode !== "none";
 
   // Fire-and-forget notification to server (non-blocking)
@@ -435,27 +434,12 @@ export function DynamicAvailabilityWidget(
   const [datePageStart, setDatePageStart] = useState(0);
   const DATES_PER_PAGE = 7;
 
-  const [chatFocused, setChatFocused] = useState(false);
-  const chatRef = useRef<HTMLDivElement>(null);
-
-  // Collapse chat focus when clicking outside
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (chatFocused && chatRef.current && !chatRef.current.contains(e.target as Node)) {
-        setChatFocused(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [chatFocused]);
-
   // Events for the selected date/facility
   const [dayEvents, setDayEvents] = useState<DayEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [selectedEventForPanel, setSelectedEventForPanel] = useState<EventForPanel | null>(null);
 
   // Sidebar: confirmed bookings + chat
-  const [chatExpanded, setChatExpanded] = useState(false);
   const pendingBookingAction = useRef<BookingAction | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
@@ -496,6 +480,52 @@ export function DynamicAvailabilityWidget(
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Pre-fill from URL query params (e.g. from AI chat "Go to Confirmation" link)
+  const bookParamProcessed = useRef(false);
+  useEffect(() => {
+    if (!mounted || bookParamProcessed.current) return;
+    if (searchParams.get("book") !== "1") return;
+    bookParamProcessed.current = true;
+
+    const date = searchParams.get("date");
+    const bay = searchParams.get("bay");
+    const time = searchParams.get("time");
+    const endTime = searchParams.get("end_time");
+    const duration = searchParams.get("duration");
+    const priceCents = searchParams.get("price");
+
+    if (date && bay && time) {
+      const action: BookingAction = {
+        date,
+        bay_name: bay,
+        start_time: time,
+      };
+      if (endTime) action.end_time = endTime;
+      if (duration) action.duration = parseInt(duration, 10);
+      if (priceCents) action.price_cents = parseInt(priceCents, 10);
+
+      pendingBookingAction.current = action;
+      if (date !== selectedDate) {
+        setSelectedDate(date);
+      }
+      if (duration) {
+        setSelectedDuration(parseInt(duration, 10));
+      }
+    }
+
+    // Clean up URL params without triggering a page reload
+    const url = new URL(window.location.href);
+    url.searchParams.delete("book");
+    url.searchParams.delete("date");
+    url.searchParams.delete("bay");
+    url.searchParams.delete("time");
+    url.searchParams.delete("end_time");
+    url.searchParams.delete("duration");
+    url.searchParams.delete("price");
+    url.searchParams.delete("slot_ids");
+    window.history.replaceState({}, "", url.pathname + url.search);
+  }, [mounted, searchParams, selectedDate]);
 
   // ─── Restore pending booking after auth ─────────────────
 
@@ -1213,58 +1243,6 @@ export function DynamicAvailabilityWidget(
 
   return (
     <div>
-      {/* ===== Chat Assistant — fixed bottom-left (desktop only) ===== */}
-      {facilitySlug && (
-      <div
-        ref={chatRef}
-        className="fixed bottom-4 left-4 z-40 hidden w-72 flex-col rounded-xl border bg-card shadow-lg lg:flex"
-        onMouseDown={() => setChatFocused(true)}
-      >
-        {/* Chat header — clickable to expand/collapse */}
-        <button
-          type="button"
-          onClick={() => setChatExpanded((v) => !v)}
-          className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        >
-          <Sparkles className="h-3.5 w-3.5" />
-          <span className="flex-1">Booking Assistant AI</span>
-          {chatExpanded ? (
-            <ChevronDown className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronUp className="h-3.5 w-3.5" />
-          )}
-        </button>
-
-        {chatExpanded ? (
-          /* Expanded: full chat widget */
-          <div className={`border-t px-2 pb-2 transition-all duration-200 ${chatFocused ? "h-[28rem]" : "h-[22.4rem]"}`}>
-            <ChatWidget
-              facilitySlug={facilitySlug}
-              orgName={orgName}
-              mode="sidebar"
-              onBookingAction={handleBookingAction}
-            />
-          </div>
-        ) : (
-          /* Collapsed: just the input box */
-          <div className="border-t px-2 pb-2 pt-2">
-            <button
-              type="button"
-              onClick={() => setChatExpanded(true)}
-              className="flex w-full items-center gap-1.5"
-            >
-              <div className="flex h-8 flex-1 items-center rounded-md border bg-background px-3 text-xs text-muted-foreground">
-                Ask anything...
-              </div>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                <SendHorizontal className="h-3.5 w-3.5" />
-              </div>
-            </button>
-          </div>
-        )}
-      </div>
-      )}
-
       {/* ═══ Main Content + Desktop Booking Widget ═══ */}
       <div className="flex items-start gap-6">
       <div className="min-w-0 flex-1 space-y-4">
