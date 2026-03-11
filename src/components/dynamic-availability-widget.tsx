@@ -482,6 +482,15 @@ export function DynamicAvailabilityWidget(
       cancellationWindowHours * 60 * 60 * 1000
     : false;
 
+  // Show toast when user selects slots within the non-refundable window
+  const prevWithinWindow = useRef(false);
+  useEffect(() => {
+    if (isWithinCancellationWindow && !prevWithinWindow.current) {
+      setToast({ message: "This booking cannot be modified or refunded" });
+    }
+    prevWithinWindow.current = isWithinCancellationWindow;
+  }, [isWithinCancellationWindow]);
+
   // ─── Mounted guard for portal rendering ─────────────────
 
   useEffect(() => {
@@ -935,7 +944,7 @@ export function DynamicAvailabilityWidget(
     }
   }
 
-  async function handleConfirmBooking() {
+  async function handleConfirmBooking(overridePaymentMethodId?: string | null) {
     if (!selectedSlot || !userProfileId) return;
 
     setBookingLoading(true);
@@ -949,8 +958,9 @@ export function DynamicAvailabilityWidget(
         setPolicyAgreedAt(new Date().toISOString());
       }
 
-      if (confirmedPaymentMethodId) {
-        paymentMethodId = confirmedPaymentMethodId;
+      const resolvedPmId = overridePaymentMethodId ?? confirmedPaymentMethodId;
+      if (resolvedPmId) {
+        paymentMethodId = resolvedPmId;
       } else {
         // Fallback: confirm payment now
         if (!checkoutFormRef.current) {
@@ -1694,64 +1704,36 @@ export function DynamicAvailabilityWidget(
             <div className="mt-4 space-y-3">
 
             {/* Payment section — Step 2 */}
-            {bookingStep >= 2 && requiresPayment && checkoutIntent && (
-              <div className="border-t pt-3 space-y-3">
-                {bookingStep === 2 && (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment Method</p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          resetPaymentState();
-                          setBookingStep(1);
-                        }}
-                        className="text-xs text-primary hover:underline"
-                      >
-                        Edit booking
-                      </button>
-                    </div>
-                    <StripeCheckoutWrapper
-                      stripeAccountId={checkoutIntent.stripe_account_id}
-                      clientSecret={checkoutIntent.client_secret}
-                      customerSessionClientSecret={checkoutIntent.customer_session_client_secret}
-                    >
-                      <CheckoutForm
-                        ref={checkoutFormRef}
-                        intentType={checkoutIntent.intent_type}
-                      />
-                    </StripeCheckoutWrapper>
-                  </>
-                )}
-
-                {/* Step 3: Confirmed payment summary */}
-                {bookingStep === 3 && cardBrand && cardLast4 && (
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment</p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          resetPaymentState();
-                          setBookingStep(1);
-                        }}
-                        className="text-xs text-primary hover:underline"
-                      >
-                        Edit
-                      </button>
-                    </div>
-                    <div className="mt-1 flex items-center gap-2 text-sm">
-                      <CreditCard className="h-4 w-4 text-muted-foreground" />
-                      <span className="capitalize">{cardBrand}</span>
-                      <span className="text-muted-foreground">•••• {cardLast4}</span>
-                    </div>
-                  </div>
-                )}
+            {bookingStep === 2 && requiresPayment && checkoutIntent && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment Method</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetPaymentState();
+                      setBookingStep(1);
+                    }}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Edit booking
+                  </button>
+                </div>
+                <StripeCheckoutWrapper
+                  stripeAccountId={checkoutIntent.stripe_account_id}
+                  clientSecret={checkoutIntent.client_secret}
+                  customerSessionClientSecret={checkoutIntent.customer_session_client_secret}
+                >
+                  <CheckoutForm
+                    ref={checkoutFormRef}
+                    intentType={checkoutIntent.intent_type}
+                  />
+                </StripeCheckoutWrapper>
               </div>
             )}
 
             {/* Cancellation policy notice */}
-            {selectedSlot && bookingStep >= (requiresPayment ? 3 : 2) && (
+            {selectedSlot && bookingStep >= (requiresPayment ? 2 : 1) && (
               <p className="text-[11px] text-muted-foreground">
                 By booking you agree to the{" "}
                 <button type="button" onClick={() => setConfirmPolicyModalOpen(true)} className="underline hover:text-foreground">
@@ -1764,11 +1746,7 @@ export function DynamicAvailabilityWidget(
             <div>
               {(() => {
                 const hasSlot = !!selectedSlot;
-                const readyForPayment = hasSlot && bookingStep === 1;
-                const readyToConfirm = hasSlot && (
-                  (requiresPayment && bookingStep === 3) ||
-                  (!requiresPayment && bookingStep >= 1)
-                );
+                const { finalCents } = selectedSlot ? calcDiscount(selectedSlot.price_cents) : { finalCents: 0 };
                 const paymentStepActive = requiresPayment && bookingStep === 2;
 
                 if (!isAuthenticated && hasSlot) {
@@ -1783,6 +1761,7 @@ export function DynamicAvailabilityWidget(
                   );
                 }
 
+                // Step 2: Payment form visible — validate card + confirm booking in one click
                 if (paymentStepActive) {
                   return (
                     <Button
@@ -1798,28 +1777,29 @@ export function DynamicAvailabilityWidget(
                             setCardLast4(result.cardLast4 ?? null);
                             setConfirmedPaymentMethodId(result.paymentMethodId ?? null);
                             setPaymentValidated(true);
-                            setBookingStep(3);
+                            // Directly confirm booking after card validation
+                            await handleConfirmBooking(result.paymentMethodId ?? null);
                           } else {
                             setPaymentValidationError("Payment validation failed. Please try again.");
+                            setBookingLoading(false);
                           }
                         } catch {
                           setPaymentValidationError("Payment validation failed. Please try again.");
-                        } finally {
                           setBookingLoading(false);
                         }
                       }}
                     >
                       {bookingLoading ? (
-                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Validating...</>
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
                       ) : (
-                        "Continue to Confirm"
+                        `Confirm & Pay $${(finalCents / 100).toFixed(2)}`
                       )}
                     </Button>
                   );
                 }
 
-                if (readyToConfirm) {
-                  const { finalCents } = calcDiscount(selectedSlot!.price_cents);
+                // No-payment flow: confirm directly
+                if (hasSlot && !requiresPayment && isAuthenticated) {
                   return (
                     <Button
                       className="w-full bg-green-600 hover:bg-green-700 text-white"
@@ -1828,10 +1808,6 @@ export function DynamicAvailabilityWidget(
                     >
                       {bookingLoading ? (
                         <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
-                      ) : requiresPayment && paymentMode === "charge_upfront" ? (
-                        `Confirm & Pay $${(finalCents / 100).toFixed(2)}`
-                      ) : requiresPayment ? (
-                        "Confirm & Save Card"
                       ) : (
                         "Confirm Booking"
                       )}
@@ -1839,7 +1815,8 @@ export function DynamicAvailabilityWidget(
                   );
                 }
 
-                if (readyForPayment && requiresPayment && isAuthenticated) {
+                // Step 1: Ready to proceed to payment
+                if (hasSlot && requiresPayment && isAuthenticated && bookingStep === 1) {
                   return (
                     <Button
                       className="w-full bg-green-600 hover:bg-green-700 text-white"
@@ -1863,7 +1840,7 @@ export function DynamicAvailabilityWidget(
                 // Default: no selection
                 return (
                   <Button className="w-full" disabled>
-                    {hasSlot ? "Continue to Payment" : "Select a time slot to book"}
+                    Select a time slot to book
                   </Button>
                 );
               })()}
@@ -2581,7 +2558,7 @@ export function DynamicAvailabilityWidget(
                               className="flex-1"
                               size="lg"
                               disabled={bookingLoading}
-                              onClick={handleConfirmBooking}
+                              onClick={() => handleConfirmBooking()}
                             >
                               {bookingLoading ? (
                                 <>
