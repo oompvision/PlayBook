@@ -1544,7 +1544,7 @@ export function BookingScreen({ route, navigation }: Props) {
             </View>
 
             {!eventConfirmStep ? (
-              /* ── Step 1: Event Details ── */
+              /* ── Step 1: Event Details (paid events pay directly from here) ── */
               <>
                 <ScrollView contentContainerStyle={eventStyles.modalContent}>
                   <Badge label="Event" variant="success" />
@@ -1603,6 +1603,29 @@ export function BookingScreen({ route, navigation }: Props) {
                       <Text style={eventStyles.membersOnlyText}>Members only</Text>
                     </View>
                   )}
+
+                  {/* Member discount breakdown for paid events */}
+                  {(() => {
+                    const evtDisc = calcEventDiscount(selectedEvent.price_cents);
+                    const requiresPayment = orgPaymentMode !== 'none' && selectedEvent.price_cents > 0;
+                    if (!requiresPayment || evtDisc.discountCents <= 0) return null;
+                    return (
+                      <Card style={{ marginTop: spacing.md }}>
+                        <View style={styles.summaryTotal}>
+                          <Text style={styles.totalLabel}>Subtotal</Text>
+                          <Text style={styles.subtotalPrice}>{formatPrice(selectedEvent.price_cents)}</Text>
+                        </View>
+                        <View style={styles.discountRow}>
+                          <Text style={styles.discountLabel}>★ {evtDisc.label}</Text>
+                          <Text style={styles.discountAmount}>-{formatPrice(evtDisc.discountCents)}</Text>
+                        </View>
+                        <View style={styles.summaryTotal}>
+                          <Text style={styles.totalLabel}>Total</Text>
+                          <Text style={styles.totalPrice}>{formatPrice(evtDisc.finalCents)}</Text>
+                        </View>
+                      </Card>
+                    );
+                  })()}
                 </ScrollView>
 
                 <View style={eventStyles.modalFooter}>
@@ -1618,9 +1641,112 @@ export function BookingScreen({ route, navigation }: Props) {
                     />
                   ) : (selectedEvent.capacity - selectedEvent.registered_count) <= 0 ? (
                     <Button title="Event Full" disabled onPress={() => {}} size="lg" />
+                  ) : orgPaymentMode !== 'none' && selectedEvent.price_cents > 0 ? (
+                    <Button
+                      title={`Continue to Payment`}
+                      onPress={async () => {
+                        if (!user || !organization) return;
+                        setRegisteringEvent(true);
+
+                        // Check for existing registration
+                        const { data: existingReg } = await supabase
+                          .from('event_registrations')
+                          .select('id, status')
+                          .eq('event_id', selectedEvent.id)
+                          .eq('user_id', user.id)
+                          .in('status', ['confirmed', 'waitlisted', 'pending_payment'])
+                          .maybeSingle();
+
+                        if (existingReg) {
+                          setRegisteringEvent(false);
+                          const statusLabel =
+                            existingReg.status === 'confirmed'
+                              ? 'registered'
+                              : existingReg.status === 'waitlisted'
+                                ? 'on the waitlist'
+                                : 'pending payment';
+                          Alert.alert(
+                            'Already Registered',
+                            `You're already ${statusLabel} for this event. Check "My Bookings" to view or manage your registration.`,
+                          );
+                          setSelectedEvent(null);
+                          setEventConfirmStep(false);
+                          return;
+                        }
+
+                        // Calculate event discount
+                        const evtDiscount = calcEventDiscount(selectedEvent.price_cents);
+
+                        // Collect payment via Stripe payment sheet
+                        let paymentResult: { success: boolean; cancelled?: boolean; error?: string; intentId?: string; intentType?: 'payment' | 'setup'; stripeCustomerId?: string; amountCents?: number; cancellationPolicyText?: string } | null = null;
+
+                        if (evtDiscount.finalCents > 0) {
+                          paymentResult = await collectPayment({
+                            orgId: organization.id,
+                            type: 'event',
+                            eventId: selectedEvent.id,
+                            priceCents: selectedEvent.price_cents,
+                            discountCents: evtDiscount.discountCents,
+                          });
+
+                          if (paymentResult.cancelled) {
+                            setRegisteringEvent(false);
+                            return;
+                          }
+
+                          if (!paymentResult.success) {
+                            setRegisteringEvent(false);
+                            Alert.alert('Payment Failed', paymentResult.error || 'Unable to process payment.');
+                            return;
+                          }
+                        }
+
+                        // Register for the event
+                        const { data, error } = await supabase.rpc('register_for_event', {
+                          p_event_id: selectedEvent.id,
+                          p_user_id: user.id,
+                        });
+
+                        if (error) {
+                          setRegisteringEvent(false);
+                          Alert.alert('Registration Failed', error.message);
+                          return;
+                        }
+
+                        const result = typeof data === 'object' && data !== null ? data : {};
+                        const regStatus = (result as any)?.status || 'confirmed';
+                        const registrationId = (result as any)?.registration_id;
+
+                        // Record the payment if one was collected
+                        if (paymentResult?.intentId && registrationId) {
+                          await recordPayment({
+                            orgId: organization.id,
+                            eventRegistrationId: registrationId,
+                            intentId: paymentResult.intentId,
+                            intentType: paymentResult.intentType!,
+                            stripeCustomerId: paymentResult.stripeCustomerId!,
+                            amountCents: paymentResult.amountCents!,
+                            cancellationPolicyText: paymentResult.cancellationPolicyText,
+                          });
+                        }
+
+                        setRegisteringEvent(false);
+                        Alert.alert(
+                          regStatus === 'waitlisted' ? 'Added to Waitlist' : 'Registered!',
+                          regStatus === 'waitlisted'
+                            ? "You've been added to the waitlist. We'll notify you if a spot opens up."
+                            : `You're registered for ${selectedEvent.name}.`,
+                        );
+                        setSelectedEvent(null);
+                        setEventConfirmStep(false);
+                        fetchDateEvents();
+                      }}
+                      loading={registeringEvent || paymentProcessing}
+                      size="lg"
+                    />
                   ) : (
                     <Button
-                      title="Continue to Register"
+                      title="Confirm Registration"
                       onPress={() => setEventConfirmStep(true)}
                       size="lg"
                     />
@@ -1628,7 +1754,7 @@ export function BookingScreen({ route, navigation }: Props) {
                 </View>
               </>
             ) : (
-              /* ── Step 2: Confirmation ── */
+              /* ── Step 2: Free event confirmation only (paid events go directly from step 1) ── */
               <>
                 <ScrollView contentContainerStyle={eventStyles.modalContent}>
                   <Card>
@@ -1640,9 +1766,7 @@ export function BookingScreen({ route, navigation }: Props) {
                           {formatTimeInZone(selectedEvent.start_time, organization!.timezone)} –{' '}
                           {formatTimeInZone(selectedEvent.end_time, organization!.timezone)}
                         </Text>
-                        <Text style={styles.summarySlotPrice}>
-                          {selectedEvent.price_cents === 0 ? 'Free' : formatPrice(selectedEvent.price_cents)}
-                        </Text>
+                        <Text style={styles.summarySlotPrice}>Free</Text>
                       </View>
                     </View>
                     {selectedEvent.bay_names.length > 0 && (
@@ -1650,31 +1774,10 @@ export function BookingScreen({ route, navigation }: Props) {
                         {selectedEvent.bay_names.join(', ')}
                       </Text>
                     )}
-                    {(() => {
-                      const evtDisc = calcEventDiscount(selectedEvent.price_cents);
-                      return (
-                        <>
-                          {evtDisc.discountCents > 0 && selectedEvent.price_cents > 0 && (
-                            <>
-                              <View style={styles.summaryTotal}>
-                                <Text style={styles.totalLabel}>Subtotal</Text>
-                                <Text style={styles.subtotalPrice}>{formatPrice(selectedEvent.price_cents)}</Text>
-                              </View>
-                              <View style={styles.discountRow}>
-                                <Text style={styles.discountLabel}>★ {evtDisc.label}</Text>
-                                <Text style={styles.discountAmount}>-{formatPrice(evtDisc.discountCents)}</Text>
-                              </View>
-                            </>
-                          )}
-                          <View style={styles.summaryTotal}>
-                            <Text style={styles.totalLabel}>Total</Text>
-                            <Text style={styles.totalPrice}>
-                              {selectedEvent.price_cents === 0 ? 'Free' : formatPrice(evtDisc.finalCents)}
-                            </Text>
-                          </View>
-                        </>
-                      );
-                    })()}
+                    <View style={styles.summaryTotal}>
+                      <Text style={styles.totalLabel}>Total</Text>
+                      <Text style={styles.totalPrice}>Free</Text>
+                    </View>
                   </Card>
                 </ScrollView>
 
@@ -1686,12 +1789,12 @@ export function BookingScreen({ route, navigation }: Props) {
                     <Text style={{ color: colors.primary, fontSize: 16 }}>Back</Text>
                   </TouchableOpacity>
                   <Button
-                    title={selectedEvent.price_cents === 0 ? 'Confirm Registration' : `Pay ${formatPrice(calcEventDiscount(selectedEvent.price_cents).finalCents)} & Register`}
+                    title="Confirm Registration"
                     onPress={async () => {
                       if (!user || !organization) return;
                       setRegisteringEvent(true);
 
-                      // Check for existing registration before collecting payment
+                      // Check for existing registration
                       const { data: existingReg } = await supabase
                         .from('event_registrations')
                         .select('id, status')
@@ -1717,34 +1820,7 @@ export function BookingScreen({ route, navigation }: Props) {
                         return;
                       }
 
-                      // Calculate event discount
-                      const evtDiscount = calcEventDiscount(selectedEvent.price_cents);
-
-                      // Collect payment for paid events
-                      let paymentResult: { success: boolean; cancelled?: boolean; error?: string; intentId?: string; intentType?: 'payment' | 'setup'; stripeCustomerId?: string; amountCents?: number; cancellationPolicyText?: string } | null = null;
-
-                      if (evtDiscount.finalCents > 0) {
-                        paymentResult = await collectPayment({
-                          orgId: organization.id,
-                          type: 'event',
-                          eventId: selectedEvent.id,
-                          priceCents: selectedEvent.price_cents,
-                          discountCents: evtDiscount.discountCents,
-                        });
-
-                        if (paymentResult.cancelled) {
-                          setRegisteringEvent(false);
-                          return;
-                        }
-
-                        if (!paymentResult.success) {
-                          setRegisteringEvent(false);
-                          Alert.alert('Payment Failed', paymentResult.error || 'Unable to process payment.');
-                          return;
-                        }
-                      }
-
-                      // Register for the event
+                      // Register for the event (free — no payment needed)
                       const { data, error } = await supabase.rpc('register_for_event', {
                         p_event_id: selectedEvent.id,
                         p_user_id: user.id,
@@ -1758,20 +1834,6 @@ export function BookingScreen({ route, navigation }: Props) {
 
                       const result = typeof data === 'object' && data !== null ? data : {};
                       const regStatus = (result as any)?.status || 'confirmed';
-                      const registrationId = (result as any)?.registration_id;
-
-                      // Record the payment if one was collected
-                      if (paymentResult?.intentId && registrationId) {
-                        await recordPayment({
-                          orgId: organization.id,
-                          eventRegistrationId: registrationId,
-                          intentId: paymentResult.intentId,
-                          intentType: paymentResult.intentType!,
-                          stripeCustomerId: paymentResult.stripeCustomerId!,
-                          amountCents: paymentResult.amountCents!,
-                          cancellationPolicyText: paymentResult.cancellationPolicyText,
-                        });
-                      }
 
                       setRegisteringEvent(false);
                       Alert.alert(
@@ -1784,7 +1846,7 @@ export function BookingScreen({ route, navigation }: Props) {
                       setEventConfirmStep(false);
                       fetchDateEvents();
                     }}
-                    loading={registeringEvent || paymentProcessing}
+                    loading={registeringEvent}
                     size="lg"
                   />
                 </View>
