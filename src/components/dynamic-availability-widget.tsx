@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ChatWidget, type BookingAction } from "@/components/chat/chat-widget";
+import { AuthModal } from "@/components/auth-modal";
 import {
   BookingDetailsModal,
   type BookingDetailData,
@@ -1199,44 +1200,14 @@ export function DynamicAvailabilityWidget(
     ? ["Booking Details", "Payment Method", "Confirm Booking"]
     : ["Booking Details", "Confirm Booking"];
 
-  // Track sidebar position for fixed positioning
-  const sidebarSpacerRef = useRef<HTMLDivElement>(null);
-  const [sidebarLeft, setSidebarLeft] = useState<number | null>(null);
-  const [sidebarTop, setSidebarTop] = useState(72); // 4.5rem fallback
-
-  useEffect(() => {
-    function updatePosition() {
-      if (sidebarSpacerRef.current) {
-        const rect = sidebarSpacerRef.current.getBoundingClientRect();
-        setSidebarLeft(rect.left);
-        // Align with the spacer's top, but never above the navbar (72px)
-        setSidebarTop(Math.max(72, rect.top));
-      }
-    }
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, { passive: true });
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition);
-    };
-  }, []);
 
   return (
-    <div className="flex items-start gap-6">
-      {/* ===== Sidebar — Chat Assistant (desktop only) ===== */}
-      {/* Spacer to reserve layout width */}
-      {facilitySlug && (
-        <div ref={sidebarSpacerRef} className="hidden w-72 shrink-0 lg:block" />
-      )}
+    <div>
+      {/* ===== Chat Assistant — fixed bottom-left (desktop only) ===== */}
       {facilitySlug && (
       <div
         ref={chatRef}
-        style={{
-          ...(sidebarLeft != null ? { left: sidebarLeft } : {}),
-          top: sidebarTop,
-        }}
-        className="fixed z-30 hidden w-72 flex-col overflow-hidden rounded-xl border bg-card shadow-sm lg:flex"
+        className="fixed bottom-4 left-4 z-40 hidden w-72 flex-col rounded-xl border bg-card shadow-lg lg:flex"
         onMouseDown={() => setChatFocused(true)}
       >
         {/* Chat header — clickable to expand/collapse */}
@@ -1284,7 +1255,8 @@ export function DynamicAvailabilityWidget(
       </div>
       )}
 
-      {/* ═══ Main Content ═══ */}
+      {/* ═══ Main Content + Desktop Booking Widget ═══ */}
+      <div className="flex items-start gap-6">
       <div className="min-w-0 flex-1 space-y-4">
       {/* Location Switcher (multi-location orgs only) */}
       {locationsEnabled && locations.length > 1 && locationId && (
@@ -1623,15 +1595,292 @@ export function DynamicAvailabilityWidget(
         />
       )}
 
-      {/* Spacer for CTA bar when a slot is selected */}
-      {selectedSlot && <div className="h-20" />}
+      {/* Spacer for CTA bar when a slot is selected (mobile only) */}
+      {selectedSlot && <div className="h-20 lg:hidden" />}
       </div>{/* end Main Content */}
 
-      {/* ===== Booking bar / slide-up panel — portalled to body ===== */}
+      {/* ===== Desktop Booking Widget (right sidebar) ===== */}
+      <div className="sticky top-[4.5rem] hidden w-80 shrink-0 lg:block max-h-[calc(100vh-5.5rem)] overflow-y-auto">
+        <div className="rounded-xl border bg-card shadow-sm">
+          {/* Widget header */}
+          <div className="border-b px-4 py-3">
+            <h3 className="text-sm font-semibold">Book a Session</h3>
+          </div>
+
+          <div className="p-4 space-y-4">
+            {/* Date */}
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</p>
+              <p className="mt-1 text-sm font-medium">
+                {formatShortDate(selectedDate)}
+              </p>
+            </div>
+
+            {/* Facility */}
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Facility</p>
+              <p className="mt-1 text-sm font-medium">
+                {selectedSlot?.bay_name || (bays.length === 1 ? bays[0].name : "Select from availability")}
+              </p>
+            </div>
+
+            {/* Duration */}
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Duration</p>
+              <p className="mt-1 text-sm font-medium">
+                {formatDurationLong(selectedDuration)}
+              </p>
+            </div>
+
+            {/* Time */}
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Start Time</p>
+              <p className="mt-1 text-sm font-medium">
+                {selectedSlot
+                  ? `${formatTime(selectedSlot.start_time, timezone)} – ${formatTime(selectedSlot.end_time, timezone)}`
+                  : "Select a time slot"
+                }
+              </p>
+            </div>
+
+            {/* Pricing */}
+            {selectedSlot && (
+              <div className="border-t pt-3">
+                {(() => {
+                  const { discountCents, finalCents, label } = calcDiscount(selectedSlot.price_cents);
+                  return (
+                    <>
+                      {discountCents > 0 && (
+                        <>
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>Subtotal</span>
+                            <span>${(selectedSlot.price_cents / 100).toFixed(2)}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-teal-600 dark:text-teal-400">
+                            <span className="flex items-center gap-1">
+                              <Crown className="h-3 w-3" />
+                              {label}
+                            </span>
+                            <span>-${(discountCents / 100).toFixed(2)}</span>
+                          </div>
+                        </>
+                      )}
+                      <div className="flex items-center justify-between text-sm font-bold mt-1">
+                        <span>Total</span>
+                        <span>${(finalCents / 100).toFixed(2)}</span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Notes */}
+            {selectedSlot && bookingStep === 1 && (
+              <div>
+                <Label htmlFor="desktop-notes-dynamic" className="text-xs text-muted-foreground">
+                  Notes (optional)
+                </Label>
+                <Input
+                  id="desktop-notes-dynamic"
+                  value={bookingNotes}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBookingNotes(e.target.value)}
+                  placeholder="Special requests..."
+                  className="mt-1 h-8 text-xs"
+                />
+              </div>
+            )}
+
+            {/* Payment section — Step 2 */}
+            {bookingStep >= 2 && requiresPayment && checkoutIntent && (
+              <div className="border-t pt-3 space-y-3">
+                {bookingStep === 2 && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment Method</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          resetPaymentState();
+                          setBookingStep(1);
+                        }}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Edit booking
+                      </button>
+                    </div>
+                    <StripeCheckoutWrapper
+                      stripeAccountId={checkoutIntent.stripe_account_id}
+                      clientSecret={checkoutIntent.client_secret}
+                      customerSessionClientSecret={checkoutIntent.customer_session_client_secret}
+                    >
+                      <CheckoutForm
+                        ref={checkoutFormRef}
+                        intentType={checkoutIntent.intent_type}
+                      />
+                    </StripeCheckoutWrapper>
+                  </>
+                )}
+
+                {/* Step 3: Confirmed payment summary */}
+                {bookingStep === 3 && cardBrand && cardLast4 && (
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          resetPaymentState();
+                          setBookingStep(1);
+                        }}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 text-sm">
+                      <CreditCard className="h-4 w-4 text-muted-foreground" />
+                      <span className="capitalize">{cardBrand}</span>
+                      <span className="text-muted-foreground">•••• {cardLast4}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Cancellation policy notice */}
+            {selectedSlot && bookingStep >= (requiresPayment ? 3 : 2) && (
+              <p className="text-[11px] text-muted-foreground">
+                By booking you agree to the{" "}
+                <button type="button" onClick={() => setConfirmPolicyModalOpen(true)} className="underline hover:text-foreground">
+                  cancellation policy
+                </button>
+              </p>
+            )}
+
+            {/* CTA Button */}
+            <div>
+              {(() => {
+                const hasSlot = !!selectedSlot;
+                const readyForPayment = hasSlot && bookingStep === 1;
+                const readyToConfirm = hasSlot && (
+                  (requiresPayment && bookingStep === 3) ||
+                  (!requiresPayment && bookingStep >= 1)
+                );
+                const paymentStepActive = requiresPayment && bookingStep === 2;
+
+                if (!isAuthenticated && hasSlot) {
+                  return (
+                    <AuthModal
+                      trigger={
+                        <Button className="w-full bg-green-600 hover:bg-green-700 text-white">
+                          Sign in to Book
+                        </Button>
+                      }
+                    />
+                  );
+                }
+
+                if (paymentStepActive) {
+                  return (
+                    <Button
+                      className="w-full bg-green-600 hover:bg-green-700 text-white"
+                      disabled={bookingLoading}
+                      onClick={async () => {
+                        if (!checkoutFormRef.current) return;
+                        setBookingLoading(true);
+                        try {
+                          const result = await checkoutFormRef.current.confirmAndGetCardInfo();
+                          if (result.success) {
+                            setCardBrand(result.cardBrand ?? null);
+                            setCardLast4(result.cardLast4 ?? null);
+                            setConfirmedPaymentMethodId(result.paymentMethodId ?? null);
+                            setPaymentValidated(true);
+                            setBookingStep(3);
+                          } else {
+                            setPaymentValidationError("Payment validation failed. Please try again.");
+                          }
+                        } catch {
+                          setPaymentValidationError("Payment validation failed. Please try again.");
+                        } finally {
+                          setBookingLoading(false);
+                        }
+                      }}
+                    >
+                      {bookingLoading ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Validating...</>
+                      ) : (
+                        "Continue to Confirm"
+                      )}
+                    </Button>
+                  );
+                }
+
+                if (readyToConfirm) {
+                  const { finalCents } = calcDiscount(selectedSlot!.price_cents);
+                  return (
+                    <Button
+                      className="w-full bg-green-600 hover:bg-green-700 text-white"
+                      disabled={bookingLoading}
+                      onClick={() => handleConfirmBooking()}
+                    >
+                      {bookingLoading ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
+                      ) : requiresPayment && paymentMode === "charge_upfront" ? (
+                        `Confirm & Pay $${(finalCents / 100).toFixed(2)}`
+                      ) : requiresPayment ? (
+                        "Confirm & Save Card"
+                      ) : (
+                        "Confirm Booking"
+                      )}
+                    </Button>
+                  );
+                }
+
+                if (readyForPayment && requiresPayment && isAuthenticated) {
+                  return (
+                    <Button
+                      className="w-full bg-green-600 hover:bg-green-700 text-white"
+                      disabled={bookingLoading || checkoutLoading}
+                      onClick={async () => {
+                        if (!checkoutIntent) {
+                          await createCheckoutIntent();
+                        }
+                        setBookingStep(2);
+                      }}
+                    >
+                      {checkoutLoading ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Preparing...</>
+                      ) : (
+                        "Continue to Payment"
+                      )}
+                    </Button>
+                  );
+                }
+
+                // Default: no selection
+                return (
+                  <Button className="w-full" disabled>
+                    {hasSlot ? "Continue to Payment" : "Select a time slot to book"}
+                  </Button>
+                );
+              })()}
+            </div>
+
+            {/* Error display */}
+            {paymentValidationError && (
+              <p className="text-xs text-red-600">{paymentValidationError}</p>
+            )}
+          </div>
+        </div>
+      </div>
+      </div>{/* end flex wrapper */}
+
+      {/* ===== Booking bar / slide-up panel — MOBILE ONLY (portalled to body) ===== */}
       {selectedSlot &&
         mounted &&
         createPortal(
-          <>
+          <div className="lg:hidden">
             {/* Backdrop overlay when panel is open */}
             {panelOpen && (
               <div
@@ -2360,7 +2609,7 @@ export function DynamicAvailabilityWidget(
                 </div>
               )}
             </div>
-          </>,
+          </div>,
           document.body
         )}
 

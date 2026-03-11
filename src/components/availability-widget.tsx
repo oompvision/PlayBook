@@ -1626,10 +1626,10 @@ export function AvailabilityWidget({
   const hideSidebar = isAdminGuest || isModify;
 
   return (
-    <div className={hideSidebar ? "" : "flex items-start gap-6"}>
-      {/* ===== Sidebar — Chat Assistant (desktop only, hidden in admin-guest/modify mode) ===== */}
+    <div>
+      {/* ===== Chat Assistant — fixed bottom-left (desktop only) ===== */}
       {!hideSidebar && facilitySlug && (
-      <div className="sticky top-[4.5rem] hidden w-72 shrink-0 flex-col rounded-xl border bg-card shadow-sm lg:flex max-h-[calc(100vh-5.5rem)]">
+      <div className="fixed bottom-4 left-4 z-40 hidden w-72 flex-col rounded-xl border bg-card shadow-lg lg:flex">
         {/* Chat header — clickable to expand/collapse */}
         <button
           type="button"
@@ -1647,7 +1647,7 @@ export function AvailabilityWidget({
 
         {chatExpanded ? (
           /* Expanded: full chat widget */
-          <div className="min-h-0 flex-1 border-t px-2 pb-2">
+          <div className="h-[28rem] border-t px-2 pb-2">
             <ChatWidget
               facilitySlug={facilitySlug}
               orgName={orgName}
@@ -1675,7 +1675,8 @@ export function AvailabilityWidget({
       </div>
       )}
 
-      {/* ===== Main content ===== */}
+      {/* ===== Main content + Desktop Booking Widget ===== */}
+      <div className="flex items-start gap-6">
       <div className="min-w-0 flex-1 overflow-hidden rounded-xl border bg-card shadow-sm">
         {/* Location Switcher (multi-location orgs only) */}
         {locationsEnabled && locations.length > 1 && locationId && (
@@ -1964,11 +1965,316 @@ export function AvailabilityWidget({
         </div>
       </div>
 
-      {/* ===== Booking bar / slide-up panel — portalled to body ===== */}
+      {/* ===== Desktop Booking Widget (right sidebar) ===== */}
+      {!hideSidebar && (
+        <div className="sticky top-[4.5rem] hidden w-80 shrink-0 lg:block max-h-[calc(100vh-5.5rem)] overflow-y-auto">
+          <div className="rounded-xl border bg-card shadow-sm">
+            {/* Widget header */}
+            <div className="border-b px-4 py-3">
+              <h3 className="text-sm font-semibold">Book a Session</h3>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* Date */}
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</p>
+                <p className="mt-1 text-sm font-medium">
+                  {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-US", {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </p>
+              </div>
+
+              {/* Facility */}
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Facility</p>
+                <p className="mt-1 text-sm font-medium">
+                  {selectedBayObj?.name || (bays.length === 1 ? bays[0].name : "Select from availability")}
+                </p>
+              </div>
+
+              {/* Duration / Slots */}
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Duration</p>
+                <p className="mt-1 text-sm font-medium">
+                  {selectedTimeKeys.size > 0
+                    ? `${selectedTimeKeys.size} slot${selectedTimeKeys.size !== 1 ? "s" : ""} · ${selectedSlotInfo.length > 0 ? `${formatTime(selectedSlotInfo[0].start_time, timezone)} – ${formatTime(selectedSlotInfo[selectedSlotInfo.length - 1].end_time, timezone)}` : ""}`
+                    : "Select time slots"
+                  }
+                </p>
+              </div>
+
+              {/* Pricing */}
+              {selectedTimeKeys.size > 0 && (
+                <div className="border-t pt-3">
+                  {(() => {
+                    const { discountCents, finalCents, label } = calcDiscount(totalCents);
+                    return (
+                      <>
+                        {discountCents > 0 && (
+                          <>
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                              <span>Subtotal</span>
+                              <span>${(totalCents / 100).toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs text-teal-600 dark:text-teal-400">
+                              <span className="flex items-center gap-1">
+                                <Crown className="h-3 w-3" />
+                                {label}
+                              </span>
+                              <span>-${(discountCents / 100).toFixed(2)}</span>
+                            </div>
+                          </>
+                        )}
+                        <div className="flex items-center justify-between text-sm font-bold mt-1">
+                          <span>Total</span>
+                          <span>${(finalCents / 100).toFixed(2)}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Notes */}
+              {selectedTimeKeys.size > 0 && bookingStep === 1 && (
+                <div>
+                  <Label htmlFor="desktop-notes" className="text-xs text-muted-foreground">
+                    Notes (optional)
+                  </Label>
+                  <Input
+                    id="desktop-notes"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Special requests..."
+                    className="mt-1 h-8 text-xs"
+                  />
+                </div>
+              )}
+
+              {/* Payment section — Step 2 */}
+              {bookingStep >= 2 && requiresPayment && checkoutIntent && (
+                <div className="border-t pt-3 space-y-3">
+                  {bookingStep === 2 && (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment Method</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBookingStep(1);
+                            setPaymentValidated(false);
+                            setPaymentValidationError("");
+                            setConfirmedPaymentMethodId(null);
+                            setCardBrand(null);
+                            setCardLast4(null);
+                            setCheckoutIntent(null);
+                          }}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          Edit booking
+                        </button>
+                      </div>
+                      <StripeCheckoutWrapper
+                        stripeAccountId={checkoutIntent.stripe_account_id}
+                        clientSecret={checkoutIntent.client_secret}
+                        customerSessionClientSecret={checkoutIntent.customer_session_client_secret}
+                      >
+                        <CheckoutForm
+                          ref={checkoutFormRef}
+                          intentType={checkoutIntent.intent_type}
+                        />
+                      </StripeCheckoutWrapper>
+                    </>
+                  )}
+
+                  {/* Step 3: Confirmed payment summary */}
+                  {bookingStep === 3 && cardBrand && cardLast4 && (
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBookingStep(1);
+                            setPaymentValidated(false);
+                            setPaymentValidationError("");
+                            setConfirmedPaymentMethodId(null);
+                            setCardBrand(null);
+                            setCardLast4(null);
+                            setCheckoutIntent(null);
+                          }}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                      <div className="mt-1 flex items-center gap-2 text-sm">
+                        <CreditCard className="h-4 w-4 text-muted-foreground" />
+                        <span className="capitalize">{cardBrand}</span>
+                        <span className="text-muted-foreground">•••• {cardLast4}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Cancellation policy notice */}
+              {selectedTimeKeys.size > 0 && bookingStep >= (requiresPayment ? 3 : 2) && (
+                <p className="text-[11px] text-muted-foreground">
+                  By booking you agree to the{" "}
+                  <button type="button" onClick={() => setConfirmPolicyModalOpen(true)} className="underline hover:text-foreground">
+                    cancellation policy
+                  </button>
+                </p>
+              )}
+
+              {/* CTA Button */}
+              <div>
+                {(() => {
+                  const allSelected = selectedTimeKeys.size > 0;
+                  const readyForPayment = allSelected && bookingStep === 1;
+                  const readyToConfirm = allSelected && (
+                    (requiresPayment && bookingStep === 3) ||
+                    (!requiresPayment && bookingStep >= 1)
+                  );
+                  const paymentStepActive = requiresPayment && bookingStep === 2;
+
+                  if (!isAuthenticated && allSelected) {
+                    return (
+                      <AuthModal
+                        trigger={
+                          <Button className="w-full bg-green-600 hover:bg-green-700 text-white">
+                            Sign in to Book
+                          </Button>
+                        }
+                      />
+                    );
+                  }
+
+                  if (paymentStepActive) {
+                    return (
+                      <Button
+                        className="w-full bg-green-600 hover:bg-green-700 text-white"
+                        disabled={bookingInProgress}
+                        onClick={async () => {
+                          if (!checkoutFormRef.current) return;
+                          setBookingInProgress(true);
+                          try {
+                            const result = await checkoutFormRef.current.confirmAndGetCardInfo();
+                            if (result.success) {
+                              setCardBrand(result.cardBrand ?? null);
+                              setCardLast4(result.cardLast4 ?? null);
+                              setConfirmedPaymentMethodId(result.paymentMethodId ?? null);
+                              setPaymentValidated(true);
+                              setBookingStep(3);
+                            } else {
+                              setPaymentValidationError("Payment validation failed. Please try again.");
+                            }
+                          } catch {
+                            setPaymentValidationError("Payment validation failed. Please try again.");
+                          } finally {
+                            setBookingInProgress(false);
+                          }
+                        }}
+                      >
+                        {bookingInProgress ? (
+                          <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Validating...</>
+                        ) : (
+                          "Continue to Confirm"
+                        )}
+                      </Button>
+                    );
+                  }
+
+                  if (readyToConfirm) {
+                    const { finalCents } = calcDiscount(totalCents);
+                    return (
+                      <Button
+                        className="w-full bg-green-600 hover:bg-green-700 text-white"
+                        disabled={bookingInProgress}
+                        onClick={() => handleConfirmBooking()}
+                      >
+                        {bookingInProgress ? (
+                          <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
+                        ) : requiresPayment && paymentMode === "charge_upfront" ? (
+                          `Confirm & Pay $${(finalCents / 100).toFixed(2)}`
+                        ) : requiresPayment ? (
+                          "Confirm & Save Card"
+                        ) : (
+                          "Confirm Booking"
+                        )}
+                      </Button>
+                    );
+                  }
+
+                  if (readyForPayment && requiresPayment && isAuthenticated) {
+                    return (
+                      <Button
+                        className="w-full bg-green-600 hover:bg-green-700 text-white"
+                        disabled={bookingInProgress || checkoutLoading}
+                        onClick={async () => {
+                          // Fetch checkout intent then advance
+                          if (!checkoutIntent) {
+                            setCheckoutLoading(true);
+                            try {
+                              const slotIds = Array.from(selectedTimeKeys);
+                              const res = await fetch("/api/stripe/create-checkout-intent", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                  org_id: orgId,
+                                  slot_ids: slotIds,
+                                  bay_id: effectiveBayId,
+                                }),
+                              });
+                              if (!res.ok) throw new Error("Failed to create checkout");
+                              const data = await res.json();
+                              setCheckoutIntent(data);
+                            } catch {
+                              setPaymentValidationError("Failed to prepare payment. Please try again.");
+                            } finally {
+                              setCheckoutLoading(false);
+                            }
+                          }
+                          setBookingStep(2);
+                        }}
+                      >
+                        {checkoutLoading ? (
+                          <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Preparing...</>
+                        ) : (
+                          "Continue to Payment"
+                        )}
+                      </Button>
+                    );
+                  }
+
+                  // Default: no selection or not enough selections
+                  return (
+                    <Button className="w-full" disabled>
+                      {allSelected ? "Continue to Payment" : "Select time slots to book"}
+                    </Button>
+                  );
+                })()}
+              </div>
+
+              {/* Error display */}
+              {paymentValidationError && (
+                <p className="text-xs text-red-600">{paymentValidationError}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      </div>
+
+      {/* ===== Booking bar / slide-up panel — MOBILE ONLY (portalled to body) ===== */}
       {selectedTimeKeys.size > 0 &&
         mounted &&
         createPortal(
-          <>
+          <div className="lg:hidden">
             {/* Backdrop overlay when panel is open */}
             {panelOpen && (
               <div
@@ -3064,7 +3370,7 @@ export function AvailabilityWidget({
                 </div>
               )}
             </div>
-          </>,
+          </div>,
           document.body
         )}
 

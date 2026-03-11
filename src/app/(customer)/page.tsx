@@ -255,42 +255,6 @@ export default async function FacilityHomePage({
     <div className="flex flex-1 flex-col">
       {/* =========== DESKTOP LAYOUT =========== */}
       <div className="hidden lg:flex lg:flex-1 lg:flex-col">
-        {/* Hero Section */}
-        {coverPhotoUrl ? (
-          <div className="relative h-48 w-full">
-            <Image
-              src={coverPhotoUrl}
-              alt={`${orgName} cover`}
-              fill
-              className="object-cover"
-              priority
-              unoptimized
-            />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/10 to-black/40" />
-            <div className="absolute bottom-4 left-0 right-0">
-              <div className="mx-auto max-w-6xl px-6">
-                <h1 className="text-2xl font-bold tracking-tight text-white drop-shadow-lg capitalize">
-                  {orgName}
-                </h1>
-                <p className="mt-1 text-sm text-white/80">
-                  Browse availability and book your session
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="border-b bg-muted/30 py-8">
-            <div className="mx-auto max-w-6xl px-6">
-              <h1 className="text-2xl font-bold tracking-tight capitalize">
-                {orgName}
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Browse availability and book your session
-              </p>
-            </div>
-          </div>
-        )}
-
         {/* Deactivated location banner */}
         {showLocationDeactivatedBanner && (
           <div className="border-b bg-amber-50 dark:bg-amber-900/20">
