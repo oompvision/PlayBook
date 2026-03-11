@@ -1,6 +1,7 @@
 import { getFacilitySlug } from "@/lib/facility";
 import { getAuthUser } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getOrgLocations } from "@/lib/location";
 import Link from "next/link";
 import { ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { AuthModal } from "@/components/auth-modal";
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { CustomerAvatarMenu } from "@/components/customer-avatar-menu";
 import { MyBookingsDropdown } from "@/components/my-bookings-dropdown";
+import { HeaderLocationSwitcher } from "@/components/header-location-switcher";
 
 export default async function CustomerLayout({
   children,
@@ -25,7 +27,7 @@ export default async function CustomerLayout({
   const supabase = await createClient();
   const { data: org } = await supabase
     .from("organizations")
-    .select("id, name, slug, logo_url, membership_tiers_enabled, events_enabled")
+    .select("id, name, slug, logo_url, membership_tiers_enabled, events_enabled, locations_enabled")
     .eq("slug", slug)
     .single();
 
@@ -45,11 +47,22 @@ export default async function CustomerLayout({
     isActiveMember = !!data;
   }
 
+  // Fetch locations for header switcher (desktop)
+  const locationsEnabled = org.locations_enabled ?? false;
+  const locations = locationsEnabled ? await getOrgLocations(org.id) : [];
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <OrgHeader name={org.name} logoUrl={org.logo_url} />
+          <div className="flex items-center gap-4">
+            <OrgHeader name={org.name} logoUrl={org.logo_url} />
+            {locationsEnabled && locations.length > 1 && (
+              <div className="hidden lg:block">
+                <HeaderLocationSwitcher locations={locations} />
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-2 sm:gap-3">
             {(org.events_enabled ?? true) && (
               <Link href="/events">
