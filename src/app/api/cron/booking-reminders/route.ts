@@ -90,7 +90,14 @@ export async function GET(request: Request) {
         recipientEmail: profile?.email,
         recipientName: profile?.full_name ?? undefined,
         orgName,
-        metadata: { confirmation_code: b.confirmation_code },
+        metadata: {
+          confirmation_code: b.confirmation_code,
+          bay: bayName,
+          dateStr,
+          timeStr,
+          totalPrice: `$${(b.total_price_cents / 100).toFixed(2)}`,
+          cancelDeadline: `${cancelDateStr} at ${cancelTimeStr}`,
+        },
       });
 
       await supabase
@@ -158,7 +165,12 @@ export async function GET(request: Request) {
         recipientEmail: profile?.email,
         recipientName: profile?.full_name ?? undefined,
         orgName,
-        metadata: { confirmation_code: b.confirmation_code },
+        metadata: {
+          confirmation_code: b.confirmation_code,
+          bay: bayName,
+          dateStr,
+          timeStr,
+        },
       });
 
       await supabase

@@ -345,6 +345,7 @@ export default async function BookingsListPage({
           .select("email, full_name")
           .eq("id", bookingInfo.customer_id)
           .single();
+        const cancelMeta = { confirmation_code: code, bay: bayName, dateStr, timeStr };
         createNotification({
           orgId: bookingInfo.org_id,
           recipientId: bookingInfo.customer_id,
@@ -356,6 +357,7 @@ export default async function BookingsListPage({
           recipientEmail: customerProfile?.email,
           recipientName: customerProfile?.full_name ?? undefined,
           orgName,
+          metadata: cancelMeta,
         }).catch(() => {});
       }
 
@@ -364,6 +366,7 @@ export default async function BookingsListPage({
         title: `Booking Cancelled: ${code}`,
         message: `${bookingInfo.is_guest ? bookingInfo.guest_name || "Guest" : "Customer"} booking ${bayName} — ${dateStr}, ${timeStr} was cancelled by admin`,
         link: `/admin/bookings?booking=${code}`,
+        metadata: { confirmation_code: code, bay: bayName, dateStr, timeStr },
       }).catch(() => {});
     }
 

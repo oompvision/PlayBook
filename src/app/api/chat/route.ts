@@ -746,22 +746,36 @@ async function executeCreateBookingDynamic(
   const endFormatted = formatTimeInZone(args.end_time, org.timezone);
 
   // Fire booking notifications (non-blocking)
+  const chatDateStr = new Date(args.date + "T12:00:00").toLocaleDateString("en-US", {
+    weekday: "short", month: "short", day: "numeric",
+  });
+  const chatTimeStr = `${startFormatted} – ${endFormatted}`;
+  const chatMeta = {
+    confirmation_code: confirmationCode,
+    bay: matchedBay.name,
+    dateStr: chatDateStr,
+    timeStr: chatTimeStr,
+    totalPrice,
+  };
+
   createNotification({
     orgId: org.id,
     recipientId: customerId,
     recipientType: "customer",
     type: "booking_confirmed",
     title: "Booking Confirmed",
-    message: `${startFormatted} – ${endFormatted}, ${confirmationCode}. Total: ${totalPrice}`,
+    message: `${chatTimeStr}, ${confirmationCode}. Total: ${totalPrice}`,
     link: `/my-bookings?booking=${confirmationCode}`,
     orgName: org.name,
+    metadata: chatMeta,
   }).catch(() => {});
 
   notifyOrgAdmins(org.id, org.name, {
     type: "booking_confirmed",
     title: `New Booking: ${confirmationCode}`,
-    message: `Chat booking: ${startFormatted} – ${endFormatted} (${totalPrice})`,
+    message: `Chat booking: ${chatTimeStr} (${totalPrice})`,
     link: `/admin/bookings?booking=${confirmationCode}`,
+    metadata: chatMeta,
   }).catch(() => {});
 
   return {
@@ -941,24 +955,38 @@ async function executeCreateBookingSlotBased(
   }
 
   // Fire booking notifications (non-blocking, server-side)
+  const slotDateStr = new Date(args.date + "T12:00:00").toLocaleDateString("en-US", {
+    weekday: "short", month: "short", day: "numeric",
+  });
   for (const b of results) {
     const code = b.confirmation_code as string;
+    const slotTimeStr = `${b.start_time} – ${b.end_time}`;
+    const slotMeta = {
+      confirmation_code: code,
+      bay: args.bay_name || "Facility",
+      dateStr: slotDateStr,
+      timeStr: slotTimeStr,
+      totalPrice: b.total_price,
+    };
+
     createNotification({
       orgId: org.id,
       recipientId: customerId,
       recipientType: "customer",
       type: "booking_confirmed",
       title: "Booking Confirmed",
-      message: `${b.start_time} – ${b.end_time}, ${code}. Total: ${b.total_price}`,
+      message: `${slotTimeStr}, ${code}. Total: ${b.total_price}`,
       link: `/my-bookings?booking=${code}`,
       orgName: org.name,
+      metadata: slotMeta,
     }).catch(() => {});
 
     notifyOrgAdmins(org.id, org.name, {
       type: "booking_confirmed",
       title: `New Booking: ${code}`,
-      message: `Chat booking: ${b.start_time} – ${b.end_time} (${b.total_price})`,
+      message: `Chat booking: ${slotTimeStr} (${b.total_price})`,
       link: `/admin/bookings?booking=${code}`,
+      metadata: slotMeta,
     }).catch(() => {});
   }
 
@@ -1010,6 +1038,8 @@ async function executeCancelBooking(
   }
 
   // Fire cancellation notifications (non-blocking)
+  const cancelMeta = { confirmation_code: args.confirmation_code };
+
   createNotification({
     orgId: org.id,
     recipientId: customerId,
@@ -1019,6 +1049,7 @@ async function executeCancelBooking(
     message: `Your booking ${args.confirmation_code} has been cancelled.`,
     link: `/my-bookings?booking=${args.confirmation_code}`,
     orgName: org.name,
+    metadata: cancelMeta,
   }).catch(() => {});
 
   notifyOrgAdmins(org.id, org.name, {
@@ -1026,6 +1057,7 @@ async function executeCancelBooking(
     title: `Booking Cancelled: ${args.confirmation_code}`,
     message: `Chat cancellation: ${args.confirmation_code}`,
     link: `/admin/bookings?booking=${args.confirmation_code}`,
+    metadata: cancelMeta,
   }).catch(() => {});
 
   return {
