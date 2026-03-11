@@ -33,6 +33,16 @@ export default async function CustomerLayout({
 
   const auth = await getAuthUser();
 
+  // Check active membership status for the avatar menu
+  let isActiveMember = false;
+  if (auth && org.membership_tiers_enabled) {
+    const { data } = await supabase.rpc("is_active_member", {
+      p_org_id: org.id,
+      p_user_id: auth.user.id,
+    });
+    isActiveMember = !!data;
+  }
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -53,13 +63,6 @@ export default async function CustomerLayout({
                     My Bookings
                   </Button>
                 </Link>
-                {org.membership_tiers_enabled && (
-                  <Link href="/membership">
-                    <Button variant="ghost" size="sm">
-                      Membership
-                    </Button>
-                  </Link>
-                )}
                 <NotificationBell
                   userId={auth.user.id}
                   viewAllHref="/notifications"
@@ -68,6 +71,7 @@ export default async function CustomerLayout({
                   userName={auth.profile.full_name}
                   userEmail={auth.profile.email}
                   membershipEnabled={org.membership_tiers_enabled ?? false}
+                  isActiveMember={isActiveMember}
                 />
               </>
             ) : (

@@ -28,10 +28,12 @@ export function CustomerAvatarMenu({
   userName,
   userEmail,
   membershipEnabled = false,
+  isActiveMember = false,
 }: {
   userName: string | null;
   userEmail: string;
   membershipEnabled?: boolean;
+  isActiveMember?: boolean;
 }) {
   const router = useRouter();
 
@@ -77,7 +79,12 @@ export function CustomerAvatarMenu({
           <DropdownMenuItem asChild>
             <Link href="/membership" className="cursor-pointer">
               <Crown className="mr-2 h-4 w-4" />
-              Member Benefits
+              Membership{" "}
+              {isActiveMember ? (
+                <span className="text-green-600">(Active)</span>
+              ) : (
+                <span className="text-muted-foreground">(Inactive)</span>
+              )}
             </Link>
           </DropdownMenuItem>
         )}
