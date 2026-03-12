@@ -26,8 +26,11 @@ type Booking = {
   end_time: string;
   total_price_cents: number;
   discount_cents: number | null;
+  discount_description: string | null;
   status: string;
   notes: string | null;
+  location_id: string | null;
+  locationName: string | null;
 };
 
 type Bay = {
@@ -129,7 +132,7 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
         .eq("is_active", true),
       supabase
         .from("bookings")
-        .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, discount_cents, status, notes")
+        .select("id, confirmation_code, bay_id, date, start_time, end_time, total_price_cents, discount_cents, discount_description, status, notes, location_id, locations:location_id(name)")
         .eq("org_id", orgId)
         .eq("status", "confirmed")
         .gte("date", todayStr)
@@ -154,7 +157,12 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
       setCancellationWindowHours(orgResult.data.cancellation_window_hours ?? 24);
     }
     setBays(baysResult.data || []);
-    setBookings(bookingsResult.data || []);
+    setBookings(
+      (bookingsResult.data || []).map((b: any) => ({
+        ...b,
+        locationName: (b.locations as any)?.name ?? null,
+      }))
+    );
 
     // Process event regs - map `events` (Supabase join name) to `event`, filter to upcoming
     const now = new Date().toISOString();
@@ -206,11 +214,13 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
       end_time: booking.end_time,
       total_price_cents: booking.total_price_cents,
       discount_cents: booking.discount_cents || 0,
+      discount_description: booking.discount_description || null,
       status: booking.status,
       confirmation_code: booking.confirmation_code,
       notes: booking.notes,
       created_at: "",
       bayName,
+      locationName: booking.locationName,
     });
     setBookingModalOpen(true);
     setOpen(false);
@@ -312,7 +322,9 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
                     if (item.kind === "booking") {
                       const booking = item.booking;
                       const bayName = bays.find((b) => b.id === booking.bay_id)?.name ?? "Unknown Bay";
-                      const price = `$${((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}`;
+                      const discount = booking.discount_cents || 0;
+                      const total = booking.total_price_cents - discount;
+                      const showPaid = paymentMode === "charge_upfront" && booking.status === "confirmed";
 
                       return (
                         <button
@@ -330,12 +342,32 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
                               </p>
                               <ArrowUpRight className="h-3 w-3 shrink-0 text-muted-foreground" />
                             </div>
-                            <p className="mt-0.5 text-xs text-muted-foreground">{bayName}</p>
-                            <div className="mt-0.5 flex items-center justify-between">
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {bayName}
+                              {booking.locationName ? ` · ${booking.locationName}` : ""}
+                            </p>
+                            {discount > 0 ? (
+                              <p className="mt-0.5 text-xs">
+                                <span className="text-muted-foreground line-through">${(booking.total_price_cents / 100).toFixed(2)}</span>
+                                <span className="ml-1 font-semibold text-teal-600 dark:text-teal-400">
+                                  👑 ${(total / 100).toFixed(2)}
+                                </span>
+                              </p>
+                            ) : (
+                              <p className="mt-0.5 text-xs font-semibold">${(total / 100).toFixed(2)}</p>
+                            )}
+                            <div className="mt-0.5 flex items-center gap-1.5">
                               <span className="font-mono text-[11px] text-muted-foreground">
                                 {booking.confirmation_code}
                               </span>
-                              <span className="text-xs font-semibold">{price}</span>
+                              <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                Confirmed
+                              </span>
+                              {showPaid && (
+                                <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                  Paid
+                                </span>
+                              )}
                             </div>
                           </div>
                         </button>

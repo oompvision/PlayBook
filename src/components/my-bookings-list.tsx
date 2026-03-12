@@ -310,6 +310,8 @@ export function MyBookingsList({
       day: "numeric",
     });
     const timeStr = `${formatTimeInZone(booking.start_time, timezone)} – ${formatTimeInZone(booking.end_time, timezone)}`;
+    const isCancelled = booking.status === "cancelled";
+    const showPaid = paymentMode === "charge_upfront" && booking.status === "confirmed";
 
     if (isUpcoming) {
       const visualStatus = getVisualBookingStatus(booking.status, booking.start_time, booking.end_time);
@@ -322,53 +324,56 @@ export function MyBookingsList({
           onClick={() => openBooking(booking, true)}
           className="w-full rounded-lg border p-4 text-left hover-lift press-feedback hover:bg-muted/50"
         >
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="font-medium">{dateStr}</p>
-                {isActive ? (
-                  <Badge className="bg-green-600 text-white hover:bg-green-600">
-                    <span className="relative mr-1.5 flex h-2 w-2">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
-                      <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
-                    </span>
-                    Active
-                  </Badge>
-                ) : (
-                  <Badge variant="default">Confirmed</Badge>
-                )}
-              </div>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                {timeStr} · {bayMap[booking.bay_id] || "Facility"}
-                {booking.locationName ? ` · ${booking.locationName}` : ""} · $
-                {((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}
-              </p>
-              <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                {booking.confirmation_code}
-              </p>
-              {booking.modified_from_info && (
-                <p className="mt-0.5 flex items-center gap-1 text-[11px] text-blue-600 dark:text-blue-400">
-                  <ArrowRight className="h-3 w-3" />
-                  Modified from{" "}
-                  <span className="font-semibold">
-                    {formatTimeInZone(booking.modified_from_info.startTime, timezone)} – {formatTimeInZone(booking.modified_from_info.endTime, timezone)},{" "}
-                    {new Date(booking.modified_from_info.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })},{" "}
-                    {booking.modified_from_info.bayName}
-                  </span>
-                </p>
-              )}
-              {booking.notes && (
-                <p className="mt-1 text-xs italic text-muted-foreground">
-                  {booking.notes}
-                </p>
-              )}
-            </div>
+          <p className="font-medium">{dateStr}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {timeStr} · {bayMap[booking.bay_id] || "Facility"}
+            {booking.locationName ? ` · ${booking.locationName}` : ""} · $
+            {((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}
+          </p>
+          <div className="mt-1 flex items-center gap-2">
+            <span className="font-mono text-xs text-muted-foreground">
+              {booking.confirmation_code}
+            </span>
+            {isActive ? (
+              <span className="inline-flex items-center rounded-full bg-green-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+                <span className="relative mr-1 flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+                </span>
+                Active
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                Confirmed
+              </span>
+            )}
+            {showPaid && (
+              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                Paid
+              </span>
+            )}
           </div>
+          {booking.modified_from_info && (
+            <p className="mt-0.5 flex items-center gap-1 text-[11px] text-blue-600 dark:text-blue-400">
+              <ArrowRight className="h-3 w-3" />
+              Modified from{" "}
+              <span className="font-semibold">
+                {formatTimeInZone(booking.modified_from_info.startTime, timezone)} – {formatTimeInZone(booking.modified_from_info.endTime, timezone)},{" "}
+                {new Date(booking.modified_from_info.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })},{" "}
+                {booking.modified_from_info.bayName}
+              </span>
+            </p>
+          )}
+          {booking.notes && (
+            <p className="mt-1 text-xs italic text-muted-foreground">
+              {booking.notes}
+            </p>
+          )}
         </button>
       );
     }
 
-    // Past booking
+    // Past / Cancelled booking
     return (
       <button
         key={booking.id}
@@ -376,31 +381,25 @@ export function MyBookingsList({
         onClick={() => openBooking(booking, false)}
         className="w-full rounded-lg border p-4 text-left opacity-60 hover-lift press-feedback hover:bg-muted/50"
       >
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <p className="font-medium">{dateStr}</p>
-              <Badge
-                variant={
-                  booking.status === "cancelled"
-                    ? "secondary"
-                    : "outline"
-                }
-              >
-                {booking.status === "cancelled"
-                  ? "Cancelled"
-                  : "Completed"}
-              </Badge>
-            </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {timeStr} · {bayMap[booking.bay_id] || "Facility"}
-              {booking.locationName ? ` · ${booking.locationName}` : ""} · $
-              {((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}
-            </p>
-            <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-              {booking.confirmation_code}
-            </p>
-          </div>
+        <p className={`font-medium ${isCancelled ? "text-muted-foreground" : ""}`}>{dateStr}</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          {timeStr} · {bayMap[booking.bay_id] || "Facility"}
+          {booking.locationName ? ` · ${booking.locationName}` : ""} · $
+          {((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}
+        </p>
+        <div className="mt-1 flex items-center gap-2">
+          <span className="font-mono text-xs text-muted-foreground">
+            {booking.confirmation_code}
+          </span>
+          {isCancelled ? (
+            <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
+              Cancelled
+            </span>
+          ) : (
+            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+              Completed
+            </span>
+          )}
         </div>
       </button>
     );

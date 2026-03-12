@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase';
 import { formatPrice, formatTimeInZone, formatDateLong } from '../lib/format';
 import { Badge } from './Badge';
 import { Button } from './Button';
+import { Calendar, Clock, MapPin, SlidersHorizontal, ChevronDown, X } from 'lucide-react-native';
 import { colors, spacing, borderRadius, typography } from '../theme';
 import type { Booking, ModifiedFromInfo } from '../types';
 
@@ -231,20 +232,20 @@ export function ExpandedBookingCard({
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <View style={styles.detailRow}>
-            <Text style={styles.detailIcon}>▪</Text>
+            <Calendar size={16} color={colors.mutedForeground} />
             <Text style={styles.dateTitle}>{formatDateLong(booking.date)}</Text>
           </View>
           <View style={styles.detailRow}>
-            <Text style={styles.detailIcon}>▪</Text>
+            <Clock size={16} color={colors.mutedForeground} />
             <Text style={styles.timeSubtitle}>
               {formatTimeInZone(booking.start_time, timezone)} – {formatTimeInZone(booking.end_time, timezone)}
             </Text>
           </View>
           <View style={styles.detailRow}>
-            <Text style={styles.detailIcon}>▪</Text>
+            <MapPin size={16} color={colors.mutedForeground} />
             <Text style={styles.locationSubtitle}>
               {booking.bays?.name ?? 'Unknown'}
-              {booking.organizations?.name ? ` · ${booking.organizations.name}` : ''}
+              {booking.organizations?.name ? ` – ${booking.organizations.name}` : ''}
             </Text>
           </View>
           <Text style={styles.createdAt}>
@@ -284,7 +285,7 @@ export function ExpandedBookingCard({
           </View>
         </View>
         <TouchableOpacity onPress={onCollapse} style={styles.closeButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={styles.closeIcon}>✕</Text>
+          <X size={18} color={colors.mutedForeground} />
         </TouchableOpacity>
       </View>
 
@@ -385,10 +386,15 @@ export function ExpandedBookingCard({
               setManageOpen(!manageOpen);
             }}
           >
-            <Text style={styles.manageHeaderText}>Manage</Text>
-            <Text style={[styles.manageChevron, manageOpen && styles.manageChevronOpen]}>
-              ▾
-            </Text>
+            <View style={styles.manageHeaderLeft}>
+              <SlidersHorizontal size={14} color={colors.mutedForeground} />
+              <Text style={styles.manageHeaderText}>Manage</Text>
+            </View>
+            <ChevronDown
+              size={16}
+              color={colors.mutedForeground}
+              style={manageOpen ? { transform: [{ rotate: '180deg' }] } : undefined}
+            />
           </TouchableOpacity>
 
           {manageOpen && (
@@ -565,12 +571,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: 2,
   },
-  detailIcon: {
-    fontSize: 8,
-    color: colors.mutedForeground,
-    width: 12,
-    textAlign: 'center',
-  },
   createdAt: {
     ...typography.caption,
     color: colors.mutedForeground,
@@ -579,10 +579,10 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: spacing.xs,
   },
-  closeIcon: {
-    fontSize: 18,
-    color: colors.mutedForeground,
-    fontWeight: '300',
+  manageHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   badgeRow: {
     flexDirection: 'row',
@@ -888,13 +888,6 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.mutedForeground,
     fontWeight: '600',
-  },
-  manageChevron: {
-    fontSize: 16,
-    color: colors.mutedForeground,
-  },
-  manageChevronOpen: {
-    transform: [{ rotate: '180deg' }],
   },
   manageContent: {
     paddingBottom: spacing.sm,
