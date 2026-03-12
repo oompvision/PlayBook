@@ -923,6 +923,7 @@ export function BookingScreen({ route, navigation }: Props) {
 
         {/* Facility / Bay Picker */}
         {isDynamic ? (
+          <>
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>2. Select Facility</Text>
             <ScrollView
@@ -951,7 +952,6 @@ export function BookingScreen({ route, navigation }: Props) {
                 );
               })}
             </ScrollView>
-
           </View>
 
           {/* Duration Picker */}
@@ -997,6 +997,7 @@ export function BookingScreen({ route, navigation }: Props) {
               </ScrollView>
             )}
           </View>
+          </>
         ) : (
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Select Bay</Text>
