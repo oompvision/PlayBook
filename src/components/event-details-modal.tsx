@@ -20,6 +20,7 @@ import {
   Loader2,
   FileText,
 } from "lucide-react";
+import { formatPrice } from "@/lib/utils";
 
 export type EventDetailData = {
   registrationId: string;
@@ -188,7 +189,7 @@ export function EventDetailsModal({
               <div className="flex items-center gap-2 text-sm">
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
                 <span className="font-medium">
-                  ${(event.priceCents / 100).toFixed(2)}
+                  {formatPrice(event.priceCents)}
                 </span>
               </div>
             )}

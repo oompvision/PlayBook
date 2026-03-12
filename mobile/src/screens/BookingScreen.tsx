@@ -489,7 +489,7 @@ export function BookingScreen({ route, navigation }: Props) {
       label = `${tier.discount_value}% member discount`;
     } else {
       discountCents = Math.min(tier.discount_value * 100, priceCents);
-      label = `$${(tier.discount_value).toFixed(2)} member discount`;
+      label = `${formatPrice(tier.discount_value * 100)} member discount`;
     }
     return { discountCents, finalCents: priceCents - discountCents, label };
   }
@@ -503,7 +503,7 @@ export function BookingScreen({ route, navigation }: Props) {
       label = `${tier.event_discount_value}% member discount`;
     } else {
       discountCents = Math.min(tier.event_discount_value * 100, priceCents);
-      label = `$${(tier.event_discount_value).toFixed(2)} member discount`;
+      label = `${formatPrice(tier.event_discount_value * 100)} member discount`;
     }
     return { discountCents, finalCents: priceCents - discountCents, label };
   }
@@ -895,7 +895,7 @@ export function BookingScreen({ route, navigation }: Props) {
 
         {/* Date Picker */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Select Date</Text>
+          <Text style={styles.sectionTitle}>1. Select Date</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -924,7 +924,7 @@ export function BookingScreen({ route, navigation }: Props) {
         {/* Facility / Bay Picker */}
         {isDynamic ? (
           <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Select Facility</Text>
+            <Text style={styles.sectionTitle}>2. Select Facility</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -952,48 +952,49 @@ export function BookingScreen({ route, navigation }: Props) {
               })}
             </ScrollView>
 
-            {/* Duration Picker */}
+          </View>
+
+          {/* Duration Picker */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>
+              3. Play for {selectedDuration >= 60
+                ? selectedDuration % 60 === 0
+                  ? `${selectedDuration / 60}h`
+                  : `${Math.floor(selectedDuration / 60)}h ${selectedDuration % 60}m`
+                : `${selectedDuration}m`}
+            </Text>
             {availableDurations.length > 1 && (
-              <>
-                <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>
-                  Play for {selectedDuration >= 60
-                    ? selectedDuration % 60 === 0
-                      ? `${selectedDuration / 60}h`
-                      : `${Math.floor(selectedDuration / 60)}h ${selectedDuration % 60}m`
-                    : `${selectedDuration}m`}
-                </Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.bayRow}
-                >
-                  {availableDurations.map((dur) => {
-                    const isSelected = dur === selectedDuration;
-                    const label =
-                      dur >= 60
-                        ? dur % 60 === 0
-                          ? `${dur / 60}h`
-                          : `${Math.floor(dur / 60)}h ${dur % 60}m`
-                        : `${dur}m`;
-                    return (
-                      <TouchableOpacity
-                        key={dur}
-                        onPress={() => setSelectedDuration(dur)}
-                        style={[styles.durationChip, isSelected && styles.durationChipSelected]}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.bayRow}
+              >
+                {availableDurations.map((dur) => {
+                  const isSelected = dur === selectedDuration;
+                  const label =
+                    dur >= 60
+                      ? dur % 60 === 0
+                        ? `${dur / 60}h`
+                        : `${Math.floor(dur / 60)}h ${dur % 60}m`
+                      : `${dur}m`;
+                  return (
+                    <TouchableOpacity
+                      key={dur}
+                      onPress={() => setSelectedDuration(dur)}
+                      style={[styles.durationChip, isSelected && styles.durationChipSelected]}
+                    >
+                      <Text
+                        style={[
+                          styles.durationChipText,
+                          isSelected && styles.durationChipTextSelected,
+                        ]}
                       >
-                        <Text
-                          style={[
-                            styles.durationChipText,
-                            isSelected && styles.durationChipTextSelected,
-                          ]}
-                        >
-                          {label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </>
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             )}
           </View>
         ) : (
@@ -1132,7 +1133,7 @@ export function BookingScreen({ route, navigation }: Props) {
           selectedOption ? (
             <View style={styles.sectionCard}>
               <Text style={styles.sectionTitle}>
-                Available Times — {formatDate(selectedDate)}
+                4. Select a time
               </Text>
               {loading ? (
                 <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />

@@ -47,6 +47,7 @@ export function MyBookingsScreen() {
   const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
   const route = useRoute<RouteProp<MainTabParamList, 'Bookings'>>();
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [refundInfoMap, setRefundInfoMap] = useState<Record<string, { status: string; amount_cents: number | null; refunded_amount_cents: number | null }>>({});
   const [eventRegistrations, setEventRegistrations] = useState<EventRegistration[]>([]);
   const [bookingSlotIds, setBookingSlotIds] = useState<Record<string, string[]>>({});
   const [cancellationWindowHours, setCancellationWindowHours] = useState<number | null>(null);
@@ -140,12 +141,27 @@ export function MyBookingsScreen() {
         }
       }
 
-      setBookings(
-        rawBookings.map((b) => ({
-          ...b,
-          modified_from_info: b.modified_from ? modifiedFromMap[b.modified_from] ?? null : null,
-        }))
-      );
+      const enriched = rawBookings.map((b) => ({
+        ...b,
+        modified_from_info: b.modified_from ? modifiedFromMap[b.modified_from] ?? null : null,
+      }));
+      setBookings(enriched);
+
+      // Fetch refund info for cancelled bookings
+      const cancelledIds = enriched.filter((b) => b.status === 'cancelled').map((b) => b.id);
+      if (cancelledIds.length > 0) {
+        const { data: payments } = await supabase
+          .from('booking_payments')
+          .select('booking_id, status, amount_cents, refunded_amount_cents')
+          .in('booking_id', cancelledIds);
+        if (payments) {
+          const map: Record<string, { status: string; amount_cents: number | null; refunded_amount_cents: number | null }> = {};
+          for (const p of payments) {
+            map[p.booking_id] = { status: p.status, amount_cents: p.amount_cents, refunded_amount_cents: p.refunded_amount_cents };
+          }
+          setRefundInfoMap(map);
+        }
+      }
     }
     if (eventsResult.data) setEventRegistrations(eventsResult.data as unknown as EventRegistration[]);
 
@@ -484,7 +500,17 @@ export function MyBookingsScreen() {
             <View style={styles.cardCodeRow}>
               <Text style={styles.cardCodeText}>{booking.confirmation_code}</Text>
               {isCancelled ? (
-                <Badge label="Cancelled" variant="destructive" />
+                <>
+                  <Badge label="Cancelled" variant="destructive" />
+                  {(() => {
+                    const ri = refundInfoMap[booking.id];
+                    if (ri && (ri.status === 'refunded' || ri.status === 'partially_refunded') && ri.refunded_amount_cents && ri.amount_cents) {
+                      const pct = Math.round((ri.refunded_amount_cents / ri.amount_cents) * 100);
+                      return <Badge label={`${pct}% Refunded`} variant="muted" />;
+                    }
+                    return null;
+                  })()}
+                </>
               ) : isActive ? (
                 <View style={styles.activeBadge}>
                   <View style={styles.activeDot} />

@@ -2,9 +2,13 @@
  * Formatting utilities — mirrors the web app's utils.ts.
  */
 
-/** Format cents as dollars: 5000 → "$50.00" */
+/** Format cents as dollars: 5000 → "$50", 5060 → "$50.60". Omits decimals for whole dollar amounts. */
 export function formatPrice(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+  const dollars = cents / 100;
+  if (Number.isInteger(dollars)) {
+    return `$${dollars}`;
+  }
+  return `$${dollars.toFixed(2)}`;
 }
 
 /** Format a timestamptz string as a localized time in the given timezone. */

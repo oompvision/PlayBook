@@ -257,31 +257,34 @@ export function ExpandedBookingCard({
               label={booking.status === 'confirmed' ? 'Confirmed' : 'Cancelled'}
               variant={booking.status === 'confirmed' ? 'success' : 'destructive'}
             />
-            {showPaidBadge && (
-              <Badge label="Paid" variant="success" />
-            )}
-            {!showPaidBadge && !loadingPayment && paymentInfo && (
+            {booking.status === 'cancelled' && !loadingPayment && paymentInfo && (paymentInfo.status === 'refunded' || paymentInfo.status === 'partial_refund') && paymentInfo.refunded_amount_cents && paymentInfo.amount_cents ? (
               <Badge
-                label={
-                  paymentInfo.status === 'charged'
-                    ? 'Paid'
-                    : paymentInfo.status === 'refunded'
-                    ? 'Refunded'
-                    : paymentInfo.status === 'partial_refund'
-                    ? 'Partial Refund'
-                    : paymentInfo.status === 'card_saved'
-                    ? 'Card Saved'
-                    : paymentInfo.status
-                }
-                variant={
-                  paymentInfo.status === 'charged'
-                    ? 'success'
-                    : paymentInfo.status === 'refunded' || paymentInfo.status === 'partial_refund'
-                    ? 'muted'
-                    : 'default'
-                }
+                label={`${Math.round((paymentInfo.refunded_amount_cents / paymentInfo.amount_cents) * 100)}% Refunded`}
+                variant="muted"
               />
-            )}
+            ) : booking.status !== 'cancelled' ? (
+              <>
+                {showPaidBadge && (
+                  <Badge label="Paid" variant="success" />
+                )}
+                {!showPaidBadge && !loadingPayment && paymentInfo && (
+                  <Badge
+                    label={
+                      paymentInfo.status === 'charged'
+                        ? 'Paid'
+                        : paymentInfo.status === 'card_saved'
+                        ? 'Card Saved'
+                        : paymentInfo.status
+                    }
+                    variant={
+                      paymentInfo.status === 'charged'
+                        ? 'success'
+                        : 'default'
+                    }
+                  />
+                )}
+              </>
+            ) : null}
           </View>
         </View>
         <TouchableOpacity onPress={onCollapse} style={styles.closeButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>

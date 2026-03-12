@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CalendarCheck, ChevronRight, ArrowUpRight, Loader2 } from "lucide-react";
+import { CalendarCheck, ArrowUpRight, Loader2, Crown } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -16,6 +16,7 @@ import {
   EventDetailsModal,
   type EventDetailData,
 } from "@/components/event-details-modal";
+import { formatPrice } from "@/lib/utils";
 
 type Booking = {
   id: string;
@@ -293,16 +294,16 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
         <PopoverContent align="end" className="w-80 p-0">
           <div className="flex max-h-[min(28rem,var(--radix-popover-content-available-height,28rem))] flex-col">
             {/* Header */}
-            <div className="flex shrink-0 items-center justify-between border-b px-4 py-3">
-              <h3 className="text-sm font-semibold">Upcoming</h3>
+            <div className="shrink-0 border-b px-4 py-3">
               <Link
                 href="/my-bookings"
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-0.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+                className="flex items-center gap-1 text-sm font-semibold hover:text-primary"
               >
-                All
-                <ChevronRight className="h-3.5 w-3.5" />
+                View All Bookings
+                <ArrowUpRight className="h-3.5 w-3.5" />
               </Link>
+              <p className="mt-1 text-xs text-muted-foreground">Upcoming</p>
             </div>
 
             {/* List */}
@@ -348,13 +349,13 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
                             </p>
                             {discount > 0 ? (
                               <p className="mt-0.5 text-xs">
-                                <span className="text-muted-foreground line-through">${(booking.total_price_cents / 100).toFixed(2)}</span>
+                                <span className="text-muted-foreground line-through">{formatPrice(booking.total_price_cents)}</span>
                                 <span className="ml-1 font-semibold text-teal-600 dark:text-teal-400">
-                                  👑 ${(total / 100).toFixed(2)}
+                                  <Crown className="mr-0.5 inline h-3 w-3" /> {formatPrice(total)}
                                 </span>
                               </p>
                             ) : (
-                              <p className="mt-0.5 text-xs font-semibold">${(total / 100).toFixed(2)}</p>
+                              <p className="mt-0.5 text-xs font-semibold">{formatPrice(total)}</p>
                             )}
                             <div className="mt-0.5 flex items-center gap-1.5">
                               <span className="font-mono text-[11px] text-muted-foreground">
@@ -405,7 +406,7 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
                               {formatTime(evt.end_time, timezone)}
                             </p>
                             <span className="text-xs font-semibold">
-                              {evt.price_cents > 0 ? `$${(evt.price_cents / 100).toFixed(2)}` : "Free"}
+                              {evt.price_cents > 0 ? formatPrice(evt.price_cents) : "Free"}
                             </span>
                           </div>
                         </div>

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Crown } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   BookingDetailsModal,
@@ -13,7 +13,7 @@ import {
   EventDetailsModal,
   type EventDetailData,
 } from "@/components/event-details-modal";
-import { formatTimeInZone, getVisualBookingStatus } from "@/lib/utils";
+import { formatPrice, formatTimeInZone, getVisualBookingStatus } from "@/lib/utils";
 
 type ModifiedFromInfo = {
   startTime: string;
@@ -21,6 +21,12 @@ type ModifiedFromInfo = {
   date: string;
   bayName: string;
 };
+
+type RefundInfo = {
+  status: string;
+  amount_cents: number | null;
+  refunded_amount_cents: number | null;
+} | null;
 
 type Booking = {
   id: string;
@@ -38,6 +44,7 @@ type Booking = {
   modified_from: string | null;
   modified_from_info?: ModifiedFromInfo | null;
   locationName?: string | null;
+  refundInfo?: RefundInfo;
 };
 
 type EventReg = {
@@ -317,6 +324,9 @@ export function MyBookingsList({
       const visualStatus = getVisualBookingStatus(booking.status, booking.start_time, booking.end_time);
       const isActive = visualStatus === "active";
 
+      const discount = booking.discount_cents || 0;
+      const total = booking.total_price_cents - discount;
+
       return (
         <button
           key={booking.id}
@@ -324,14 +334,28 @@ export function MyBookingsList({
           onClick={() => openBooking(booking, true)}
           className="w-full rounded-lg border p-4 text-left hover-lift press-feedback hover:bg-muted/50"
         >
-          <p className="font-medium">{dateStr}</p>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {timeStr} · {bayMap[booking.bay_id] || "Facility"}
-            {booking.locationName ? ` · ${booking.locationName}` : ""} · $
-            {((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">
+              {dateStr} &middot; {timeStr}
+            </p>
+            <ArrowUpRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {bayMap[booking.bay_id] || "Facility"}
+            {booking.locationName ? ` · ${booking.locationName}` : ""}
           </p>
-          <div className="mt-1 flex items-center gap-2">
-            <span className="font-mono text-xs text-muted-foreground">
+          {discount > 0 ? (
+            <p className="mt-0.5 text-xs">
+              <span className="text-muted-foreground line-through">{formatPrice(booking.total_price_cents)}</span>
+              <span className="ml-1 font-semibold text-teal-600 dark:text-teal-400">
+                <Crown className="mr-0.5 inline h-3 w-3" /> {formatPrice(total)}
+              </span>
+            </p>
+          ) : (
+            <p className="mt-0.5 text-xs font-semibold">{formatPrice(total)}</p>
+          )}
+          <div className="mt-0.5 flex items-center gap-1.5">
+            <span className="font-mono text-[11px] text-muted-foreground">
               {booking.confirmation_code}
             </span>
             {isActive ? (
@@ -364,11 +388,6 @@ export function MyBookingsList({
               </span>
             </p>
           )}
-          {booking.notes && (
-            <p className="mt-1 text-xs italic text-muted-foreground">
-              {booking.notes}
-            </p>
-          )}
         </button>
       );
     }
@@ -384,17 +403,24 @@ export function MyBookingsList({
         <p className={`font-medium ${isCancelled ? "text-muted-foreground" : ""}`}>{dateStr}</p>
         <p className="mt-0.5 text-sm text-muted-foreground">
           {timeStr} · {bayMap[booking.bay_id] || "Facility"}
-          {booking.locationName ? ` · ${booking.locationName}` : ""} · $
-          {((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}
+          {booking.locationName ? ` · ${booking.locationName}` : ""} ·{" "}
+          {formatPrice(booking.total_price_cents - (booking.discount_cents || 0))}
         </p>
         <div className="mt-1 flex items-center gap-2">
           <span className="font-mono text-xs text-muted-foreground">
             {booking.confirmation_code}
           </span>
           {isCancelled ? (
-            <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
-              Cancelled
-            </span>
+            <>
+              <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                Cancelled
+              </span>
+              {booking.refundInfo && (booking.refundInfo.status === "refunded" || booking.refundInfo.status === "partially_refunded") && booking.refundInfo.refunded_amount_cents && booking.refundInfo.amount_cents ? (
+                <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                  {Math.round((booking.refundInfo.refunded_amount_cents / booking.refundInfo.amount_cents) * 100)}% Refunded
+                </span>
+              ) : null}
+            </>
           ) : (
             <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
               Completed
@@ -454,7 +480,7 @@ export function MyBookingsList({
             {timeStr}
             {eventData.bayNames ? ` · ${eventData.bayNames}` : ""}
             {eventData.priceCents > 0
-              ? ` · $${(eventData.priceCents / 100).toFixed(2)}`
+              ? ` · ${formatPrice(eventData.priceCents)}`
               : " · Free"}
           </p>
         </div>
@@ -487,7 +513,11 @@ export function MyBookingsList({
     <>
       {/* Upcoming */}
       <div className="mt-8">
-        <h2 className="text-lg font-semibold">Upcoming</h2>
+        <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
+          <div className="flex-1 rounded-md bg-background px-3 py-1.5 text-center text-sm font-medium text-foreground shadow-sm">
+            Upcoming{upcoming.length > 0 ? ` (${upcoming.length})` : ""}
+          </div>
+        </div>
         {!hasUpcoming && (
           <p className="mt-4 py-8 text-center text-muted-foreground">
             No upcoming bookings or events.{" "}

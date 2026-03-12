@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, X } from "lucide-react";
+import { formatPrice } from "@/lib/utils";
 
 interface BookingCardExpandableProps {
   booking: {
@@ -74,7 +75,7 @@ export function BookingCardExpandable({
         </div>
         <div className="ml-3 flex items-center gap-2">
           <span className="text-sm font-semibold text-gray-800 dark:text-white/90">
-            ${(booking.total_price_cents / 100).toFixed(2)}
+            {formatPrice(booking.total_price_cents)}
           </span>
           <ChevronDown
             className={`h-4 w-4 text-gray-400 transition-transform ${expanded ? "rotate-180" : ""}`}
@@ -129,7 +130,7 @@ export function BookingCardExpandable({
             <div className="flex justify-between">
               <span className="text-gray-500 dark:text-gray-400">Price</span>
               <span className="font-semibold text-gray-800 dark:text-white/90">
-                ${(booking.total_price_cents / 100).toFixed(2)}
+                {formatPrice(booking.total_price_cents)}
               </span>
             </div>
             {booking.notes && (

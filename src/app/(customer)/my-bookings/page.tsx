@@ -271,12 +271,35 @@ export default async function MyBookingsPage({
     })
     .filter((item): item is FeedItemEvent => item !== null);
 
+  // Fetch refund info for cancelled bookings
+  const cancelledBookingIds = enrichedBookings
+    .filter((b) => b.status === "cancelled")
+    .map((b) => b.id);
+  const refundInfoMap: Record<string, { status: string; amount_cents: number | null; refunded_amount_cents: number | null }> = {};
+  if (cancelledBookingIds.length > 0) {
+    const { data: payments } = await service
+      .from("booking_payments")
+      .select("booking_id, status, amount_cents, refunded_amount_cents")
+      .in("booking_id", cancelledBookingIds);
+    if (payments) {
+      for (const p of payments) {
+        refundInfoMap[p.booking_id] = { status: p.status, amount_cents: p.amount_cents, refunded_amount_cents: p.refunded_amount_cents };
+      }
+    }
+  }
+
+  // Attach refund info to enriched bookings
+  const bookingsWithRefund = enrichedBookings.map((b) => ({
+    ...b,
+    refundInfo: refundInfoMap[b.id] ?? null,
+  }));
+
   // Split into upcoming+active vs past+cancelled (using visual status)
-  const upcomingBookings = enrichedBookings.filter((b) => {
+  const upcomingBookings = bookingsWithRefund.filter((b) => {
     const vs = getVisualBookingStatus(b.status, b.start_time, b.end_time);
     return vs === "confirmed" || vs === "active";
   });
-  const pastBookings = enrichedBookings.filter((b) => {
+  const pastBookings = bookingsWithRefund.filter((b) => {
     const vs = getVisualBookingStatus(b.status, b.start_time, b.end_time);
     return vs === "completed" || vs === "cancelled";
   });
@@ -384,9 +407,6 @@ export default async function MyBookingsPage({
       <div className="mx-auto max-w-2xl">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">My Bookings</h1>
-          <p className="mt-2 text-muted-foreground">
-            View your upcoming and past bookings.
-          </p>
         </div>
 
         {params.error && (

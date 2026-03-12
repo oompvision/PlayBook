@@ -8,6 +8,7 @@ import {
   Users,
 } from "lucide-react";
 import { EventRegistrationPanel, type EventForPanel } from "./event-registration-panel";
+import { formatPrice } from "@/lib/utils";
 
 type EventCardEvent = {
   id: string;
@@ -200,7 +201,7 @@ export function EventCard({
           <span className="text-sm font-semibold text-gray-800 dark:text-white/90">
             {event.priceCents === 0
               ? "Free"
-              : `$${(event.priceCents / 100).toFixed(2)}`}
+              : formatPrice(event.priceCents)}
           </span>
         </div>
 

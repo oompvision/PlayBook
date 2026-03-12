@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { getVisualBookingStatus } from "@/lib/utils";
+import { formatPrice, getVisualBookingStatus } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -1041,8 +1041,20 @@ export function BookingDetailsModal({
                     );
                 }
               })()}
-              {/* Paid badge: show for charge_upfront confirmed bookings, or from actual payment info */}
+              {/* Payment/refund badges */}
               {(() => {
+                // For cancelled bookings: show refund % pill if refunded, nothing else
+                if (booking.status === "cancelled" && paymentInfo && !loadingPayment) {
+                  if ((paymentInfo.status === "refunded" || paymentInfo.status === "partially_refunded") && paymentInfo.refunded_amount_cents && paymentInfo.amount_cents) {
+                    const pct = Math.round((paymentInfo.refunded_amount_cents / paymentInfo.amount_cents) * 100);
+                    return (
+                      <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                        {pct}% Refunded
+                      </span>
+                    );
+                  }
+                  return null;
+                }
                 // Show "Paid" on all confirmed bookings when org uses charge_upfront
                 if (paymentMode === "charge_upfront" && booking.status === "confirmed") {
                   return (
@@ -1053,20 +1065,6 @@ export function BookingDetailsModal({
                 }
                 // Fallback: show payment status from actual payment record
                 if (paymentInfo && !loadingPayment) {
-                  if (paymentInfo.status === "refunded") {
-                    return (
-                      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                        Refunded
-                      </span>
-                    );
-                  }
-                  if (paymentInfo.status === "partially_refunded") {
-                    return (
-                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                        Partial Refund
-                      </span>
-                    );
-                  }
                   if (paymentInfo.status === "charged") {
                     return (
                       <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
@@ -1160,7 +1158,7 @@ export function BookingDetailsModal({
                         {formatTime(slot.start_time, timezone)} –{" "}
                         {formatTime(slot.end_time, timezone)}
                       </span>
-                      <span>${(slot.price_cents / 100).toFixed(2)}</span>
+                      <span>{formatPrice(slot.price_cents)}</span>
                     </div>
                   ))}
                 </div>
@@ -1168,7 +1166,7 @@ export function BookingDetailsModal({
                   <div className="flex items-center justify-between border-t px-3 py-2 text-sm">
                     <span className="text-muted-foreground">Subtotal</span>
                     <span className="text-muted-foreground">
-                      ${(booking.total_price_cents / 100).toFixed(2)}
+                      {formatPrice(booking.total_price_cents)}
                     </span>
                   </div>
                 )}
@@ -1181,7 +1179,7 @@ export function BookingDetailsModal({
                 <div className="flex items-center justify-between border-t bg-muted/30 px-3 py-2 text-sm font-semibold">
                   <span>Total</span>
                   <span>
-                    ${((booking.total_price_cents - (booking.discount_cents ?? 0)) / 100).toFixed(2)}
+                    {formatPrice(booking.total_price_cents - (booking.discount_cents ?? 0))}
                   </span>
                 </div>
               </div>
@@ -1192,7 +1190,7 @@ export function BookingDetailsModal({
                     <div className="flex items-center justify-between px-3 py-2 text-sm">
                       <span className="text-muted-foreground">Subtotal</span>
                       <span className="text-muted-foreground">
-                        ${(booking.total_price_cents / 100).toFixed(2)}
+                        {formatPrice(booking.total_price_cents)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between px-3 py-1 text-sm text-teal-600 dark:text-teal-400">
@@ -1204,7 +1202,7 @@ export function BookingDetailsModal({
                 <div className={`flex items-center justify-between px-3 py-2 text-sm ${(booking.discount_cents ?? 0) > 0 ? "border-t font-semibold" : ""}`}>
                   <span>Total</span>
                   <span className="font-semibold">
-                    ${((booking.total_price_cents - (booking.discount_cents ?? 0)) / 100).toFixed(2)}
+                    {formatPrice(booking.total_price_cents - (booking.discount_cents ?? 0))}
                   </span>
                 </div>
               </div>

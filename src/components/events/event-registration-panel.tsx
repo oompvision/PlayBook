@@ -20,6 +20,7 @@ import {
   PaymentSection,
   type CheckoutFormHandle,
 } from "@/components/checkout-form";
+import { formatPrice } from "@/lib/utils";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -291,7 +292,7 @@ export function EventRegistrationPanel({
   const priceLabel =
     event.priceCents === 0
       ? "Free"
-      : `$${(event.priceCents / 100).toFixed(2)}`;
+      : formatPrice(event.priceCents);
 
   if (!mounted) return null;
 

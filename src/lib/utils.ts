@@ -6,6 +6,18 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Format cents as a dollar string: 5000 → "$50", 5060 → "$50.60".
+ * Omits decimals when the amount is a whole dollar.
+ */
+export function formatPrice(cents: number): string {
+  const dollars = cents / 100;
+  if (Number.isInteger(dollars)) {
+    return `$${dollars}`;
+  }
+  return `$${dollars.toFixed(2)}`;
+}
+
+/**
  * Build a timezone-aware ISO timestamp from a date string and time string.
  * e.g. toTimestamp("2025-02-20", "09:00:00", "America/New_York")
  * → "2025-02-20T09:00:00-05:00"

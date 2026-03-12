@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { formatPrice } from "@/lib/utils";
 import {
   StripeCheckoutWrapper,
   CheckoutForm,
@@ -1790,7 +1791,7 @@ export function AvailabilityWidget({
                   const spotsLeft = (group.eventCapacity || 0) - (group.eventRegisteredCount || 0);
                   const priceLabel = group.eventPriceCents === 0
                     ? "Free"
-                    : `$${((group.eventPriceCents || 0) / 100).toFixed(2)}`;
+                    : formatPrice(group.eventPriceCents || 0);
 
                   // Check if user is already registered for this event
                   const existingReg = sidebarEventRegs.find(
@@ -1875,8 +1876,8 @@ export function AvailabilityWidget({
 
                 // Regular slot row
                 const priceLabel = group.all_same_price
-                  ? `$${(group.min_price_cents / 100).toFixed(2)}`
-                  : `from $${(group.min_price_cents / 100).toFixed(2)}`;
+                  ? formatPrice(group.min_price_cents)
+                  : `from ${formatPrice(group.min_price_cents)}`;
                 const isSelected = selectedTimeKeys.has(group.key);
 
                 // Check if this slot could be added (at least one bay in common with current selection)
