@@ -51,6 +51,7 @@ export function MyBookingsScreen() {
   const [bookingSlotIds, setBookingSlotIds] = useState<Record<string, string[]>>({});
   const [cancellationWindowHours, setCancellationWindowHours] = useState<number | null>(null);
   const [hasPaymentMode, setHasPaymentMode] = useState(false);
+  const [paymentModeStr, setPaymentModeStr] = useState('none');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
@@ -174,6 +175,7 @@ export function MyBookingsScreen() {
       const ps = paymentSettingsResult.data;
       const active = ps.payment_mode !== 'none' && ps.stripe_onboarding_complete;
       setHasPaymentMode(active);
+      setPaymentModeStr(ps.payment_mode ?? 'none');
       setCancellationWindowHours(active ? (ps.cancellation_window_hours ?? 24) : null);
     }
 
@@ -444,6 +446,7 @@ export function MyBookingsScreen() {
               timezone={tz}
               cancellationWindowHours={cancellationWindowHours}
               hasPaymentMode={hasPaymentMode}
+              paymentMode={paymentModeStr}
               canModify={canModifyBooking(booking)}
               onModify={() => handleModifyBooking(booking)}
               onCancelled={() => handleCancelComplete(booking)}

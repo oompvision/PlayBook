@@ -981,53 +981,6 @@ export function BookingDetailsModal({
               <Calendar className="h-5 w-5 text-muted-foreground" />
               {dateStr}
             </DialogTitle>
-            <div className="flex items-center gap-2">
-              {(() => {
-                const vs = getVisualBookingStatus(booking.status, booking.start_time, booking.end_time);
-                switch (vs) {
-                  case "active":
-                    return (
-                      <Badge className="bg-green-600 text-white hover:bg-green-600">
-                        <span className="relative mr-1.5 flex h-2 w-2">
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
-                          <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
-                        </span>
-                        Active
-                      </Badge>
-                    );
-                  case "confirmed":
-                    return <Badge variant="default">Confirmed</Badge>;
-                  case "completed":
-                    return <Badge variant="outline">Completed</Badge>;
-                  case "cancelled":
-                    return <Badge variant="secondary">Cancelled</Badge>;
-                }
-              })()}
-              {paymentInfo && !loadingPayment && (
-                <Badge
-                  variant="outline"
-                  className={
-                    paymentInfo.status === "refunded"
-                      ? "border-green-200 text-green-700 dark:border-green-800 dark:text-green-400"
-                      : paymentInfo.status === "partially_refunded"
-                        ? "border-amber-200 text-amber-700 dark:border-amber-800 dark:text-amber-400"
-                        : paymentInfo.status === "charged"
-                          ? "border-blue-200 text-blue-700 dark:border-blue-800 dark:text-blue-400"
-                          : ""
-                  }
-                >
-                  {paymentInfo.status === "refunded"
-                    ? "Refunded"
-                    : paymentInfo.status === "partially_refunded"
-                      ? "Partial Refund"
-                      : paymentInfo.status === "charged"
-                        ? "Paid"
-                        : paymentInfo.status === "card_saved"
-                          ? "Card Saved"
-                          : null}
-                </Badge>
-              )}
-            </div>
           </div>
           <DialogDescription className="sr-only">Booking details</DialogDescription>
         </DialogHeader>
@@ -1051,9 +1004,87 @@ export function BookingDetailsModal({
             <p className="text-xs text-muted-foreground">
               Booked on {createdStr}
             </p>
-            <p className="font-mono text-xs text-muted-foreground">
-              {booking.confirmation_code}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="font-mono text-xs text-muted-foreground">
+                {booking.confirmation_code}
+              </p>
+              {(() => {
+                const vs = getVisualBookingStatus(booking.status, booking.start_time, booking.end_time);
+                switch (vs) {
+                  case "active":
+                    return (
+                      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                        <span className="relative mr-1 flex h-1.5 w-1.5">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
+                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
+                        </span>
+                        Active
+                      </span>
+                    );
+                  case "confirmed":
+                    return (
+                      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                        Confirmed
+                      </span>
+                    );
+                  case "completed":
+                    return (
+                      <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                        Completed
+                      </span>
+                    );
+                  case "cancelled":
+                    return (
+                      <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                        Cancelled
+                      </span>
+                    );
+                }
+              })()}
+              {/* Paid badge: show for charge_upfront confirmed bookings, or from actual payment info */}
+              {(() => {
+                // Show "Paid" on all confirmed bookings when org uses charge_upfront
+                if (paymentMode === "charge_upfront" && booking.status === "confirmed") {
+                  return (
+                    <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                      Paid
+                    </span>
+                  );
+                }
+                // Fallback: show payment status from actual payment record
+                if (paymentInfo && !loadingPayment) {
+                  if (paymentInfo.status === "refunded") {
+                    return (
+                      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                        Refunded
+                      </span>
+                    );
+                  }
+                  if (paymentInfo.status === "partially_refunded") {
+                    return (
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                        Partial Refund
+                      </span>
+                    );
+                  }
+                  if (paymentInfo.status === "charged") {
+                    return (
+                      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                        Paid
+                      </span>
+                    );
+                  }
+                  if (paymentInfo.status === "card_saved") {
+                    return (
+                      <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                        Card Saved
+                      </span>
+                    );
+                  }
+                }
+                return null;
+              })()}
+            </div>
           </div>
 
           {notice && (

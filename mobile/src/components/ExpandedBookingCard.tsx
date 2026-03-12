@@ -43,6 +43,7 @@ interface Props {
   timezone: string;
   cancellationWindowHours: number | null;
   hasPaymentMode: boolean;
+  paymentMode?: string;
   canModify: boolean;
   onModify: () => void;
   onCancelled: () => void;
@@ -80,6 +81,7 @@ export function ExpandedBookingCard({
   timezone,
   cancellationWindowHours,
   hasPaymentMode,
+  paymentMode,
   canModify,
   onModify,
   onCancelled,
@@ -219,57 +221,71 @@ export function ExpandedBookingCard({
     return `${datePart}, ${timePart}`;
   };
 
+  // Determine paid badge
+  const showPaidBadge =
+    paymentMode === 'charge_upfront' && booking.status === 'confirmed';
+
   return (
     <View style={styles.container}>
       {/* Header — Date as primary title */}
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.dateTitle}>📅  {formatDateLong(booking.date)}</Text>
-          <Text style={styles.timeSubtitle}>
-            🕐  {formatTimeInZone(booking.start_time, timezone)} – {formatTimeInZone(booking.end_time, timezone)}
-          </Text>
-          <Text style={styles.locationSubtitle}>
-            📍  {booking.bays?.name ?? 'Unknown'}
-            {booking.organizations?.name ? ` · ${booking.organizations.name}` : ''}
-          </Text>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailIcon}>▪</Text>
+            <Text style={styles.dateTitle}>{formatDateLong(booking.date)}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailIcon}>▪</Text>
+            <Text style={styles.timeSubtitle}>
+              {formatTimeInZone(booking.start_time, timezone)} – {formatTimeInZone(booking.end_time, timezone)}
+            </Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailIcon}>▪</Text>
+            <Text style={styles.locationSubtitle}>
+              {booking.bays?.name ?? 'Unknown'}
+              {booking.organizations?.name ? ` · ${booking.organizations.name}` : ''}
+            </Text>
+          </View>
           <Text style={styles.createdAt}>
             {formatCreatedAt(booking.created_at, timezone)}
           </Text>
-          <Text style={styles.confirmationCodeSmall}>{booking.confirmation_code}</Text>
+          <View style={styles.codeBadgeRow}>
+            <Text style={styles.confirmationCodeSmall}>{booking.confirmation_code}</Text>
+            <Badge
+              label={booking.status === 'confirmed' ? 'Confirmed' : 'Cancelled'}
+              variant={booking.status === 'confirmed' ? 'success' : 'destructive'}
+            />
+            {showPaidBadge && (
+              <Badge label="Paid" variant="success" />
+            )}
+            {!showPaidBadge && !loadingPayment && paymentInfo && (
+              <Badge
+                label={
+                  paymentInfo.status === 'charged'
+                    ? 'Paid'
+                    : paymentInfo.status === 'refunded'
+                    ? 'Refunded'
+                    : paymentInfo.status === 'partial_refund'
+                    ? 'Partial Refund'
+                    : paymentInfo.status === 'card_saved'
+                    ? 'Card Saved'
+                    : paymentInfo.status
+                }
+                variant={
+                  paymentInfo.status === 'charged'
+                    ? 'success'
+                    : paymentInfo.status === 'refunded' || paymentInfo.status === 'partial_refund'
+                    ? 'muted'
+                    : 'default'
+                }
+              />
+            )}
+          </View>
         </View>
         <TouchableOpacity onPress={onCollapse} style={styles.closeButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Text style={styles.closeIcon}>✕</Text>
         </TouchableOpacity>
-      </View>
-
-      {/* Status badges */}
-      <View style={styles.badgeRow}>
-        <Badge
-          label={booking.status === 'confirmed' ? 'Confirmed' : 'Cancelled'}
-          variant={booking.status === 'confirmed' ? 'success' : 'destructive'}
-        />
-        {!loadingPayment && paymentInfo && (
-          <Badge
-            label={
-              paymentInfo.status === 'charged'
-                ? 'Paid'
-                : paymentInfo.status === 'refunded'
-                ? 'Refunded'
-                : paymentInfo.status === 'partial_refund'
-                ? 'Partial Refund'
-                : paymentInfo.status === 'card_saved'
-                ? 'Card Saved'
-                : paymentInfo.status
-            }
-            variant={
-              paymentInfo.status === 'charged'
-                ? 'success'
-                : paymentInfo.status === 'refunded' || paymentInfo.status === 'partial_refund'
-                ? 'muted'
-                : 'default'
-            }
-          />
-        )}
       </View>
 
       {/* Modified from info */}
@@ -369,7 +385,7 @@ export function ExpandedBookingCard({
               setManageOpen(!manageOpen);
             }}
           >
-            <Text style={styles.manageHeaderText}>⚙  Manage</Text>
+            <Text style={styles.manageHeaderText}>Manage</Text>
             <Text style={[styles.manageChevron, manageOpen && styles.manageChevronOpen]}>
               ▾
             </Text>
@@ -389,14 +405,9 @@ export function ExpandedBookingCard({
                     </Text>
                   </View>
                 ) : (
-                  <View style={styles.windowBannerGreen}>
-                    <Text style={styles.windowTitleGreen}>
-                      Free cancellation until {getCancellationDeadline()}
-                    </Text>
-                    <Text style={styles.windowDescGreen}>
-                      Cancel before the {cancellationWindowHours}-hour window for a full refund.
-                    </Text>
-                  </View>
+                  <Text style={styles.manageDeadlineText}>
+                    This booking can be canceled or modified until {getCancellationDeadline()}
+                  </Text>
                 )
               )}
 
@@ -541,7 +552,24 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.mutedForeground,
     fontFamily: 'monospace',
+  },
+  codeBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: 4,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
     marginTop: 2,
+  },
+  detailIcon: {
+    fontSize: 8,
+    color: colors.mutedForeground,
+    width: 12,
+    textAlign: 'center',
   },
   createdAt: {
     ...typography.caption,
@@ -871,5 +899,10 @@ const styles = StyleSheet.create({
   manageContent: {
     paddingBottom: spacing.sm,
     gap: spacing.sm,
+  },
+  manageDeadlineText: {
+    ...typography.caption,
+    color: colors.mutedForeground,
+    marginBottom: spacing.xs,
   },
 });
