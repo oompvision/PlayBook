@@ -13,7 +13,7 @@ import { supabase } from '../lib/supabase';
 import { formatPrice, formatTimeInZone, formatDateLong } from '../lib/format';
 import { Badge } from './Badge';
 import { Button } from './Button';
-import { Calendar, Clock, MapPin, SlidersHorizontal, ChevronDown, X } from 'lucide-react-native';
+import { Feather } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../theme';
 import type { Booking, ModifiedFromInfo } from '../types';
 
@@ -232,17 +232,17 @@ export function ExpandedBookingCard({
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <View style={styles.detailRow}>
-            <Calendar size={16} color={colors.mutedForeground} />
+            <Feather name="calendar" size={16} color={colors.mutedForeground} />
             <Text style={styles.dateTitle}>{formatDateLong(booking.date)}</Text>
           </View>
           <View style={styles.detailRow}>
-            <Clock size={16} color={colors.mutedForeground} />
+            <Feather name="clock" size={16} color={colors.mutedForeground} />
             <Text style={styles.timeSubtitle}>
               {formatTimeInZone(booking.start_time, timezone)} – {formatTimeInZone(booking.end_time, timezone)}
             </Text>
           </View>
           <View style={styles.detailRow}>
-            <MapPin size={16} color={colors.mutedForeground} />
+            <Feather name="map-pin" size={16} color={colors.mutedForeground} />
             <Text style={styles.locationSubtitle}>
               {booking.bays?.name ?? 'Unknown'}
               {booking.organizations?.name ? ` – ${booking.organizations.name}` : ''}
@@ -285,7 +285,7 @@ export function ExpandedBookingCard({
           </View>
         </View>
         <TouchableOpacity onPress={onCollapse} style={styles.closeButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <X size={18} color={colors.mutedForeground} />
+          <Feather name="x" size={18} color={colors.mutedForeground} />
         </TouchableOpacity>
       </View>
 
@@ -387,10 +387,11 @@ export function ExpandedBookingCard({
             }}
           >
             <View style={styles.manageHeaderLeft}>
-              <SlidersHorizontal size={14} color={colors.mutedForeground} />
+              <Feather name="sliders" size={14} color={colors.mutedForeground} />
               <Text style={styles.manageHeaderText}>Manage</Text>
             </View>
-            <ChevronDown
+            <Feather
+              name="chevron-down"
               size={16}
               color={colors.mutedForeground}
               style={manageOpen ? { transform: [{ rotate: '180deg' }] } : undefined}
