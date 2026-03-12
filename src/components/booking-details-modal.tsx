@@ -29,6 +29,8 @@ import {
   RotateCcw,
   Loader2,
   ShieldCheck,
+  ChevronDown,
+  Settings2,
 } from "lucide-react";
 
 type ModifiedFromInfo = {
@@ -126,6 +128,9 @@ export function BookingDetailsModal({
   // Policy modal state
   const [showPolicyModal, setShowPolicyModal] = useState(false);
 
+  // Collapsible manage section
+  const [manageOpen, setManageOpen] = useState(false);
+
   // Cancel flow state
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [adminRefundType, setAdminRefundType] = useState<
@@ -165,6 +170,7 @@ export function BookingDetailsModal({
       setAdminRefundType("full");
       setPartialAmount("");
       setRefundNote("");
+      setManageOpen(false);
       return;
     }
 
@@ -971,8 +977,9 @@ export function BookingDetailsModal({
       <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center justify-between pr-6">
-            <DialogTitle className="font-mono text-lg">
-              {booking.confirmation_code}
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Calendar className="h-5 w-5 text-muted-foreground" />
+              {dateStr}
             </DialogTitle>
             <div className="flex items-center gap-2">
               {(() => {
@@ -1022,10 +1029,33 @@ export function BookingDetailsModal({
               )}
             </div>
           </div>
-          <DialogDescription>Booked on {createdStr}</DialogDescription>
+          <DialogDescription className="sr-only">Booking details</DialogDescription>
         </DialogHeader>
 
         <div className="-mx-6 flex-1 space-y-4 overflow-y-auto px-6">
+          {/* Key booking details */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium">{timeStr}</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <MapPin className="h-4 w-4 text-muted-foreground" />
+              <span>
+                {booking.bayName}
+                {booking.locationName && (
+                  <span className="text-muted-foreground"> – {booking.locationName}</span>
+                )}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Booked on {createdStr}
+            </p>
+            <p className="font-mono text-xs text-muted-foreground">
+              {booking.confirmation_code}
+            </p>
+          </div>
+
           {notice && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
               {notice}
@@ -1077,27 +1107,6 @@ export function BookingDetailsModal({
               )}
             </div>
           )}
-
-          {/* Booking Details */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 text-sm">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span className="font-medium">{dateStr}</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <Clock className="h-4 w-4 text-muted-foreground" />
-              <span>{timeStr}</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <MapPin className="h-4 w-4 text-muted-foreground" />
-              <span>
-                {booking.bayName}
-                {booking.locationName && (
-                  <span className="text-muted-foreground"> · {booking.locationName}</span>
-                )}
-              </span>
-            </div>
-          </div>
 
           {/* Slot Breakdown */}
           <div>
@@ -1186,27 +1195,6 @@ export function BookingDetailsModal({
               </div>
             )}
 
-          {/* Customer: cancellation window info for confirmed bookings */}
-          {variant === "customer" &&
-            booking.status === "confirmed" &&
-            paymentMode !== "none" &&
-            paymentInfo && (
-              <div
-                className={`flex items-start gap-2 rounded-lg border p-3 text-xs ${
-                  insideWindow
-                    ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400"
-                    : "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400"
-                }`}
-              >
-                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>
-                  {insideWindow
-                    ? `This booking is within the ${cancellationWindowHours}-hour cancellation window. Cancellations will not receive a refund. Modifications are not available.`
-                    : `Free cancellation available until ${cancellationWindowHours} hours before your booking. After that, no refund will be issued.`}
-                </span>
-              </div>
-            )}
-
           {/* Notes */}
           {booking.notes && (
             <div>
@@ -1242,79 +1230,109 @@ export function BookingDetailsModal({
           )}
         </div>
 
-        {/* Footer: Actions */}
-        <div className="mt-2 space-y-2 border-t pt-4">
-          {/* Cancellation/modification deadline notice for confirmed bookings */}
-          {booking.status === "confirmed" &&
-            paymentMode !== "none" &&
-            !showCancelConfirm &&
-            !showRefundForm &&
-            (() => {
-              if (!insideWindow && (booking.canCancel || booking.canModify)) {
-                const deadlineMs =
-                  new Date(booking.start_time).getTime() -
-                  cancellationWindowHours * 60 * 60 * 1000;
-                const deadline = new Date(deadlineMs);
-                const dateStr = deadline.toLocaleDateString("en-US", {
-                  timeZone: timezone,
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                });
-                const timeStr = deadline.toLocaleTimeString("en-US", {
-                  timeZone: timezone,
-                  hour: "numeric",
-                  minute: "2-digit",
-                });
-                return (
-                  <p className="text-xs text-muted-foreground text-center pb-1">
-                    This booking can be canceled or modified until {dateStr} at {timeStr}
-                  </p>
-                );
-              }
-              return null;
-            })()}
+        {/* Collapsible Manage section */}
+        {(booking.canCancel || effectiveCanModify || canProcessRefund) && (
+          <div className="border-t">
+            <button
+              type="button"
+              onClick={() => setManageOpen(!manageOpen)}
+              className="flex w-full items-center justify-between py-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <span className="flex items-center gap-2">
+                <Settings2 className="h-4 w-4" />
+                Manage
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform duration-200 ${manageOpen ? "rotate-180" : ""}`}
+              />
+            </button>
 
-          {showCancelConfirm ? (
-            renderCancelConfirmation()
-          ) : showRefundForm ? (
-            renderProcessRefundForm()
-          ) : (
-            <>
-              {effectiveCanModify && (
-                <Link
-                  href={`/modify/${booking.id}`}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-primary/20 bg-white px-4 py-2.5 text-sm font-medium text-primary shadow-sm transition-colors hover:bg-primary/5 dark:border-primary/30 dark:bg-transparent dark:hover:bg-primary/10"
-                >
-                  <Pencil className="h-4 w-4" />
-                  Modify Booking
-                </Link>
-              )}
+            {manageOpen && (
+              <div className="space-y-2 pb-2">
+                {/* Cancellation/modification deadline notice */}
+                {booking.status === "confirmed" &&
+                  paymentMode !== "none" &&
+                  !showCancelConfirm &&
+                  !showRefundForm &&
+                  (() => {
+                    if (insideWindow) {
+                      return (
+                        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          <span>
+                            This booking is within the {cancellationWindowHours}-hour cancellation window. Cancellations will not receive a refund. Modifications are not available.
+                          </span>
+                        </div>
+                      );
+                    }
+                    if (booking.canCancel || booking.canModify) {
+                      const deadlineMs =
+                        new Date(booking.start_time).getTime() -
+                        cancellationWindowHours * 60 * 60 * 1000;
+                      const deadline = new Date(deadlineMs);
+                      const dlDateStr = deadline.toLocaleDateString("en-US", {
+                        timeZone: timezone,
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      });
+                      const dlTimeStr = deadline.toLocaleTimeString("en-US", {
+                        timeZone: timezone,
+                        hour: "numeric",
+                        minute: "2-digit",
+                      });
+                      return (
+                        <p className="text-xs text-muted-foreground pb-1">
+                          This booking can be canceled or modified until {dlDateStr} at {dlTimeStr}
+                        </p>
+                      );
+                    }
+                    return null;
+                  })()}
 
-              {booking.canCancel && cancelAction && (
-                <button
-                  type="button"
-                  onClick={() => setShowCancelConfirm(true)}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 dark:border-red-800 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
-                >
-                  <X className="h-4 w-4" />
-                  Cancel Booking
-                </button>
-              )}
+                {showCancelConfirm ? (
+                  renderCancelConfirmation()
+                ) : showRefundForm ? (
+                  renderProcessRefundForm()
+                ) : (
+                  <>
+                    {effectiveCanModify && (
+                      <Link
+                        href={`/modify/${booking.id}`}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-primary/20 bg-white px-4 py-2.5 text-sm font-medium text-primary shadow-sm transition-colors hover:bg-primary/5 dark:border-primary/30 dark:bg-transparent dark:hover:bg-primary/10"
+                      >
+                        <Pencil className="h-4 w-4" />
+                        Modify Booking
+                      </Link>
+                    )}
 
-              {canProcessRefund && refundable > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowRefundForm(true)}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-green-200 bg-white px-4 py-2.5 text-sm font-medium text-green-700 shadow-sm transition-colors hover:bg-green-50 dark:border-green-800 dark:bg-transparent dark:text-green-400 dark:hover:bg-green-950/30"
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  Process Refund
-                </button>
-              )}
-            </>
-          )}
-        </div>
+                    {booking.canCancel && cancelAction && (
+                      <button
+                        type="button"
+                        onClick={() => setShowCancelConfirm(true)}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 dark:border-red-800 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
+                      >
+                        <X className="h-4 w-4" />
+                        Cancel Booking
+                      </button>
+                    )}
+
+                    {canProcessRefund && refundable > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowRefundForm(true)}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-green-200 bg-white px-4 py-2.5 text-sm font-medium text-green-700 shadow-sm transition-colors hover:bg-green-50 dark:border-green-800 dark:bg-transparent dark:text-green-400 dark:hover:bg-green-950/30"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                        Process Refund
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </DialogContent>
 
       {/* Cancellation Policy Modal (nested dialog) */}

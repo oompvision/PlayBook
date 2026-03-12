@@ -323,18 +323,18 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
                         >
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between">
-                              <span className="font-mono text-[11px] text-muted-foreground">
-                                {booking.confirmation_code}
-                              </span>
-                              <ArrowUpRight className="h-3 w-3 text-muted-foreground" />
-                            </div>
-                            <p className="mt-1 text-sm font-medium">{bayName}</p>
-                            <div className="mt-1 flex items-center justify-between">
-                              <p className="text-xs text-muted-foreground">
+                              <p className="text-sm font-medium">
                                 {formatBookingDate(booking.date)} &middot;{" "}
                                 {formatTime(booking.start_time, timezone)} &ndash;{" "}
                                 {formatTime(booking.end_time, timezone)}
                               </p>
+                              <ArrowUpRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+                            </div>
+                            <p className="mt-0.5 text-xs text-muted-foreground">{bayName}</p>
+                            <div className="mt-0.5 flex items-center justify-between">
+                              <span className="font-mono text-[11px] text-muted-foreground">
+                                {booking.confirmation_code}
+                              </span>
                               <span className="text-xs font-semibold">{price}</span>
                             </div>
                           </div>
