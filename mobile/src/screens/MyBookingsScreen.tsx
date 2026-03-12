@@ -51,6 +51,7 @@ export function MyBookingsScreen() {
   const [bookingSlotIds, setBookingSlotIds] = useState<Record<string, string[]>>({});
   const [cancellationWindowHours, setCancellationWindowHours] = useState<number | null>(null);
   const [hasPaymentMode, setHasPaymentMode] = useState(false);
+  const [paymentModeStr, setPaymentModeStr] = useState('none');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
@@ -174,6 +175,7 @@ export function MyBookingsScreen() {
       const ps = paymentSettingsResult.data;
       const active = ps.payment_mode !== 'none' && ps.stripe_onboarding_complete;
       setHasPaymentMode(active);
+      setPaymentModeStr(ps.payment_mode ?? 'none');
       setCancellationWindowHours(active ? (ps.cancellation_window_hours ?? 24) : null);
     }
 
@@ -444,6 +446,7 @@ export function MyBookingsScreen() {
               timezone={tz}
               cancellationWindowHours={cancellationWindowHours}
               hasPaymentMode={hasPaymentMode}
+              paymentMode={paymentModeStr}
               canModify={canModifyBooking(booking)}
               onModify={() => handleModifyBooking(booking)}
               onCancelled={() => handleCancelComplete(booking)}
@@ -453,48 +456,46 @@ export function MyBookingsScreen() {
         );
       }
 
+      const isCancelled = booking.status === 'cancelled';
+      const nowMs = Date.now();
+      const startMs = new Date(booking.start_time).getTime();
+      const endMs = new Date(booking.end_time).getTime();
+      const isActive = !isCancelled && nowMs >= startMs && nowMs < endMs;
+      const isCompleted = !isCancelled && nowMs >= endMs;
+      const showPaid = paymentModeStr === 'charge_upfront' && booking.status === 'confirmed';
+
       return (
         <TouchableOpacity
           activeOpacity={0.7}
           onPress={() => handleToggleExpand(booking.id)}
         >
           <Card style={[styles.bookingCard, !isUpcoming && styles.pastCard]}>
-            <View style={styles.bookingHeader}>
-              <Text style={styles.confirmationCode}>{booking.confirmation_code}</Text>
-              {(() => {
-                if (booking.status === 'cancelled') {
-                  return <Badge label="Cancelled" variant="destructive" />;
-                }
-                const nowMs = Date.now();
-                const startMs = new Date(booking.start_time).getTime();
-                const endMs = new Date(booking.end_time).getTime();
-                if (nowMs >= startMs && nowMs < endMs) {
-                  return (
-                    <View style={styles.activeBadge}>
-                      <View style={styles.activeDot} />
-                      <Text style={styles.activeBadgeText}>Active</Text>
-                    </View>
-                  );
-                }
-                if (nowMs >= endMs) {
-                  return <Badge label="Completed" variant="muted" />;
-                }
-                return <Badge label="Confirmed" variant="success" />;
-              })()}
-            </View>
-
-            <Text style={styles.bookingDate}>{formatDateLong(booking.date)}</Text>
-            <Text style={styles.bookingTime}>
+            <Text style={[styles.cardDateTitle, isCancelled && styles.mutedText]}>
+              {formatDateLong(booking.date)}
+            </Text>
+            <Text style={[styles.cardTimeText, isCancelled && styles.mutedText]}>
               {formatTimeInZone(booking.start_time, tz)} – {formatTimeInZone(booking.end_time, tz)}
             </Text>
-
-            {booking.bays && <Text style={styles.bookingBay}>{booking.bays.name}</Text>}
-
-            <View style={styles.bookingFooter}>
-              <Text style={styles.bookingPrice}>
-                {formatPrice(booking.total_price_cents - (booking.discount_cents || 0))}
+            {booking.bays && (
+              <Text style={[styles.cardBayText, isCancelled && styles.mutedText]}>
+                {booking.bays.name}
               </Text>
-              <Text style={styles.tapHint}>Tap for details</Text>
+            )}
+            <View style={styles.cardCodeRow}>
+              <Text style={styles.cardCodeText}>{booking.confirmation_code}</Text>
+              {isCancelled ? (
+                <Badge label="Cancelled" variant="destructive" />
+              ) : isActive ? (
+                <View style={styles.activeBadge}>
+                  <View style={styles.activeDot} />
+                  <Text style={styles.activeBadgeText}>Active</Text>
+                </View>
+              ) : isCompleted ? (
+                <Badge label="Completed" variant="muted" />
+              ) : (
+                <Badge label="Confirmed" variant="success" />
+              )}
+              {showPaid && <Badge label="Paid" variant="success" />}
             </View>
           </Card>
         </TouchableOpacity>
@@ -678,52 +679,39 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#ffffff',
   },
-  bookingHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  confirmationCode: {
-    ...typography.label,
+  cardDateTitle: {
+    ...typography.h3,
     color: colors.foreground,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  cardTimeText: {
+    ...typography.bodySmall,
+    color: colors.foreground,
+    marginTop: 2,
+  },
+  cardBayText: {
+    ...typography.bodySmall,
+    color: colors.mutedForeground,
+    marginTop: 2,
+  },
+  cardCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  cardCodeText: {
+    ...typography.caption,
+    color: colors.mutedForeground,
     fontFamily: 'monospace',
-    letterSpacing: 1,
+  },
+  mutedText: {
+    color: colors.mutedForeground,
   },
   eventName: {
     ...typography.h3,
     color: colors.foreground,
     marginBottom: 4,
-  },
-  bookingDate: {
-    ...typography.body,
-    color: colors.foreground,
-  },
-  bookingTime: {
-    ...typography.bodySmall,
-    color: colors.mutedForeground,
-    marginTop: 2,
-  },
-  bookingBay: {
-    ...typography.bodySmall,
-    color: colors.mutedForeground,
-    marginTop: spacing.xs,
-  },
-  bookingFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  bookingPrice: {
-    ...typography.h3,
-    color: colors.foreground,
-  },
-  tapHint: {
-    ...typography.caption,
-    color: colors.mutedForeground,
   },
 });

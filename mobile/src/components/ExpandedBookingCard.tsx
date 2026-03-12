@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabase';
 import { formatPrice, formatTimeInZone, formatDateLong } from '../lib/format';
 import { Badge } from './Badge';
 import { Button } from './Button';
+import { Feather } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../theme';
 import type { Booking, ModifiedFromInfo } from '../types';
 
@@ -43,6 +44,7 @@ interface Props {
   timezone: string;
   cancellationWindowHours: number | null;
   hasPaymentMode: boolean;
+  paymentMode?: string;
   canModify: boolean;
   onModify: () => void;
   onCancelled: () => void;
@@ -80,6 +82,7 @@ export function ExpandedBookingCard({
   timezone,
   cancellationWindowHours,
   hasPaymentMode,
+  paymentMode,
   canModify,
   onModify,
   onCancelled,
@@ -92,6 +95,7 @@ export function ExpandedBookingCard({
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [showPolicy, setShowPolicy] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
 
   const isUpcoming =
     booking.status === 'confirmed' && booking.date >= new Date().toISOString().slice(0, 10);
@@ -218,49 +222,71 @@ export function ExpandedBookingCard({
     return `${datePart}, ${timePart}`;
   };
 
+  // Determine paid badge
+  const showPaidBadge =
+    paymentMode === 'charge_upfront' && booking.status === 'confirmed';
+
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* Header — Date as primary title */}
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.confirmationCode}>{booking.confirmation_code}</Text>
+          <View style={styles.detailRow}>
+            <Feather name="calendar" size={16} color={colors.mutedForeground} />
+            <Text style={styles.dateTitle}>{formatDateLong(booking.date)}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Feather name="clock" size={16} color={colors.mutedForeground} />
+            <Text style={styles.timeSubtitle}>
+              {formatTimeInZone(booking.start_time, timezone)} – {formatTimeInZone(booking.end_time, timezone)}
+            </Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Feather name="map-pin" size={16} color={colors.mutedForeground} />
+            <Text style={styles.locationSubtitle}>
+              {booking.bays?.name ?? 'Unknown'}
+              {booking.organizations?.name ? ` – ${booking.organizations.name}` : ''}
+            </Text>
+          </View>
           <Text style={styles.createdAt}>
             {formatCreatedAt(booking.created_at, timezone)}
           </Text>
+          <View style={styles.codeBadgeRow}>
+            <Text style={styles.confirmationCodeSmall}>{booking.confirmation_code}</Text>
+            <Badge
+              label={booking.status === 'confirmed' ? 'Confirmed' : 'Cancelled'}
+              variant={booking.status === 'confirmed' ? 'success' : 'destructive'}
+            />
+            {showPaidBadge && (
+              <Badge label="Paid" variant="success" />
+            )}
+            {!showPaidBadge && !loadingPayment && paymentInfo && (
+              <Badge
+                label={
+                  paymentInfo.status === 'charged'
+                    ? 'Paid'
+                    : paymentInfo.status === 'refunded'
+                    ? 'Refunded'
+                    : paymentInfo.status === 'partial_refund'
+                    ? 'Partial Refund'
+                    : paymentInfo.status === 'card_saved'
+                    ? 'Card Saved'
+                    : paymentInfo.status
+                }
+                variant={
+                  paymentInfo.status === 'charged'
+                    ? 'success'
+                    : paymentInfo.status === 'refunded' || paymentInfo.status === 'partial_refund'
+                    ? 'muted'
+                    : 'default'
+                }
+              />
+            )}
+          </View>
         </View>
         <TouchableOpacity onPress={onCollapse} style={styles.closeButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Text style={styles.closeIcon}>✕</Text>
+          <Feather name="x" size={18} color={colors.mutedForeground} />
         </TouchableOpacity>
-      </View>
-
-      {/* Status badges */}
-      <View style={styles.badgeRow}>
-        <Badge
-          label={booking.status === 'confirmed' ? 'Confirmed' : 'Cancelled'}
-          variant={booking.status === 'confirmed' ? 'success' : 'destructive'}
-        />
-        {!loadingPayment && paymentInfo && (
-          <Badge
-            label={
-              paymentInfo.status === 'charged'
-                ? 'Paid'
-                : paymentInfo.status === 'refunded'
-                ? 'Refunded'
-                : paymentInfo.status === 'partial_refund'
-                ? 'Partial Refund'
-                : paymentInfo.status === 'card_saved'
-                ? 'Card Saved'
-                : paymentInfo.status
-            }
-            variant={
-              paymentInfo.status === 'charged'
-                ? 'success'
-                : paymentInfo.status === 'refunded' || paymentInfo.status === 'partial_refund'
-                ? 'muted'
-                : 'default'
-            }
-          />
-        )}
       </View>
 
       {/* Modified from info */}
@@ -277,19 +303,6 @@ export function ExpandedBookingCard({
           </Text>
         </View>
       )}
-
-      {/* Booking details */}
-      <View style={styles.detailsSection}>
-        <DetailRow icon="📅" text={formatDateLong(booking.date)} />
-        <DetailRow
-          icon="🕐"
-          text={`${formatTimeInZone(booking.start_time, timezone)} – ${formatTimeInZone(booking.end_time, timezone)}`}
-        />
-        <DetailRow
-          icon="📍"
-          text={`${booking.bays?.name ?? 'Unknown'}${booking.organizations?.name ? ` · ${booking.organizations.name}` : ''}`}
-        />
-      </View>
 
       {/* Pricing breakdown */}
       <View style={styles.pricingSection}>
@@ -363,148 +376,159 @@ export function ExpandedBookingCard({
         </View>
       )}
 
-      {/* Cancellation window notice */}
-      {isUpcoming && hasPaymentMode && cancellationWindowHours !== null && !showCancelConfirm && (
-        <View style={insideWindow ? styles.windowBannerAmber : styles.windowBannerGreen}>
-          {insideWindow ? (
-            <>
-              <Text style={styles.windowTitleAmber}>
-                This booking is within the {cancellationWindowHours}-hour cancellation window.
-              </Text>
-              <Text style={styles.windowDescAmber}>
-                Cancellations will not receive a refund. Modifications are not available.
-              </Text>
-            </>
-          ) : (
-            <>
-              <Text style={styles.windowTitleGreen}>
-                Free cancellation until {getCancellationDeadline()}
-              </Text>
-              <Text style={styles.windowDescGreen}>
-                Cancel before the {cancellationWindowHours}-hour window for a full refund.
-              </Text>
-            </>
-          )}
-        </View>
-      )}
-
-      {/* Cancel confirmation inline */}
-      {showCancelConfirm && (
-        <View style={styles.cancelConfirmSection}>
-          <Text style={styles.cancelConfirmTitle}>Cancel Booking</Text>
-
-          {loadingPayment ? (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator size="small" color={colors.primary} />
-              <Text style={styles.loadingText}>Checking payment status...</Text>
-            </View>
-          ) : (
-            <>
-              {insideWindow && (
-                <View style={styles.refundBannerAmber}>
-                  <Text style={styles.refundTitleAmber}>No refund will be issued</Text>
-                  <Text style={styles.refundDescAmber}>
-                    This booking is within the {cancellationWindowHours}-hour cancellation
-                    window. If you believe you should receive a refund, please contact the
-                    facility after cancelling.
-                  </Text>
-                  {policyText && (
-                    <TouchableOpacity onPress={() => setShowPolicy(!showPolicy)}>
-                      <Text style={styles.policyLinkAmber}>
-                        {showPolicy ? 'Hide' : 'View'} Cancellation Policy
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-
-              {!insideWindow && hasPaidBooking && (
-                <View style={styles.refundBannerGreen}>
-                  <Text style={styles.refundTitleGreen}>Full refund will be issued</Text>
-                  <Text style={styles.refundDescGreen}>
-                    A full refund of {formatPrice(paymentInfo?.amount_cents || 0)} will be
-                    processed automatically.
-                  </Text>
-                  {policyText && (
-                    <TouchableOpacity onPress={() => setShowPolicy(!showPolicy)}>
-                      <Text style={styles.policyLink}>
-                        {showPolicy ? 'Hide' : 'View'} Cancellation Policy
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-
-              {!insideWindow && !hasPaidBooking && (
-                <Text style={styles.simpleConfirmText}>
-                  Are you sure you want to cancel this booking? This action cannot be undone.
-                </Text>
-              )}
-
-              {showPolicy && policyText && (
-                <View style={styles.policyBox}>
-                  <Text style={styles.policyTitle}>Cancellation Policy</Text>
-                  <Text style={styles.policyTextContent}>{policyText}</Text>
-                </View>
-              )}
-            </>
-          )}
-
-          <View style={styles.cancelActions}>
-            <TouchableOpacity
-              style={styles.goBackButton}
-              onPress={handleCancelGoBack}
-              disabled={cancelling}
-            >
-              <Text style={styles.goBackText}>Go Back</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.confirmCancelButton, cancelling && styles.disabledButton]}
-              onPress={handleConfirmCancel}
-              disabled={cancelling || loadingPayment}
-            >
-              {cancelling ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.confirmCancelText}>Cancel Booking</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* Action buttons (only for upcoming, not in cancel confirm mode) */}
-      {isUpcoming && !showCancelConfirm && (
-        <View style={styles.actionButtons}>
-          {canModify && (
-            <Button
-              title="Modify Booking"
-              variant="secondary"
-              size="md"
-              onPress={onModify}
-              style={styles.actionButton}
-            />
-          )}
+      {/* Collapsible Manage section */}
+      {isUpcoming && (
+        <View style={styles.manageSection}>
           <TouchableOpacity
-            style={styles.cancelBookingButton}
-            onPress={handleCancelPress}
+            style={styles.manageHeader}
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setManageOpen(!manageOpen);
+            }}
           >
-            <Text style={styles.cancelBookingText}>✕  Cancel Booking</Text>
+            <View style={styles.manageHeaderLeft}>
+              <Feather name="sliders" size={14} color={colors.mutedForeground} />
+              <Text style={styles.manageHeaderText}>Manage</Text>
+            </View>
+            <Feather
+              name="chevron-down"
+              size={16}
+              color={colors.mutedForeground}
+              style={manageOpen ? { transform: [{ rotate: '180deg' }] } : undefined}
+            />
           </TouchableOpacity>
+
+          {manageOpen && (
+            <View style={styles.manageContent}>
+              {/* Cancellation window notice */}
+              {hasPaymentMode && cancellationWindowHours !== null && !showCancelConfirm && (
+                insideWindow ? (
+                  <View style={styles.windowBannerAmber}>
+                    <Text style={styles.windowTitleAmber}>
+                      This booking is within the {cancellationWindowHours}-hour cancellation window.
+                    </Text>
+                    <Text style={styles.windowDescAmber}>
+                      Cancellations will not receive a refund. Modifications are not available.
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.manageDeadlineText}>
+                    This booking can be canceled or modified until {getCancellationDeadline()}
+                  </Text>
+                )
+              )}
+
+              {/* Cancel confirmation inline */}
+              {showCancelConfirm ? (
+                <View style={styles.cancelConfirmSection}>
+                  <Text style={styles.cancelConfirmTitle}>Cancel Booking</Text>
+
+                  {loadingPayment ? (
+                    <View style={styles.loadingRow}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                      <Text style={styles.loadingText}>Checking payment status...</Text>
+                    </View>
+                  ) : (
+                    <>
+                      {insideWindow && (
+                        <View style={styles.refundBannerAmber}>
+                          <Text style={styles.refundTitleAmber}>No refund will be issued</Text>
+                          <Text style={styles.refundDescAmber}>
+                            This booking is within the {cancellationWindowHours}-hour cancellation
+                            window. If you believe you should receive a refund, please contact the
+                            facility after cancelling.
+                          </Text>
+                          {policyText && (
+                            <TouchableOpacity onPress={() => setShowPolicy(!showPolicy)}>
+                              <Text style={styles.policyLinkAmber}>
+                                {showPolicy ? 'Hide' : 'View'} Cancellation Policy
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      )}
+
+                      {!insideWindow && hasPaidBooking && (
+                        <View style={styles.refundBannerGreen}>
+                          <Text style={styles.refundTitleGreen}>Full refund will be issued</Text>
+                          <Text style={styles.refundDescGreen}>
+                            A full refund of {formatPrice(paymentInfo?.amount_cents || 0)} will be
+                            processed automatically.
+                          </Text>
+                          {policyText && (
+                            <TouchableOpacity onPress={() => setShowPolicy(!showPolicy)}>
+                              <Text style={styles.policyLink}>
+                                {showPolicy ? 'Hide' : 'View'} Cancellation Policy
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      )}
+
+                      {!insideWindow && !hasPaidBooking && (
+                        <Text style={styles.simpleConfirmText}>
+                          Are you sure you want to cancel this booking? This action cannot be undone.
+                        </Text>
+                      )}
+
+                      {showPolicy && policyText && (
+                        <View style={styles.policyBox}>
+                          <Text style={styles.policyTitle}>Cancellation Policy</Text>
+                          <Text style={styles.policyTextContent}>{policyText}</Text>
+                        </View>
+                      )}
+                    </>
+                  )}
+
+                  <View style={styles.cancelActions}>
+                    <TouchableOpacity
+                      style={styles.goBackButton}
+                      onPress={handleCancelGoBack}
+                      disabled={cancelling}
+                    >
+                      <Text style={styles.goBackText}>Go Back</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.confirmCancelButton, cancelling && styles.disabledButton]}
+                      onPress={handleConfirmCancel}
+                      disabled={cancelling || loadingPayment}
+                    >
+                      {cancelling ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.confirmCancelText}>Cancel Booking</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                /* Action buttons */
+                <View style={styles.actionButtons}>
+                  {canModify && (
+                    <Button
+                      title="Modify Booking"
+                      variant="secondary"
+                      size="md"
+                      onPress={onModify}
+                      style={styles.actionButton}
+                    />
+                  )}
+                  <TouchableOpacity
+                    style={styles.cancelBookingButton}
+                    onPress={handleCancelPress}
+                  >
+                    <Text style={styles.cancelBookingText}>✕  Cancel Booking</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
         </View>
       )}
     </View>
   );
 }
 
-function DetailRow({ icon, text }: { icon: string; text: string }) {
-  return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailIcon}>{icon}</Text>
-      <Text style={styles.detailText}>{text}</Text>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   container: {
@@ -515,24 +539,51 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: spacing.sm,
   },
-  confirmationCode: {
+  dateTitle: {
     ...typography.h3,
     color: colors.foreground,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  timeSubtitle: {
+    ...typography.body,
+    color: colors.foreground,
+    marginTop: 4,
+  },
+  locationSubtitle: {
+    ...typography.bodySmall,
+    color: colors.mutedForeground,
+    marginTop: 4,
+  },
+  confirmationCodeSmall: {
+    ...typography.caption,
+    color: colors.mutedForeground,
     fontFamily: 'monospace',
-    letterSpacing: 1,
+  },
+  codeBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: 4,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: 2,
   },
   createdAt: {
     ...typography.caption,
     color: colors.mutedForeground,
-    marginTop: 2,
+    marginTop: 6,
   },
   closeButton: {
     padding: spacing.xs,
   },
-  closeIcon: {
-    fontSize: 18,
-    color: colors.mutedForeground,
-    fontWeight: '300',
+  manageHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   badgeRow: {
     flexDirection: 'row',
@@ -548,25 +599,6 @@ const styles = StyleSheet.create({
   modifiedFromText: {
     ...typography.caption,
     color: '#2563eb',
-  },
-  detailsSection: {
-    marginBottom: spacing.md,
-    gap: spacing.sm,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  detailIcon: {
-    fontSize: 14,
-    width: 20,
-    textAlign: 'center',
-  },
-  detailText: {
-    ...typography.bodySmall,
-    color: colors.foreground,
-    flex: 1,
   },
   pricingSection: {
     marginBottom: spacing.md,
@@ -840,5 +872,31 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
+  },
+  // Collapsible Manage section
+  manageSection: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: spacing.sm,
+  },
+  manageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+  },
+  manageHeaderText: {
+    ...typography.body,
+    color: colors.mutedForeground,
+    fontWeight: '600',
+  },
+  manageContent: {
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  manageDeadlineText: {
+    ...typography.caption,
+    color: colors.mutedForeground,
+    marginBottom: spacing.xs,
   },
 });
