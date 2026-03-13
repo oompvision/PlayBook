@@ -63,26 +63,37 @@ export default async function EventsPage({
   let isMember = false;
   let eventDiscount: { type: "percent" | "flat"; value: number } | null = null;
   if (auth) {
-    const { data: membership } = await supabase
+    const { data: membership } = await serviceClient
       .from("user_memberships")
-      .select("id, tier_id")
-      .eq("user_id", auth.user.id)
+      .select("status, current_period_end, expires_at, tier_id")
       .eq("org_id", org.id)
-      .in("status", ["active", "admin_granted"])
-      .maybeSingle();
-    isMember = !!membership;
+      .eq("user_id", auth.user.id)
+      .single();
 
-    if (membership?.tier_id) {
-      const { data: tier } = await supabase
-        .from("membership_tiers")
-        .select("event_discount_type, event_discount_value")
-        .eq("id", membership.tier_id)
-        .single();
-      if (tier && tier.event_discount_value > 0) {
-        eventDiscount = {
-          type: tier.event_discount_type as "percent" | "flat",
-          value: Number(tier.event_discount_value),
-        };
+    if (membership) {
+      const now = new Date();
+      isMember = !!(
+        (membership.status === "active" &&
+          (!membership.current_period_end || new Date(membership.current_period_end) > now)) ||
+        (membership.status === "admin_granted" &&
+          (!membership.expires_at || new Date(membership.expires_at) > now)) ||
+        (membership.status === "cancelled" &&
+          membership.current_period_end &&
+          new Date(membership.current_period_end) > now)
+      );
+
+      if (isMember) {
+        const { data: tier } = await serviceClient
+          .from("membership_tiers")
+          .select("event_discount_type, event_discount_value")
+          .eq("org_id", org.id)
+          .single();
+        if (tier && Number(tier.event_discount_value) > 0) {
+          eventDiscount = {
+            type: tier.event_discount_type as "percent" | "flat",
+            value: Number(tier.event_discount_value),
+          };
+        }
       }
     }
   }
