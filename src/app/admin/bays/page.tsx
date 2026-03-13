@@ -147,7 +147,7 @@ export default async function BayManagementPage({
   const totalBays = bays?.length ?? 0;
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-[1100px] space-y-6">
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>

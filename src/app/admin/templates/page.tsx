@@ -39,7 +39,7 @@ export default async function TemplatesPage({
 
   if (org.scheduling_type === "dynamic") {
     return (
-      <div className="space-y-6">
+      <div className="mx-auto max-w-[1100px] space-y-6">
         <div>
           <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
             Templates
@@ -223,7 +223,7 @@ export default async function TemplatesPage({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-[1100px] space-y-6">
       {/* Page Header */}
       <div>
         <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">

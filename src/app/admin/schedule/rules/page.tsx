@@ -48,7 +48,7 @@ export default async function DynamicScheduleRulesPage({
   ]);
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-[1100px] space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
           Schedule Rules
