@@ -144,7 +144,7 @@ export function SchedulingModeSettings({
       {/* Confirmation Dialog */}
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="mx-4 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900">
+          <div className="surface-2 mx-4 w-full max-w-md p-6 dark:bg-gray-900">
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
                 <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />

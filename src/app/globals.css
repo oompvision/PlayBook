@@ -82,7 +82,7 @@
   /* ── Elevation system ── */
   --surface-1-border: #E6E8EB;
   --surface-1-shadow: 0 1px 2px rgba(0,0,0,0.03);
-  --surface-2-shadow: 0 8px 24px rgba(0,0,0,0.08);
+  --surface-2-shadow: 0 10px 30px rgba(0,0,0,0.08);
 
   /* ── Selection state ── */
   --selection-bg: oklch(0.97 0.02 149);
@@ -127,7 +127,7 @@
   /* ── Elevation system (dark) ── */
   --surface-1-border: oklch(0.25 0 0);
   --surface-1-shadow: 0 1px 2px rgba(0,0,0,0.15);
-  --surface-2-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  --surface-2-shadow: 0 10px 30px rgba(0,0,0,0.25);
 
   /* ── Selection state (dark) ── */
   --selection-bg: oklch(0.2 0.04 149);
@@ -150,12 +150,37 @@
 /* ── Elevation utilities ── */
 
 .surface-1 {
+  background: #fff;
   border: 1px solid var(--surface-1-border);
+  border-radius: 12px;
   box-shadow: var(--surface-1-shadow);
+}
+.dark .surface-1 {
+  background: oklch(0.18 0 0);
 }
 
 .surface-2 {
+  background: #fff;
+  border-radius: 12px;
   box-shadow: var(--surface-2-shadow);
+}
+.dark .surface-2 {
+  background: oklch(0.18 0 0);
+}
+
+/* ── Admin layered surface system ── */
+
+/* Layer 0 — Page background */
+.admin-ui {
+  background: #F6F7F8;
+}
+.dark .admin-ui {
+  background: oklch(0.145 0 0);
+}
+
+/* Layer 1 — Enforce 12px radius on admin cards */
+.admin-ui .rounded-2xl {
+  border-radius: 12px;
 }
 
 /* ── Premium selection state ── */
@@ -213,7 +238,8 @@
 
 .admin-ui .rounded-2xl[class*="border"][class*="bg-white"],
 .admin-ui .rounded-xl[class*="border"][class*="bg-white"] {
-  transition: box-shadow 140ms ease, transform 140ms ease;
+  box-shadow: var(--surface-1-shadow);
+  transition: box-shadow 140ms ease;
 }
 @media (hover: hover) {
   .admin-ui .rounded-2xl[class*="border"][class*="bg-white"]:hover,
