@@ -21,6 +21,7 @@ import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { formatPrice, formatTimeInZone, getTodayInTimezone, formatDate } from '../lib/format';
 import { usePayment } from '../lib/use-payment';
+import { Feather } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../theme';
 import { CrownIcon } from '../components/TabIcons';
 import { PressableScale } from '../components/PressableScale';
@@ -1081,7 +1082,7 @@ export function BookingScreen({ route, navigation }: Props) {
                 >
                   <View style={eventStyles.cardLeft}>
                     <View style={eventStyles.iconCircle}>
-                      <Text style={eventStyles.iconText}>📅</Text>
+                      <Feather name="calendar" size={16} color={colors.mutedForeground} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <View style={eventStyles.nameRow}>
@@ -1586,11 +1587,15 @@ export function BookingScreen({ route, navigation }: Props) {
                     {/* Icon detail rows — matching web */}
                     <View style={eventStyles.iconDetailRows}>
                       <View style={eventStyles.iconDetailRow}>
-                        <Text style={eventStyles.iconDetailIcon}>📅</Text>
+                        <View style={eventStyles.iconDetailIconWrap}>
+                          <Feather name="calendar" size={14} color={colors.mutedForeground} />
+                        </View>
                         <Text style={eventStyles.iconDetailText}>{formatDate(selectedDate)}</Text>
                       </View>
                       <View style={eventStyles.iconDetailRow}>
-                        <Text style={eventStyles.iconDetailIcon}>🕐</Text>
+                        <View style={eventStyles.iconDetailIconWrap}>
+                          <Feather name="clock" size={14} color={colors.mutedForeground} />
+                        </View>
                         <Text style={eventStyles.iconDetailText}>
                           {formatTimeInZone(selectedEvent.start_time, organization!.timezone)} –{' '}
                           {formatTimeInZone(selectedEvent.end_time, organization!.timezone)}
@@ -1598,12 +1603,16 @@ export function BookingScreen({ route, navigation }: Props) {
                       </View>
                       {selectedEvent.bay_names.length > 0 && (
                         <View style={eventStyles.iconDetailRow}>
-                          <Text style={eventStyles.iconDetailIcon}>📍</Text>
+                          <View style={eventStyles.iconDetailIconWrap}>
+                            <Feather name="map-pin" size={14} color={colors.mutedForeground} />
+                          </View>
                           <Text style={eventStyles.iconDetailText}>{selectedEvent.bay_names.join(', ')}</Text>
                         </View>
                       )}
                       <View style={eventStyles.iconDetailRow}>
-                        <Text style={eventStyles.iconDetailIcon}>👥</Text>
+                        <View style={eventStyles.iconDetailIconWrap}>
+                          <Feather name="users" size={14} color={colors.mutedForeground} />
+                        </View>
                         <Text style={eventStyles.iconDetailText}>
                           {(selectedEvent.capacity - selectedEvent.registered_count) > 0
                             ? `${selectedEvent.capacity - selectedEvent.registered_count} spot${(selectedEvent.capacity - selectedEvent.registered_count) !== 1 ? 's' : ''} remaining`
@@ -2480,6 +2489,11 @@ const eventStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  iconDetailIconWrap: {
+    width: 20,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
   },
   iconDetailIcon: {
     fontSize: 14,
