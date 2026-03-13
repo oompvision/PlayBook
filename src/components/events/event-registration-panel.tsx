@@ -206,6 +206,18 @@ export function EventRegistrationPanel({
 
       setRegistrationId(result.registration_id);
 
+      // Store member discount on the registration so my-bookings can display it
+      const disc = calcEventDiscount(event.priceCents, eventDiscount);
+      if (disc.discountCents > 0) {
+        await supabase
+          .from("event_registrations")
+          .update({
+            discount_cents: disc.discountCents,
+            discount_description: disc.label,
+          })
+          .eq("id", result.registration_id);
+      }
+
       // Free event or no payment required → confirmed immediately
       if (!requiresPayment || result.status === "confirmed") {
         setConfirmed(true);
@@ -221,7 +233,6 @@ export function EventRegistrationPanel({
       }
 
       // Paid event → create checkout intent
-      const disc = calcEventDiscount(event.priceCents, eventDiscount);
       const intentRes = await fetch("/api/stripe/create-event-checkout-intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

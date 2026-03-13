@@ -144,6 +144,8 @@ export default async function MyBookingsPage({
     registered_at: string;
     cancelled_at: string | null;
     promoted_at: string | null;
+    discount_cents: number;
+    discount_description: string | null;
     events: {
       name: string;
       description: string | null;
@@ -167,6 +169,8 @@ export default async function MyBookingsPage({
       registered_at,
       cancelled_at,
       promoted_at,
+      discount_cents,
+      discount_description,
       events:event_id (
         name,
         description,
@@ -208,6 +212,8 @@ export default async function MyBookingsPage({
       startTime: string;
       endTime: string;
       priceCents: number;
+      discountCents: number;
+      discountDescription: string | null;
       capacity: number;
       registeredCount: number;
       bayNames: string;
@@ -236,6 +242,8 @@ export default async function MyBookingsPage({
           startTime: evt.start_time,
           endTime: evt.end_time,
           priceCents: evt.price_cents,
+          discountCents: r.discount_cents || 0,
+          discountDescription: r.discount_description || null,
           capacity: evt.capacity,
           registeredCount: eventCountMap[r.event_id] ?? 0,
           bayNames,
@@ -263,6 +271,8 @@ export default async function MyBookingsPage({
           startTime: evt.start_time,
           endTime: evt.end_time,
           priceCents: evt.price_cents,
+          discountCents: r.discount_cents || 0,
+          discountDescription: r.discount_description || null,
           capacity: evt.capacity,
           registeredCount: eventCountMap[r.event_id] ?? 0,
           bayNames,

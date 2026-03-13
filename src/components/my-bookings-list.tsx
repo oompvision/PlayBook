@@ -65,6 +65,8 @@ type EventData = {
   startTime: string;
   endTime: string;
   priceCents: number;
+  discountCents: number;
+  discountDescription: string | null;
   capacity: number;
   registeredCount: number;
   bayNames: string;
@@ -286,6 +288,8 @@ export function MyBookingsList({
       startTime: eventData.startTime,
       endTime: eventData.endTime,
       priceCents: eventData.priceCents,
+      discountCents: eventData.discountCents || 0,
+      discountDescription: eventData.discountDescription || null,
       capacity: eventData.capacity,
       registeredCount: eventData.registeredCount,
       bayNames: eventData.bayNames,
@@ -481,10 +485,21 @@ export function MyBookingsList({
           <p className="mt-0.5 text-sm text-muted-foreground">
             {timeStr}
             {eventData.bayNames ? ` · ${eventData.bayNames}` : ""}
-            {eventData.priceCents > 0
-              ? ` · ${formatPrice(eventData.priceCents)}`
-              : " · Free"}
           </p>
+          {eventData.priceCents > 0 ? (
+            eventData.discountCents > 0 ? (
+              <p className="mt-0.5 text-xs">
+                <span className="text-muted-foreground line-through">{formatPrice(eventData.priceCents)}</span>
+                <span className="ml-1 font-semibold text-teal-600 dark:text-teal-400">
+                  <Crown className="mr-0.5 inline h-3 w-3" /> {formatPrice(eventData.priceCents - eventData.discountCents)}
+                </span>
+              </p>
+            ) : (
+              <p className="mt-0.5 text-xs font-semibold">{formatPrice(eventData.priceCents)}</p>
+            )
+          ) : (
+            <p className="mt-0.5 text-xs font-semibold text-green-600 dark:text-green-400">Free</p>
+          )}
         </div>
       </button>
     );

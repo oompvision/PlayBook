@@ -33,6 +33,8 @@ export type EventDetailData = {
   startTime: string;
   endTime: string;
   priceCents: number;
+  discountCents: number;
+  discountDescription: string | null;
   capacity: number;
   registeredCount: number;
   bayNames: string;
@@ -220,9 +222,18 @@ export function EventDetailsModal({
             {event.priceCents > 0 && (
               <div className="flex items-center gap-2 text-sm">
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">
-                  {formatPrice(event.priceCents)}
-                </span>
+                {event.discountCents > 0 ? (
+                  <span className="font-medium">
+                    <span className="text-muted-foreground line-through">{formatPrice(event.priceCents)}</span>
+                    <span className="ml-1.5 text-teal-600 dark:text-teal-400">
+                      {formatPrice(event.priceCents - event.discountCents)}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="font-medium">
+                    {formatPrice(event.priceCents)}
+                  </span>
+                )}
               </div>
             )}
             {event.priceCents === 0 && (
@@ -338,7 +349,7 @@ export function EventDetailsModal({
                           <p className="mt-0.5 text-xs">
                             You&apos;re cancelling more than {cancellationWindowHours} hours
                             before the event start time. A full refund of{" "}
-                            {formatPrice(event.priceCents)} will be processed automatically.
+                            {formatPrice(event.priceCents - (event.discountCents || 0))} will be processed automatically.
                           </p>
                         </div>
                       </div>

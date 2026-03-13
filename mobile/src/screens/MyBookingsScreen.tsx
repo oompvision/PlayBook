@@ -95,6 +95,8 @@ export function MyBookingsScreen() {
           registered_at,
           cancelled_at,
           promoted_at,
+          discount_cents,
+          discount_description,
           events:event_id (
             name,
             description,
@@ -584,9 +586,19 @@ export function MyBookingsScreen() {
         {bayNames ? <Text style={styles.bookingBay}>{bayNames}</Text> : null}
 
         <View style={styles.bookingFooter}>
-          <Text style={styles.bookingPrice}>
-            {evt.price_cents > 0 ? formatPrice(evt.price_cents) : 'Free'}
-          </Text>
+          {evt.price_cents > 0 ? (
+            (reg.discount_cents || 0) > 0 ? (
+              <View style={styles.cardPriceRow}>
+                <Text style={styles.cardPriceStrike}>{formatPrice(evt.price_cents)}</Text>
+                <CrownIcon size={13} color="#0d9488" />
+                <Text style={styles.cardPriceDiscount}>{formatPrice(evt.price_cents - (reg.discount_cents || 0))}</Text>
+              </View>
+            ) : (
+              <Text style={styles.bookingPrice}>{formatPrice(evt.price_cents)}</Text>
+            )
+          ) : (
+            <Text style={styles.bookingPrice}>Free</Text>
+          )}
           {canCancel && (
             <Button
               title="Cancel"

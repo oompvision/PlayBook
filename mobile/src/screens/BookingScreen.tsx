@@ -1745,6 +1745,17 @@ export function BookingScreen({ route, navigation }: Props) {
                         const regStatus = (result as any)?.status || 'confirmed';
                         const registrationId = (result as any)?.registration_id;
 
+                        // Store member discount on the registration for display in my-bookings
+                        if (evtDiscount.discountCents > 0 && registrationId) {
+                          await supabase
+                            .from('event_registrations')
+                            .update({
+                              discount_cents: evtDiscount.discountCents,
+                              discount_description: evtDiscount.label,
+                            })
+                            .eq('id', registrationId);
+                        }
+
                         // Record the payment if one was collected
                         if (paymentResult?.intentId && registrationId) {
                           await recordPayment({
@@ -1862,6 +1873,21 @@ export function BookingScreen({ route, navigation }: Props) {
 
                       const result = typeof data === 'object' && data !== null ? data : {};
                       const regStatus = (result as any)?.status || 'confirmed';
+                      const freeRegId = (result as any)?.registration_id;
+
+                      // Store member discount on the registration for display in my-bookings
+                      if (freeRegId) {
+                        const freeDisc = calcEventDiscount(selectedEvent.price_cents);
+                        if (freeDisc.discountCents > 0) {
+                          await supabase
+                            .from('event_registrations')
+                            .update({
+                              discount_cents: freeDisc.discountCents,
+                              discount_description: freeDisc.label,
+                            })
+                            .eq('id', freeRegId);
+                        }
+                      }
 
                       setRegisteringEvent(false);
                       Alert.alert(

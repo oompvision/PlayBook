@@ -158,6 +158,8 @@ export interface EventRegistration {
   registered_at: string;
   cancelled_at: string | null;
   promoted_at: string | null;
+  discount_cents: number;
+  discount_description: string | null;
   events: {
     name: string;
     description: string | null;
