@@ -7,7 +7,6 @@ import Link from "next/link";
 import {
   Plus,
   CalendarDays,
-  CheckCircle2,
   Users,
   Copy,
   Pencil,
@@ -17,6 +16,7 @@ import {
   XCircle,
   LayoutTemplate,
 } from "lucide-react";
+import { SavedToast } from "@/components/admin/saved-toast";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -284,12 +284,7 @@ export default async function EventsPage({
           {params.error}
         </div>
       )}
-      {params.saved && (
-        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          Event saved successfully.
-        </div>
-      )}
+      <SavedToast message="Event saved successfully." />
 
       {/* Status Filter */}
       <div className="flex items-center gap-2">

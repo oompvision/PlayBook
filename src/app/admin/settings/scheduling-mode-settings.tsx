@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
+import { StickyFooter } from "@/components/admin/sticky-footer";
+import { Toast } from "@/components/ui/toast";
 
 type SchedulingMode = "slot_based" | "dynamic";
 
@@ -19,7 +21,7 @@ export function SchedulingModeSettings({
   const [saving, setSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingMode, setPendingMode] = useState<SchedulingMode | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [showToast, setShowToast] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const hasChanges = mode !== initialMode;
@@ -37,7 +39,7 @@ export function SchedulingModeSettings({
     }
     setShowConfirm(false);
     setPendingMode(null);
-    setSaved(false);
+    setShowToast(false);
   }
 
   function cancelModeChange() {
@@ -48,7 +50,7 @@ export function SchedulingModeSettings({
   async function handleSave() {
     setSaving(true);
     setError(null);
-    setSaved(false);
+    setShowToast(false);
 
     try {
       const res = await fetch("/api/admin/scheduling-mode", {
@@ -65,7 +67,7 @@ export function SchedulingModeSettings({
         throw new Error(data.error || "Failed to save");
       }
 
-      setSaved(true);
+      setShowToast(true);
       // Reload to reflect changes across the admin UI (nav links, etc.)
       window.location.reload();
     } catch (err) {
@@ -117,30 +119,27 @@ export function SchedulingModeSettings({
           </button>
         </div>
 
-        {/* Save Button */}
-        {hasChanges && (
-          <div className="flex items-center gap-3 border-t border-gray-200 pt-6 dark:border-white/[0.05]">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "Save Scheduling Mode"}
-            </button>
-            {saved && (
-              <span className="text-sm text-green-600 dark:text-green-400">
-                Saved!
-              </span>
-            )}
-            {error && (
-              <span className="text-sm text-red-600 dark:text-red-400">
-                {error}
-              </span>
-            )}
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+            {error}
           </div>
         )}
       </div>
+
+      <StickyFooter
+        isDirty={hasChanges}
+        saving={saving}
+        onSave={handleSave}
+        submitLabel="Save Scheduling Mode"
+      />
+
+      {showToast && (
+        <Toast
+          message="Scheduling mode saved."
+          duration={5000}
+          onClose={() => setShowToast(false)}
+        />
+      )}
 
       {/* Confirmation Dialog */}
       {showConfirm && (

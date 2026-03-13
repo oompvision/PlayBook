@@ -7,9 +7,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { BrandingSettings } from "../branding-settings";
 import { SettingsAccordion } from "@/components/admin/settings-accordion";
+import { FormStickyFooter } from "@/components/admin/form-sticky-footer";
 import {
   Building2,
-  CheckCircle2,
   Palette,
 } from "lucide-react";
 
@@ -80,21 +80,19 @@ export default async function BusinessDetailsPage({
           {params.error}
         </div>
       )}
-      {params.saved && (
-        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          Settings saved.
-        </div>
-      )}
 
       {/* Business Details */}
-      <SettingsAccordion
-        icon={<Building2 className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
-        title="Business Details"
-        description="These details are shown to customers on your booking pages."
-        defaultOpen
+      <FormStickyFooter
+        action={updateSettings}
+        submitLabel="Save Details"
+        toastMessage="Business details saved."
       >
-        <form action={updateSettings} className="space-y-6">
+        <SettingsAccordion
+          icon={<Building2 className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
+          title="Business Details"
+          description="These details are shown to customers on your booking pages."
+          defaultOpen
+        >
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -142,20 +140,11 @@ export default async function BusinessDetailsPage({
               />
             </div>
           </div>
-
-          <div className="flex items-center gap-4 border-t border-gray-200 pt-6 dark:border-white/[0.05]">
-            <button
-              type="submit"
-              className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
-            >
-              Save Details
-            </button>
-            <p className="text-xs text-gray-400 dark:text-gray-500">
-              Slug: <span className="font-mono">{org.slug}</span>
-            </p>
-          </div>
-        </form>
-      </SettingsAccordion>
+          <p className="mt-4 text-xs text-gray-400 dark:text-gray-500">
+            Slug: <span className="font-mono">{org.slug}</span>
+          </p>
+        </SettingsAccordion>
+      </FormStickyFooter>
 
       {/* Branding Section */}
       <SettingsAccordion

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { resolveLocationId } from "@/lib/location";
 import { Button } from "@/components/ui/button";
+import { SavedToast } from "@/components/admin/saved-toast";
 import {
   Box,
   Plus,
@@ -11,7 +12,6 @@ import {
   Trash2,
   ToggleLeft,
   ToggleRight,
-  CheckCircle2,
 } from "lucide-react";
 
 async function getOrg() {
@@ -170,12 +170,8 @@ export default async function BayManagementPage({
           {params.error}
         </div>
       )}
-      {params.saved && (
-        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          Changes saved successfully.
-        </div>
-      )}
+
+      <SavedToast message="Facility saved successfully." />
 
       {/* Edit form (if editing) */}
       {editingId &&

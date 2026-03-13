@@ -8,10 +8,10 @@ import { redirect } from "next/navigation";
 import { SchedulingModeSettings } from "../scheduling-mode-settings";
 import { EventsSettings } from "../events-settings";
 import { SettingsAccordion } from "@/components/admin/settings-accordion";
+import { FormStickyFooter } from "@/components/admin/form-sticky-footer";
 import {
   Globe,
   Clock,
-  CheckCircle2,
   CalendarCog,
   CalendarDays,
 } from "lucide-react";
@@ -138,12 +138,6 @@ export default async function SchedulingSettingsPage({
           {params.error}
         </div>
       )}
-      {params.saved && (
-        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          Settings saved.
-        </div>
-      )}
 
       {/* Scheduling Mode */}
       <SettingsAccordion
@@ -159,7 +153,12 @@ export default async function SchedulingSettingsPage({
       </SettingsAccordion>
 
       {/* Timezone & Scheduling + Booking Settings share one form */}
-      <form action={updateSchedulingSettings} className="space-y-6">
+      <FormStickyFooter
+        action={updateSchedulingSettings}
+        className="space-y-6"
+        submitLabel="Save Settings"
+        toastMessage="Scheduling settings saved."
+      >
         <SettingsAccordion
           icon={<Globe className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
           title="Timezone & Scheduling"
@@ -206,63 +205,52 @@ export default async function SchedulingSettingsPage({
           title="Booking Settings"
           description="Configure minimum lead times and bookable windows."
         >
-          <div className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Minimum Booking Lead Time (minutes)
-                </label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                Minimum Booking Lead Time (minutes)
+              </label>
+              <input
+                name="min_booking_lead_minutes"
+                type="number"
+                min="0"
+                step="5"
+                defaultValue={org.min_booking_lead_minutes ?? 15}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+              />
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                Time slots starting within this many minutes from now will
+                not be shown to customers. Set to 0 to show all slots until
+                their start time.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                Bookable Window (days)
+              </label>
+              {org.membership_tiers_enabled ? (
+                <div className="flex h-10 items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-400">
+                  {org.guest_booking_window_days ?? org.bookable_window_days ?? 30} days (guest) / {org.member_booking_window_days ?? org.bookable_window_days ?? 30} days (member)
+                </div>
+              ) : (
                 <input
-                  name="min_booking_lead_minutes"
+                  name="bookable_window_days"
                   type="number"
-                  min="0"
-                  step="5"
-                  defaultValue={org.min_booking_lead_minutes ?? 15}
+                  min="1"
+                  max="365"
+                  defaultValue={org.bookable_window_days ?? 30}
                   className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
                 />
-                <p className="text-xs text-gray-400 dark:text-gray-500">
-                  Time slots starting within this many minutes from now will
-                  not be shown to customers. Set to 0 to show all slots until
-                  their start time.
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Bookable Window (days)
-                </label>
-                {org.membership_tiers_enabled ? (
-                  <div className="flex h-10 items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-400">
-                    {org.guest_booking_window_days ?? org.bookable_window_days ?? 30} days (guest) / {org.member_booking_window_days ?? org.bookable_window_days ?? 30} days (member)
-                  </div>
-                ) : (
-                  <input
-                    name="bookable_window_days"
-                    type="number"
-                    min="1"
-                    max="365"
-                    defaultValue={org.bookable_window_days ?? 30}
-                    className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-                  />
-                )}
-                <p className="text-xs text-gray-400 dark:text-gray-500">
-                  {org.membership_tiers_enabled
-                    ? "Bookable Window is managed in the Membership Management settings."
-                    : "How many days into the future customers can book. Admins can still build schedules beyond this window."}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4 border-t border-gray-200 pt-6 dark:border-white/[0.05]">
-              <button
-                type="submit"
-                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
-              >
-                Save Settings
-              </button>
+              )}
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                {org.membership_tiers_enabled
+                  ? "Bookable Window is managed in the Membership Management settings."
+                  : "How many days into the future customers can book. Admins can still build schedules beyond this window."}
+              </p>
             </div>
           </div>
         </SettingsAccordion>
-      </form>
+      </FormStickyFooter>
 
       {/* Events Toggle */}
       <SettingsAccordion

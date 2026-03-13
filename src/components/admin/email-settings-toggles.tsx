@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useTransition } from "react";
-import { Mail, MailX } from "lucide-react";
+import React, { useState } from "react";
 import { updateEmailSetting } from "@/app/admin/settings/email-actions";
+import { StickyFooter } from "@/components/admin/sticky-footer";
+import { Toast } from "@/components/ui/toast";
 
 type EmailSetting = {
   id: string;
@@ -54,13 +55,32 @@ const DISPLAY_ORDER = [
   "welcome",
 ];
 
+type PendingChange = {
+  settingId: string;
+  field: "email_to_customer" | "email_to_admin";
+  value: boolean;
+};
+
 export function EmailSettingsToggles({
   settings,
 }: {
   settings: EmailSetting[];
 }) {
   const [localSettings, setLocalSettings] = useState(settings);
-  const [isPending, startTransition] = useTransition();
+  const [savedSettings, setSavedSettings] = useState(settings);
+  const [saving, setSaving] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Check if any toggles differ from saved state
+  const isDirty = localSettings.some((local) => {
+    const saved = savedSettings.find((s) => s.id === local.id);
+    if (!saved) return false;
+    return (
+      local.email_to_customer !== saved.email_to_customer ||
+      local.email_to_admin !== saved.email_to_admin
+    );
+  });
 
   function handleToggle(
     settingId: string,
@@ -68,25 +88,61 @@ export function EmailSettingsToggles({
     currentValue: boolean
   ) {
     const newValue = !currentValue;
-
-    // Optimistic update
     setLocalSettings((prev) =>
       prev.map((s) =>
         s.id === settingId ? { ...s, [field]: newValue } : s
       )
     );
+    setError(null);
+  }
 
-    startTransition(async () => {
-      const result = await updateEmailSetting(settingId, field, newValue);
-      if (result.error) {
-        // Revert on error
-        setLocalSettings((prev) =>
-          prev.map((s) =>
-            s.id === settingId ? { ...s, [field]: currentValue } : s
-          )
-        );
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+
+    // Collect all changes
+    const changes: PendingChange[] = [];
+    for (const local of localSettings) {
+      const saved = savedSettings.find((s) => s.id === local.id);
+      if (!saved) continue;
+      if (local.email_to_customer !== saved.email_to_customer) {
+        changes.push({
+          settingId: local.id,
+          field: "email_to_customer",
+          value: local.email_to_customer,
+        });
       }
-    });
+      if (local.email_to_admin !== saved.email_to_admin) {
+        changes.push({
+          settingId: local.id,
+          field: "email_to_admin",
+          value: local.email_to_admin,
+        });
+      }
+    }
+
+    try {
+      // Save all changes
+      for (const change of changes) {
+        const result = await updateEmailSetting(
+          change.settingId,
+          change.field,
+          change.value
+        );
+        if (result.error) {
+          throw new Error(result.error);
+        }
+      }
+      // Update saved baseline
+      setSavedSettings([...localSettings]);
+      setShowToast(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+      // Revert to saved state
+      setLocalSettings([...savedSettings]);
+    } finally {
+      setSaving(false);
+    }
   }
 
   const ordered = DISPLAY_ORDER.map((type) =>
@@ -94,99 +150,122 @@ export function EmailSettingsToggles({
   ).filter(Boolean) as EmailSetting[];
 
   return (
-    <div className="divide-y divide-gray-100">
-      {/* Column headers */}
-      <div className="flex items-center gap-4 px-1 pb-3">
-        <div className="flex-1 text-xs font-medium uppercase tracking-wider text-gray-400">
-          Notification Type
+    <>
+      <div className="divide-y divide-gray-100">
+        {/* Column headers */}
+        <div className="flex items-center gap-4 px-1 pb-3">
+          <div className="flex-1 text-xs font-medium uppercase tracking-wider text-gray-400">
+            Notification Type
+          </div>
+          <div className="w-24 text-center text-xs font-medium uppercase tracking-wider text-gray-400">
+            Customer
+          </div>
+          <div className="w-24 text-center text-xs font-medium uppercase tracking-wider text-gray-400">
+            Admin
+          </div>
         </div>
-        <div className="w-24 text-center text-xs font-medium uppercase tracking-wider text-gray-400">
-          Customer
-        </div>
-        <div className="w-24 text-center text-xs font-medium uppercase tracking-wider text-gray-400">
-          Admin
-        </div>
+
+        {ordered.map((setting) => {
+          const label =
+            TYPE_LABELS[setting.notification_type] || setting.notification_type;
+          const hasCustomer = CUSTOMER_TYPES.has(setting.notification_type);
+          const hasAdmin = ADMIN_TYPES.has(setting.notification_type);
+
+          return (
+            <div
+              key={setting.id}
+              className="flex items-center gap-4 px-1 py-3"
+            >
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-700">{label}</p>
+              </div>
+
+              {/* Customer toggle */}
+              <div className="flex w-24 justify-center">
+                {hasCustomer ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleToggle(
+                        setting.id,
+                        "email_to_customer",
+                        setting.email_to_customer
+                      )
+                    }
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                      setting.email_to_customer
+                        ? "bg-blue-600"
+                        : "bg-gray-200"
+                    }`}
+                    aria-label={`${label} email to customer ${setting.email_to_customer ? "on" : "off"}`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                        setting.email_to_customer
+                          ? "translate-x-6"
+                          : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                ) : (
+                  <span className="text-xs text-gray-300">—</span>
+                )}
+              </div>
+
+              {/* Admin toggle */}
+              <div className="flex w-24 justify-center">
+                {hasAdmin ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleToggle(
+                        setting.id,
+                        "email_to_admin",
+                        setting.email_to_admin
+                      )
+                    }
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                      setting.email_to_admin ? "bg-blue-600" : "bg-gray-200"
+                    }`}
+                    aria-label={`${label} email to admin ${setting.email_to_admin ? "on" : "off"}`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                        setting.email_to_admin
+                          ? "translate-x-6"
+                          : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                ) : (
+                  <span className="text-xs text-gray-300">—</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {ordered.map((setting) => {
-        const label =
-          TYPE_LABELS[setting.notification_type] || setting.notification_type;
-        const hasCustomer = CUSTOMER_TYPES.has(setting.notification_type);
-        const hasAdmin = ADMIN_TYPES.has(setting.notification_type);
+      {error && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+          {error}
+        </div>
+      )}
 
-        return (
-          <div
-            key={setting.id}
-            className="flex items-center gap-4 px-1 py-3"
-          >
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-700">{label}</p>
-            </div>
+      <StickyFooter
+        isDirty={isDirty}
+        saving={saving}
+        onSave={handleSave}
+        submitLabel="Save Changes"
+      />
 
-            {/* Customer toggle */}
-            <div className="flex w-24 justify-center">
-              {hasCustomer ? (
-                <button
-                  onClick={() =>
-                    handleToggle(
-                      setting.id,
-                      "email_to_customer",
-                      setting.email_to_customer
-                    )
-                  }
-                  disabled={isPending}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                    setting.email_to_customer
-                      ? "bg-blue-600"
-                      : "bg-gray-200"
-                  }`}
-                  aria-label={`${label} email to customer ${setting.email_to_customer ? "on" : "off"}`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
-                      setting.email_to_customer
-                        ? "translate-x-6"
-                        : "translate-x-1"
-                    }`}
-                  />
-                </button>
-              ) : (
-                <span className="text-xs text-gray-300">—</span>
-              )}
-            </div>
-
-            {/* Admin toggle */}
-            <div className="flex w-24 justify-center">
-              {hasAdmin ? (
-                <button
-                  onClick={() =>
-                    handleToggle(
-                      setting.id,
-                      "email_to_admin",
-                      setting.email_to_admin
-                    )
-                  }
-                  disabled={isPending}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                    setting.email_to_admin ? "bg-blue-600" : "bg-gray-200"
-                  }`}
-                  aria-label={`${label} email to admin ${setting.email_to_admin ? "on" : "off"}`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
-                      setting.email_to_admin
-                        ? "translate-x-6"
-                        : "translate-x-1"
-                    }`}
-                  />
-                </button>
-              ) : (
-                <span className="text-xs text-gray-300">—</span>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+      {showToast && (
+        <Toast
+          message="Notification settings saved."
+          duration={5000}
+          onClose={() => setShowToast(false)}
+        />
+      )}
+    </>
   );
 }

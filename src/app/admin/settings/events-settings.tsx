@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
+import { StickyFooter } from "@/components/admin/sticky-footer";
+import { Toast } from "@/components/ui/toast";
 
 type EventsSettingsProps = {
   initialEnabled: boolean;
@@ -17,7 +19,7 @@ export function EventsSettings({
   const [enabled, setEnabled] = useState(initialEnabled);
   const [baseEnabled, setBaseEnabled] = useState(initialEnabled);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [showToast, setShowToast] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDisableError, setShowDisableError] = useState(false);
 
@@ -34,12 +36,12 @@ export function EventsSettings({
       setEnabled(true);
     }
     setError(null);
-    setSaved(false);
+    setShowToast(false);
   }
 
   async function handleSave() {
     setError(null);
-    setSaved(false);
+    setShowToast(false);
     setSaving(true);
 
     try {
@@ -66,7 +68,7 @@ export function EventsSettings({
         throw new Error("Save appeared to succeed but the value did not persist. Please try again.");
       }
 
-      setSaved(true);
+      setShowToast(true);
       setBaseEnabled(enabled);
       // Use Next.js router refresh to invalidate server component cache
       router.refresh();
@@ -80,6 +82,7 @@ export function EventsSettings({
   const hasChanged = enabled !== baseEnabled;
 
   return (
+    <>
     <div className="space-y-6">
       {/* Toggle */}
       <div className="flex items-center justify-between">
@@ -127,29 +130,27 @@ export function EventsSettings({
         </div>
       )}
 
-      {/* Save button (only show when changed) */}
-      {hasChanged && (
-        <div className="flex items-center gap-3 border-t border-gray-200 pt-6 dark:border-white/[0.05]">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
-            {saving ? "Saving..." : "Save Changes"}
-          </button>
-          {saved && (
-            <span className="text-sm text-green-600 dark:text-green-400">
-              Saved!
-            </span>
-          )}
-          {error && (
-            <span className="text-sm text-red-600 dark:text-red-400">
-              {error}
-            </span>
-          )}
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+          {error}
         </div>
       )}
     </div>
+
+    <StickyFooter
+      isDirty={hasChanged}
+      saving={saving}
+      onSave={handleSave}
+      submitLabel="Save Changes"
+    />
+
+    {showToast && (
+      <Toast
+        message="Events settings saved."
+        duration={5000}
+        onClose={() => setShowToast(false)}
+      />
+    )}
+    </>
   );
 }

@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { AlertTriangle } from "lucide-react";
+import { StickyFooter } from "@/components/admin/sticky-footer";
+import { Toast } from "@/components/ui/toast";
 
 type DiscountType = "flat" | "percent";
 
@@ -36,7 +38,7 @@ export function MembershipTierSettings({
 }: MembershipTierSettingsProps) {
   const [enabled, setEnabled] = useState(initialEnabled);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [showToast, setShowToast] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Tier config
@@ -78,6 +80,21 @@ export function MembershipTierSettings({
   // Disable guard
   const [showDisableError, setShowDisableError] = useState(false);
 
+  const hasChanges =
+    enabled !== initialEnabled ||
+    (enabled && (
+      tierName !== (initialTier?.name ?? "Membership") ||
+      benefitDescription !== (initialTier?.benefit_description ?? "") ||
+      discountType !== (initialTier?.discount_type ?? "percent") ||
+      discountValue !== (initialTier?.discount_value?.toString() ?? "0") ||
+      eventDiscountType !== (initialTier?.event_discount_type ?? "percent") ||
+      eventDiscountValue !== (initialTier?.event_discount_value?.toString() ?? "0") ||
+      priceMonthly !== (initialTier?.price_monthly_cents != null ? (initialTier.price_monthly_cents / 100).toFixed(2) : "") ||
+      priceYearly !== (initialTier?.price_yearly_cents != null ? (initialTier.price_yearly_cents / 100).toFixed(2) : "") ||
+      guestWindow !== (initialGuestBookableWindowDays ?? initialBookableWindowDays) ||
+      memberWindow !== (initialMemberBookableWindowDays ?? initialBookableWindowDays)
+    ));
+
   function handleToggle() {
     if (enabled) {
       // Trying to disable
@@ -98,12 +115,12 @@ export function MembershipTierSettings({
       setEnabled(true);
       setError(null);
     }
-    setSaved(false);
+    setShowToast(false);
   }
 
   async function handleSave() {
     setError(null);
-    setSaved(false);
+    setShowToast(false);
 
     // Validation
     if (enabled) {
@@ -165,9 +182,9 @@ export function MembershipTierSettings({
         throw new Error(data.error || "Failed to save");
       }
 
-      setSaved(true);
+      setShowToast(true);
       // Reload after short delay so admin sees updated state
-      setTimeout(() => window.location.reload(), 1000);
+      setTimeout(() => window.location.reload(), 1500);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -176,6 +193,7 @@ export function MembershipTierSettings({
   }
 
   return (
+    <>
       <div className="space-y-6">
         {/* Toggle */}
         <div className="flex items-center justify-between">
@@ -478,53 +496,30 @@ export function MembershipTierSettings({
               />
             </div>
 
-            {/* Save */}
-            <div className="flex items-center gap-3 border-t border-gray-200 pt-6 dark:border-white/[0.05]">
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-              >
-                {saving ? "Saving..." : "Save Membership Settings"}
-              </button>
-              {saved && (
-                <span className="text-sm text-green-600 dark:text-green-400">
-                  Saved!
-                </span>
-              )}
-              {error && (
-                <span className="text-sm text-red-600 dark:text-red-400">
-                  {error}
-                </span>
-              )}
-            </div>
           </>
         )}
 
-        {/* Save toggle-off state */}
-        {!enabled && enabled !== initialEnabled && (
-          <div className="flex items-center gap-3 border-t border-gray-200 pt-6 dark:border-white/[0.05]">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "Save Changes"}
-            </button>
-            {saved && (
-              <span className="text-sm text-green-600 dark:text-green-400">
-                Saved! Membership Tiers disabled.
-              </span>
-            )}
-            {error && (
-              <span className="text-sm text-red-600 dark:text-red-400">
-                {error}
-              </span>
-            )}
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+            {error}
           </div>
         )}
       </div>
+
+      <StickyFooter
+        isDirty={hasChanges}
+        saving={saving}
+        onSave={handleSave}
+        submitLabel="Save Membership Settings"
+      />
+
+      {showToast && (
+        <Toast
+          message="Membership settings saved."
+          duration={5000}
+          onClose={() => setShowToast(false)}
+        />
+      )}
+    </>
   );
 }
