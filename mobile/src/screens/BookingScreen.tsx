@@ -1546,86 +1546,96 @@ export function BookingScreen({ route, navigation }: Props) {
             </View>
 
             {!eventConfirmStep ? (
-              /* ── Step 1: Event Details (paid events pay directly from here) ── */
+              /* ── Step 1: Event Details (matching web card layout) ── */
               <>
                 <ScrollView contentContainerStyle={eventStyles.modalContent}>
-                  <Badge label="Event" variant="success" />
-
-                  {selectedEvent.description && (
-                    <Text style={eventStyles.modalDescription}>{selectedEvent.description}</Text>
-                  )}
-
-                  <View style={eventStyles.detailRow}>
-                    <Text style={eventStyles.detailLabel}>Date</Text>
-                    <Text style={eventStyles.detailValue}>{formatDate(selectedDate)}</Text>
-                  </View>
-                  <View style={eventStyles.detailRow}>
-                    <Text style={eventStyles.detailLabel}>Time</Text>
-                    <Text style={eventStyles.detailValue}>
-                      {formatTimeInZone(selectedEvent.start_time, organization!.timezone)} –{' '}
-                      {formatTimeInZone(selectedEvent.end_time, organization!.timezone)}
-                    </Text>
-                  </View>
-                  {selectedEvent.bay_names.length > 0 && (
-                    <View style={eventStyles.detailRow}>
-                      <Text style={eventStyles.detailLabel}>Location</Text>
-                      <Text style={eventStyles.detailValue}>{selectedEvent.bay_names.join(', ')}</Text>
+                  {/* Event details card — mirrors web's bordered card */}
+                  <View style={eventStyles.detailsCard}>
+                    {/* Header: name + badge + price */}
+                    <View style={eventStyles.detailsCardHeader}>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={eventStyles.detailsCardName}>{selectedEvent.name}</Text>
+                          <Badge label="Event" variant="success" />
+                        </View>
+                        {selectedEvent.description && (
+                          <Text style={eventStyles.detailsCardDesc}>{selectedEvent.description}</Text>
+                        )}
+                      </View>
+                      {(() => {
+                        const evtDisc = calcEventDiscount(selectedEvent.price_cents);
+                        if (selectedEvent.price_cents === 0) {
+                          return <Text style={eventStyles.detailsCardPrice}>Free</Text>;
+                        }
+                        if (evtDisc.discountCents > 0) {
+                          return (
+                            <View style={{ alignItems: 'flex-end' }}>
+                              <Text style={eventStyles.detailsCardPriceStrike}>{formatPrice(selectedEvent.price_cents)}</Text>
+                              <Text style={eventStyles.detailsCardPriceDiscount}>{formatPrice(evtDisc.finalCents)}</Text>
+                            </View>
+                          );
+                        }
+                        return <Text style={eventStyles.detailsCardPrice}>{formatPrice(selectedEvent.price_cents)}</Text>;
+                      })()}
                     </View>
-                  )}
-                  <View style={eventStyles.detailRow}>
-                    <Text style={eventStyles.detailLabel}>Price</Text>
-                    {(() => {
-                      const evtDisc = calcEventDiscount(selectedEvent.price_cents);
-                      if (selectedEvent.price_cents === 0) return <Text style={eventStyles.detailValue}>Free</Text>;
-                      if (evtDisc.discountCents > 0) {
-                        return (
-                          <View style={{ alignItems: 'flex-end' }}>
-                            <Text style={[eventStyles.detailValue, { textDecorationLine: 'line-through', color: colors.mutedForeground, fontSize: 13 }]}>
-                              {formatPrice(selectedEvent.price_cents)}
-                            </Text>
-                            <Text style={[eventStyles.detailValue, { color: '#0d9488' }]}>
-                              {formatPrice(evtDisc.finalCents)}
-                            </Text>
-                          </View>
-                        );
-                      }
-                      return <Text style={eventStyles.detailValue}>{formatPrice(selectedEvent.price_cents)}</Text>;
-                    })()}
+
+                    {/* Icon detail rows — matching web */}
+                    <View style={eventStyles.iconDetailRows}>
+                      <View style={eventStyles.iconDetailRow}>
+                        <Text style={eventStyles.iconDetailIcon}>📅</Text>
+                        <Text style={eventStyles.iconDetailText}>{formatDate(selectedDate)}</Text>
+                      </View>
+                      <View style={eventStyles.iconDetailRow}>
+                        <Text style={eventStyles.iconDetailIcon}>🕐</Text>
+                        <Text style={eventStyles.iconDetailText}>
+                          {formatTimeInZone(selectedEvent.start_time, organization!.timezone)} –{' '}
+                          {formatTimeInZone(selectedEvent.end_time, organization!.timezone)}
+                        </Text>
+                      </View>
+                      {selectedEvent.bay_names.length > 0 && (
+                        <View style={eventStyles.iconDetailRow}>
+                          <Text style={eventStyles.iconDetailIcon}>📍</Text>
+                          <Text style={eventStyles.iconDetailText}>{selectedEvent.bay_names.join(', ')}</Text>
+                        </View>
+                      )}
+                      <View style={eventStyles.iconDetailRow}>
+                        <Text style={eventStyles.iconDetailIcon}>👥</Text>
+                        <Text style={eventStyles.iconDetailText}>
+                          {(selectedEvent.capacity - selectedEvent.registered_count) > 0
+                            ? `${selectedEvent.capacity - selectedEvent.registered_count} spot${(selectedEvent.capacity - selectedEvent.registered_count) !== 1 ? 's' : ''} remaining`
+                            : 'Event is full'}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
-                  <View style={eventStyles.detailRow}>
-                    <Text style={eventStyles.detailLabel}>Spots</Text>
-                    <Text style={eventStyles.detailValue}>
-                      {(selectedEvent.capacity - selectedEvent.registered_count) > 0
-                        ? `${selectedEvent.capacity - selectedEvent.registered_count} of ${selectedEvent.capacity} remaining`
-                        : 'Full'}
-                    </Text>
-                  </View>
+
                   {selectedEvent.members_only && (
                     <View style={eventStyles.membersOnlyBanner}>
                       <Text style={eventStyles.membersOnlyText}>Members only</Text>
                     </View>
                   )}
 
-                  {/* Member discount breakdown for paid events */}
+                  {/* Member discount breakdown — matching web's green card with crown icon */}
                   {(() => {
                     const evtDisc = calcEventDiscount(selectedEvent.price_cents);
                     const requiresPayment = orgPaymentMode !== 'none' && selectedEvent.price_cents > 0;
                     if (!requiresPayment || evtDisc.discountCents <= 0) return null;
                     return (
-                      <Card style={{ marginTop: spacing.md }}>
-                        <View style={styles.summaryTotal}>
-                          <Text style={styles.totalLabel}>Subtotal</Text>
-                          <Text style={styles.subtotalPrice}>{formatPrice(selectedEvent.price_cents)}</Text>
+                      <View style={eventStyles.discountCard}>
+                        <View style={eventStyles.discountCardRow}>
+                          <Text style={eventStyles.discountCardLabel}>Subtotal</Text>
+                          <Text style={eventStyles.discountCardValue}>{formatPrice(selectedEvent.price_cents)}</Text>
                         </View>
-                        <View style={styles.discountRow}>
-                          <Text style={styles.discountLabel}>★ {evtDisc.label}</Text>
-                          <Text style={styles.discountAmount}>-{formatPrice(evtDisc.discountCents)}</Text>
+                        <View style={eventStyles.discountCardRow}>
+                          <Text style={eventStyles.discountCardHighlight}>👑 {evtDisc.label}</Text>
+                          <Text style={eventStyles.discountCardHighlight}>-{formatPrice(evtDisc.discountCents)}</Text>
                         </View>
-                        <View style={styles.summaryTotal}>
-                          <Text style={styles.totalLabel}>Total</Text>
-                          <Text style={styles.totalPrice}>{formatPrice(evtDisc.finalCents)}</Text>
+                        <View style={eventStyles.discountCardDivider} />
+                        <View style={eventStyles.discountCardRow}>
+                          <Text style={eventStyles.discountCardTotal}>Total</Text>
+                          <Text style={eventStyles.discountCardTotal}>{formatPrice(evtDisc.finalCents)}</Text>
                         </View>
-                      </Card>
+                      </View>
                     );
                   })()}
                 </ScrollView>
@@ -2407,6 +2417,103 @@ const eventStyles = StyleSheet.create({
     textAlign: 'right',
     flex: 1,
     marginLeft: spacing.md,
+  },
+  // Details card — matches web's rounded-lg border border-gray-200 bg-gray-50
+  detailsCard: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb', // gray-200
+    backgroundColor: '#f9fafb', // gray-50
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+  },
+  detailsCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  detailsCardName: {
+    ...typography.label,
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.foreground,
+  },
+  detailsCardDesc: {
+    ...typography.body,
+    color: colors.mutedForeground,
+    marginTop: 4,
+    fontSize: 14,
+  },
+  detailsCardPrice: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.foreground,
+    marginLeft: spacing.sm,
+  },
+  detailsCardPriceStrike: {
+    fontSize: 13,
+    color: colors.mutedForeground,
+    textDecorationLine: 'line-through' as const,
+  },
+  detailsCardPriceDiscount: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#16a34a', // green-600
+    marginLeft: spacing.sm,
+  },
+  iconDetailRows: {
+    marginTop: spacing.md,
+    gap: 6,
+  },
+  iconDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconDetailIcon: {
+    fontSize: 14,
+    width: 20,
+    textAlign: 'center',
+  },
+  iconDetailText: {
+    ...typography.body,
+    color: colors.mutedForeground,
+    fontSize: 14,
+  },
+  // Discount card — matches web's green bordered card
+  discountCard: {
+    borderWidth: 1,
+    borderColor: '#bbf7d0', // green-200
+    backgroundColor: '#f0fdf4', // green-50
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    gap: 4,
+  },
+  discountCardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  discountCardLabel: {
+    fontSize: 14,
+    color: colors.mutedForeground,
+  },
+  discountCardValue: {
+    fontSize: 14,
+    color: colors.foreground,
+  },
+  discountCardHighlight: {
+    fontSize: 14,
+    color: '#16a34a', // green-600
+  },
+  discountCardDivider: {
+    borderTopWidth: 1,
+    borderTopColor: '#bbf7d0', // green-200
+    marginVertical: 2,
+  },
+  discountCardTotal: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.foreground,
   },
   membersOnlyBanner: {
     backgroundColor: '#fef3c7', // amber-100

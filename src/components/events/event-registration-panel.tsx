@@ -13,7 +13,7 @@ import {
   ArrowLeft,
   ArrowRight,
   X,
-  CreditCard,
+  Crown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -91,16 +91,12 @@ export function EventRegistrationPanel({
   const [error, setError] = useState<string | null>(null);
   const [registrationId, setRegistrationId] = useState<string | null>(null);
   const [checkoutIntent, setCheckoutIntent] = useState<CheckoutIntent | null>(null);
-  const [paymentValidated, setPaymentValidated] = useState(false);
-  const [cardBrand, setCardBrand] = useState<string | null>(null);
-  const [cardLast4, setCardLast4] = useState<string | null>(null);
-  const [confirmedPaymentMethodId, setConfirmedPaymentMethodId] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const checkoutFormRef = useRef<CheckoutFormHandle | null>(null);
 
   const requiresPayment =
     paymentMode !== "none" && event.priceCents > 0;
-  const totalSteps = requiresPayment ? 3 : 1;
+  const totalSteps = requiresPayment ? 2 : 1;
   const spotsLeft = event.capacity - event.registeredCount;
 
   useEffect(() => {
@@ -252,39 +248,21 @@ export function EventRegistrationPanel({
     }
   }
 
-  // Step 2 → confirm card info
-  async function handleConfirmCard() {
-    if (!checkoutFormRef.current) return;
+  // Step 2 → confirm card + register & pay in one action
+  async function handleRegisterAndPay() {
+    if (!checkoutFormRef.current || !registrationId || !checkoutIntent) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const result = await checkoutFormRef.current.confirmAndGetCardInfo();
-      if (!result.success) {
-        setError(result.error || "Payment confirmation failed");
+      // Confirm card info
+      const cardResult = await checkoutFormRef.current.confirmAndGetCardInfo();
+      if (!cardResult.success) {
+        setError(cardResult.error || "Payment confirmation failed");
         return;
       }
-      setPaymentValidated(true);
-      setCardBrand(result.cardBrand || null);
-      setCardLast4(result.cardLast4 || null);
-      setConfirmedPaymentMethodId(result.paymentMethodId || null);
-      setStep(3);
-    } catch {
-      setError("Payment confirmation failed. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
 
-  // Step 3 → final confirmation (record payment + mark as complete)
-  async function handleFinalConfirm() {
-    if (!registrationId || !checkoutIntent) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
       // Record the payment in booking_payments (for refund tracking)
       const recordRes = await fetch("/api/stripe/record-booking-payment", {
         method: "POST",
@@ -294,7 +272,7 @@ export function EventRegistrationPanel({
           intent_id: checkoutIntent.intent_id,
           intent_type: checkoutIntent.intent_type,
           stripe_customer_id: checkoutIntent.stripe_customer_id,
-          stripe_payment_method_id: confirmedPaymentMethodId,
+          stripe_payment_method_id: cardResult.paymentMethodId || null,
           amount_cents: checkoutIntent.amount_cents,
           cancellation_policy_text: checkoutIntent.cancellation_policy_text,
           policy_agreed_at: new Date().toISOString(),
@@ -313,7 +291,7 @@ export function EventRegistrationPanel({
       setConfirmed(true);
       onRegistered("confirmed");
     } catch {
-      setError("Confirmation failed. Please try again.");
+      setError("Payment failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -465,7 +443,7 @@ export function EventRegistrationPanel({
                     <span>{formatPrice(event.priceCents)}</span>
                   </div>
                   <div className="flex items-center justify-between text-sm text-green-600 dark:text-green-400">
-                    <span>{disc.label}</span>
+                    <span className="flex items-center gap-1"><Crown className="h-3.5 w-3.5" />{disc.label}</span>
                     <span>-{formatPrice(disc.discountCents)}</span>
                   </div>
                   <div className="mt-1 flex items-center justify-between border-t border-green-200 pt-1 text-sm font-semibold dark:border-green-800">
@@ -515,7 +493,7 @@ export function EventRegistrationPanel({
                 </div>
               )}
 
-              {/* Step 2: Payment */}
+              {/* Step 2: Payment — enter card & register in one step */}
               {step === 2 && checkoutIntent && (
                 <div className="mt-6">
                   <PaymentSection
@@ -530,51 +508,16 @@ export function EventRegistrationPanel({
                     checkoutFormRef={checkoutFormRef}
                   />
                   <Button
-                    onClick={handleConfirmCard}
+                    onClick={handleRegisterAndPay}
                     disabled={loading}
                     className="mt-4 w-full gap-2"
                   >
                     {loading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        Continue
-                        <ArrowRight className="h-4 w-4" />
-                      </>
-                    )}
-                  </Button>
-                </div>
-              )}
-
-              {/* Step 3: Confirm & Pay */}
-              {step === 3 && (
-                <div className="mt-6 space-y-4">
-                  {/* Card info summary */}
-                  {paymentValidated && cardLast4 && (
-                    <div className="flex items-center gap-3 rounded-lg border p-3">
-                      <CreditCard className="h-5 w-5 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">
-                          {cardBrand || "Card"} ending in {cardLast4}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Payment method confirmed
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <Button
-                    onClick={handleFinalConfirm}
-                    disabled={loading}
-                    className="w-full gap-2"
-                  >
-                    {loading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : paymentMode === "charge_upfront" ? (
-                      `Confirm & Pay ${priceLabel}`
+                      `Register & Pay ${priceLabel}`
                     ) : (
-                      `Confirm & Save Card`
+                      `Register & Save Card`
                     )}
                   </Button>
                 </div>
