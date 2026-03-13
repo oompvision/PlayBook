@@ -128,6 +128,8 @@ type MembershipContext = {
   memberWindowDays: number;
   discountType: "flat" | "percent" | null;
   discountValue: number;
+  eventDiscountType: "flat" | "percent" | null;
+  eventDiscountValue: number;
   tierName: string | null;
   membershipEnabled: boolean;
 };
@@ -2593,6 +2595,11 @@ export function DynamicAvailabilityWidget(
           timezone={timezone}
           isAuthenticated={isAuthenticated}
           isMember={membership?.isMember ?? false}
+          eventDiscount={
+            membership?.isMember && membership.eventDiscountType && membership.eventDiscountValue > 0
+              ? { type: membership.eventDiscountType, value: membership.eventDiscountValue }
+              : null
+          }
           paymentMode={paymentMode}
           onClose={() => setSelectedEventForPanel(null)}
           onRegistered={() => {
