@@ -22,6 +22,7 @@ import { Badge } from '../components/Badge';
 import { formatPrice, formatTimeInZone, getTodayInTimezone, formatDate } from '../lib/format';
 import { usePayment } from '../lib/use-payment';
 import { colors, spacing, typography, borderRadius, shadows } from '../theme';
+import { CrownIcon } from '../components/TabIcons';
 import { PressableScale } from '../components/PressableScale';
 import type { MainTabParamList, ModifyBookingParams } from '../navigation/types';
 import type { Bay, BayScheduleSlot, FacilityGroup, AvailableTimeSlot, FacilityEvent } from '../types';
@@ -1330,7 +1331,10 @@ export function BookingScreen({ route, navigation }: Props) {
                         <Text style={styles.subtotalPrice}>{formatPrice(totalCents)}</Text>
                       </View>
                       <View style={styles.discountRow}>
-                        <Text style={styles.discountLabel}>★ {bookingDiscount.label}</Text>
+                        <View style={styles.discountLabelRow}>
+                          <CrownIcon size={13} color="#16a34a" />
+                          <Text style={styles.discountLabel}>{bookingDiscount.label}</Text>
+                        </View>
                         <Text style={styles.discountAmount}>-{formatPrice(bookingDiscount.discountCents)}</Text>
                       </View>
                     </>
@@ -1627,7 +1631,10 @@ export function BookingScreen({ route, navigation }: Props) {
                           <Text style={eventStyles.discountCardValue}>{formatPrice(selectedEvent.price_cents)}</Text>
                         </View>
                         <View style={eventStyles.discountCardRow}>
-                          <Text style={eventStyles.discountCardHighlight}>👑 {evtDisc.label}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <CrownIcon size={13} color="#16a34a" />
+                            <Text style={eventStyles.discountCardHighlight}>{evtDisc.label}</Text>
+                          </View>
                           <Text style={eventStyles.discountCardHighlight}>-{formatPrice(evtDisc.discountCents)}</Text>
                         </View>
                         <View style={eventStyles.discountCardDivider} />
@@ -2160,13 +2167,18 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     paddingHorizontal: spacing.xs,
   },
+  discountLabelRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+  },
   discountLabel: {
     ...typography.bodySmall,
-    color: '#0d9488',
+    color: '#16a34a',
   },
   discountAmount: {
     ...typography.bodySmall,
-    color: '#0d9488',
+    color: '#16a34a',
     fontWeight: '600',
   },
   ctaBar: {

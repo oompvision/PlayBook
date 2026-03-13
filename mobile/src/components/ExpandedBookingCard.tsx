@@ -15,6 +15,7 @@ import { Badge } from './Badge';
 import { Button } from './Button';
 import { Feather } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../theme';
+import { CrownIcon } from './TabIcons';
 import type { Booking, ModifiedFromInfo } from '../types';
 
 // Enable LayoutAnimation on Android
@@ -331,9 +332,12 @@ export function ExpandedBookingCard({
                     <Text style={styles.subtotalValue}>{formatPrice(subtotal)}</Text>
                   </View>
                   <View style={styles.slotRow}>
-                    <Text style={styles.discountLabel}>
-                      ★ {booking.discount_description || 'Member discount'}
-                    </Text>
+                    <View style={styles.discountLabelRow}>
+                      <CrownIcon size={13} color="#16a34a" />
+                      <Text style={styles.discountLabel}>
+                        {booking.discount_description || 'Member discount'}
+                      </Text>
+                    </View>
                     <Text style={styles.discountValue}>-{formatPrice(discount)}</Text>
                   </View>
                 </>
@@ -355,9 +359,12 @@ export function ExpandedBookingCard({
                     </Text>
                   </View>
                   <View style={styles.slotRow}>
-                    <Text style={styles.discountLabel}>
-                      ★ {booking.discount_description || 'Member discount'}
-                    </Text>
+                    <View style={styles.discountLabelRow}>
+                      <CrownIcon size={13} color="#16a34a" />
+                      <Text style={styles.discountLabel}>
+                        {booking.discount_description || 'Member discount'}
+                      </Text>
+                    </View>
                     <Text style={styles.discountValue}>-{formatPrice(discount)}</Text>
                   </View>
                 </>
@@ -646,14 +653,19 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.mutedForeground,
   },
+  discountLabelRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+  },
   discountLabel: {
     ...typography.bodySmall,
-    color: '#0d9488',
+    color: '#16a34a',
     fontWeight: '500',
   },
   discountValue: {
     ...typography.bodySmall,
-    color: '#0d9488',
+    color: '#16a34a',
     fontWeight: '500',
   },
   totalRow: {
