@@ -70,7 +70,7 @@ function calcEventDiscount(priceCents: number, discount: EventDiscountInfo): { d
     label = `${discount.value}% member discount`;
   } else {
     discountCents = Math.min(discount.value * 100, priceCents);
-    label = `$${formatPrice(discount.value * 100)} member discount`;
+    label = `${formatPrice(discount.value * 100)} member discount`;
   }
   return { discountCents, finalCents: priceCents - discountCents, label };
 }
@@ -314,8 +314,8 @@ export function EventRegistrationPanel({
     event.priceCents === 0
       ? "Free"
       : hasDiscount
-        ? `$${formatPrice(disc.finalCents)}`
-        : `$${formatPrice(event.priceCents)}`;
+        ? formatPrice(disc.finalCents)
+        : formatPrice(event.priceCents);
 
   if (!mounted) return null;
 
@@ -410,7 +410,7 @@ export function EventRegistrationPanel({
                   <span className="text-lg font-bold">
                     {hasDiscount ? (
                       <span className="inline-flex flex-col items-end">
-                        <span className="text-sm text-gray-400 line-through">${formatPrice(event.priceCents)}</span>
+                        <span className="text-sm text-gray-400 line-through">{formatPrice(event.priceCents)}</span>
                         <span className="text-green-600 dark:text-green-400">{priceLabel}</span>
                       </span>
                     ) : priceLabel}
@@ -451,15 +451,15 @@ export function EventRegistrationPanel({
                 <div className="mt-3 rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-900/20">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">Subtotal</span>
-                    <span>${formatPrice(event.priceCents)}</span>
+                    <span>{formatPrice(event.priceCents)}</span>
                   </div>
                   <div className="flex items-center justify-between text-sm text-green-600 dark:text-green-400">
                     <span>{disc.label}</span>
-                    <span>-${formatPrice(disc.discountCents)}</span>
+                    <span>-{formatPrice(disc.discountCents)}</span>
                   </div>
                   <div className="mt-1 flex items-center justify-between border-t border-green-200 pt-1 text-sm font-semibold dark:border-green-800">
                     <span>Total</span>
-                    <span>${formatPrice(disc.finalCents)}</span>
+                    <span>{formatPrice(disc.finalCents)}</span>
                   </div>
                 </div>
               )}

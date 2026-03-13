@@ -223,12 +223,12 @@ export function EventCard({
                   if (disc.discountCents > 0) {
                     return (
                       <span className="inline-flex items-center gap-1.5">
-                        <span className="text-gray-400 line-through">${formatPrice(event.priceCents)}</span>
-                        <span className="text-green-600 dark:text-green-400">${formatPrice(disc.finalCents)}</span>
+                        <span className="text-gray-400 line-through">{formatPrice(event.priceCents)}</span>
+                        <span className="text-green-600 dark:text-green-400">{formatPrice(disc.finalCents)}</span>
                       </span>
                     );
                   }
-                  return `$${formatPrice(event.priceCents)}`;
+                  return formatPrice(event.priceCents);
                 })()}
           </span>
         </div>

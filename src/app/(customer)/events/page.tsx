@@ -64,11 +64,11 @@ export default async function EventsPage({
   let eventDiscount: { type: "percent" | "flat"; value: number } | null = null;
   if (auth) {
     const { data: membership } = await supabase
-      .from("customer_memberships")
+      .from("user_memberships")
       .select("id, tier_id")
-      .eq("user_id", auth.profile.id)
+      .eq("user_id", auth.user.id)
       .eq("org_id", org.id)
-      .eq("status", "active")
+      .in("status", ["active", "admin_granted"])
       .maybeSingle();
     isMember = !!membership;
 
