@@ -185,6 +185,74 @@
   transform: scale(0.98);
 }
 
+/* ── Admin dashboard button micro-interactions ── */
+
+.admin-ui button:not([role="switch"]):not(:disabled) {
+  transition: transform 120ms ease, color 150ms, background-color 150ms,
+    border-color 150ms, box-shadow 150ms, opacity 150ms;
+}
+@media (hover: hover) {
+  .admin-ui button:not([role="switch"]):not(:disabled):hover {
+    transform: scale(1.02);
+  }
+}
+.admin-ui button:not([role="switch"]):not(:disabled):active {
+  transform: scale(0.98);
+}
+
+/* ── Admin toggle switches ── */
+
+.admin-ui [role="switch"] {
+  transition: background-color 160ms ease;
+}
+.admin-ui [role="switch"] > span {
+  transition: transform 160ms ease;
+}
+
+/* ── Admin card hover effect ── */
+
+.admin-ui .rounded-2xl[class*="border"][class*="bg-white"],
+.admin-ui .rounded-xl[class*="border"][class*="bg-white"] {
+  transition: box-shadow 140ms ease, transform 140ms ease;
+}
+@media (hover: hover) {
+  .admin-ui .rounded-2xl[class*="border"][class*="bg-white"]:hover,
+  .admin-ui .rounded-xl[class*="border"][class*="bg-white"]:hover {
+    box-shadow: 0 4px 14px rgba(0,0,0,0.06);
+  }
+}
+
+/* ── Dropdown / popover animation ── */
+
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dropdown-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.animate-dropdown-in {
+  animation: dropdown-in 120ms ease forwards;
+}
+.animate-dropdown-out {
+  animation: dropdown-out 120ms ease forwards;
+}
+
 /* ── Animations ── */
 
 @keyframes subtle-pulse {
