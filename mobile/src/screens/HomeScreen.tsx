@@ -177,14 +177,14 @@ export function HomeScreen({ navigation }: Props) {
           style={styles.quickAction}
           onPress={() => (navigation as any).navigate('Book')}
         >
-          <BookIcon size={30} color={colors.primaryForeground} />
+          <BookIcon size={30} color={colors.primary} />
           <Text style={styles.quickActionLabel}>Book Now</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.quickAction}
           onPress={() => (navigation as any).navigate('Bookings')}
         >
-          <BookingsIcon size={30} color={colors.primaryForeground} />
+          <BookingsIcon size={30} color={colors.primary} />
           <Text style={styles.quickActionLabel}>My Bookings</Text>
         </TouchableOpacity>
       </View>
@@ -356,7 +356,7 @@ const styles = StyleSheet.create({
   },
   quickAction: {
     flex: 1,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.selectionBg,
     borderRadius: 12,
     padding: spacing.lg,
     alignItems: 'center',
@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
   quickActionLabel: {
     marginTop: spacing.sm,
     ...typography.button,
-    color: colors.primaryForeground,
+    color: colors.primary,
   },
   section: {
     marginBottom: spacing['2xl'],

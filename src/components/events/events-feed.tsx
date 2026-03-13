@@ -1,11 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
 import { EventCard } from "./event-card";
 
+export type EventDiscountInfo = { type: "percent" | "flat"; value: number } | null;
+
 type EventsFeedProps = {
   orgId: string;
   timezone: string;
   isAuthenticated: boolean;
   isMember: boolean;
+  eventDiscount?: EventDiscountInfo;
   userId?: string;
   paymentMode?: string;
   locationId?: string | null;
@@ -16,6 +19,7 @@ export async function EventsFeed({
   timezone,
   isAuthenticated,
   isMember,
+  eventDiscount = null,
   userId,
   paymentMode = "none",
   locationId,
@@ -125,6 +129,7 @@ export async function EventsFeed({
               timezone={timezone}
               isAuthenticated={isAuthenticated}
               isMember={isMember}
+              eventDiscount={eventDiscount}
               userRegistrationStatus={userStatus}
               paymentMode={paymentMode}
             />

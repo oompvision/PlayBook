@@ -144,6 +144,8 @@ export default async function MyBookingsPage({
     registered_at: string;
     cancelled_at: string | null;
     promoted_at: string | null;
+    discount_cents: number;
+    discount_description: string | null;
     events: {
       name: string;
       description: string | null;
@@ -167,6 +169,8 @@ export default async function MyBookingsPage({
       registered_at,
       cancelled_at,
       promoted_at,
+      discount_cents,
+      discount_description,
       events:event_id (
         name,
         description,
@@ -208,6 +212,8 @@ export default async function MyBookingsPage({
       startTime: string;
       endTime: string;
       priceCents: number;
+      discountCents: number;
+      discountDescription: string | null;
       capacity: number;
       registeredCount: number;
       bayNames: string;
@@ -236,6 +242,8 @@ export default async function MyBookingsPage({
           startTime: evt.start_time,
           endTime: evt.end_time,
           priceCents: evt.price_cents,
+          discountCents: r.discount_cents || 0,
+          discountDescription: r.discount_description || null,
           capacity: evt.capacity,
           registeredCount: eventCountMap[r.event_id] ?? 0,
           bayNames,
@@ -263,6 +271,8 @@ export default async function MyBookingsPage({
           startTime: evt.start_time,
           endTime: evt.end_time,
           priceCents: evt.price_cents,
+          discountCents: r.discount_cents || 0,
+          discountDescription: r.discount_description || null,
           capacity: evt.capacity,
           registeredCount: eventCountMap[r.event_id] ?? 0,
           bayNames,
@@ -271,12 +281,35 @@ export default async function MyBookingsPage({
     })
     .filter((item): item is FeedItemEvent => item !== null);
 
+  // Fetch refund info for cancelled bookings
+  const cancelledBookingIds = enrichedBookings
+    .filter((b) => b.status === "cancelled")
+    .map((b) => b.id);
+  const refundInfoMap: Record<string, { status: string; amount_cents: number | null; refunded_amount_cents: number | null }> = {};
+  if (cancelledBookingIds.length > 0) {
+    const { data: payments } = await service
+      .from("booking_payments")
+      .select("booking_id, status, amount_cents, refunded_amount_cents")
+      .in("booking_id", cancelledBookingIds);
+    if (payments) {
+      for (const p of payments) {
+        refundInfoMap[p.booking_id] = { status: p.status, amount_cents: p.amount_cents, refunded_amount_cents: p.refunded_amount_cents };
+      }
+    }
+  }
+
+  // Attach refund info to enriched bookings
+  const bookingsWithRefund = enrichedBookings.map((b) => ({
+    ...b,
+    refundInfo: refundInfoMap[b.id] ?? null,
+  }));
+
   // Split into upcoming+active vs past+cancelled (using visual status)
-  const upcomingBookings = enrichedBookings.filter((b) => {
+  const upcomingBookings = bookingsWithRefund.filter((b) => {
     const vs = getVisualBookingStatus(b.status, b.start_time, b.end_time);
     return vs === "confirmed" || vs === "active";
   });
-  const pastBookings = enrichedBookings.filter((b) => {
+  const pastBookings = bookingsWithRefund.filter((b) => {
     const vs = getVisualBookingStatus(b.status, b.start_time, b.end_time);
     return vs === "completed" || vs === "cancelled";
   });
@@ -365,18 +398,97 @@ export default async function MyBookingsPage({
   async function cancelEventRegistration(formData: FormData) {
     "use server";
     const supabase = await createClient();
+    const service = createServiceClient();
     const regId = formData.get("registration_id") as string;
+
+    // Get registration details before cancelling (for refund + notification)
+    const { data: regInfo } = await service
+      .from("event_registrations")
+      .select("id, event_id, user_id, org_id, payment_status")
+      .eq("id", regId)
+      .single();
 
     const { error } = await supabase.rpc("cancel_event_registration", {
       p_registration_id: regId,
     });
 
     if (error) {
-      redirect(`/my-bookings?error=${encodeURIComponent(error.message)}`);
+      throw new Error(error.message);
+    }
+
+    // Process Stripe refund if this was a paid event registration
+    if (regInfo?.payment_status === "paid") {
+      try {
+        const { data: payment } = await service
+          .from("booking_payments")
+          .select("id, stripe_payment_intent_id, amount_cents, status, refunded_amount_cents")
+          .eq("event_registration_id", regId)
+          .eq("org_id", regInfo.org_id)
+          .single();
+
+        if (payment?.stripe_payment_intent_id && (payment.status === "charged" || payment.status === "partially_refunded")) {
+          const { data: settings } = await service
+            .from("org_payment_settings")
+            .select("stripe_account_id, cancellation_window_hours")
+            .eq("org_id", regInfo.org_id)
+            .single();
+
+          if (settings?.stripe_account_id) {
+            // Check if outside the cancellation window
+            const { data: event } = await service
+              .from("events")
+              .select("start_time")
+              .eq("id", regInfo.event_id)
+              .single();
+
+            const windowHours = settings.cancellation_window_hours ?? 24;
+            const eventStart = event ? new Date(event.start_time).getTime() : 0;
+            const windowCutoff = eventStart - windowHours * 60 * 60 * 1000;
+            const now = Date.now();
+
+            if (now < windowCutoff) {
+              // Outside window — full refund
+              const { stripe } = await import("@/lib/stripe");
+              const refundAmount = payment.amount_cents || 0;
+
+              if (refundAmount > 0) {
+                await stripe.refunds.create(
+                  {
+                    payment_intent: payment.stripe_payment_intent_id,
+                    amount: refundAmount,
+                  },
+                  { stripeAccount: settings.stripe_account_id }
+                );
+
+                await service
+                  .from("booking_payments")
+                  .update({
+                    status: "refunded",
+                    refunded_amount_cents: refundAmount,
+                    refunded_at: new Date().toISOString(),
+                    refund_note: "Automatic refund — event registration cancelled outside cancellation window",
+                  })
+                  .eq("id", payment.id);
+              }
+            }
+          }
+        } else if (payment?.status === "card_saved") {
+          // Hold mode — just release the card hold
+          await service
+            .from("booking_payments")
+            .update({
+              status: "released",
+              released_at: new Date().toISOString(),
+            })
+            .eq("id", payment.id);
+        }
+      } catch (refundErr) {
+        // Log but don't block the cancellation
+        console.error("[cancelEventRegistration] refund error:", refundErr);
+      }
     }
 
     revalidatePath("/my-bookings");
-    redirect("/my-bookings?cancelled=true");
   }
 
   return (
@@ -384,9 +496,6 @@ export default async function MyBookingsPage({
       <div className="mx-auto max-w-2xl">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">My Bookings</h1>
-          <p className="mt-2 text-muted-foreground">
-            View your upcoming and past bookings.
-          </p>
         </div>
 
         {params.error && (

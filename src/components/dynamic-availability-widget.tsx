@@ -26,6 +26,7 @@ import {
   BookingDetailsModal,
   type BookingDetailData,
 } from "@/components/booking-details-modal";
+import { formatPrice } from "@/lib/utils";
 import { LocationSwitcher } from "@/components/location-switcher";
 import { EventRegistrationPanel, type EventForPanel } from "@/components/events/event-registration-panel";
 import {
@@ -127,6 +128,8 @@ type MembershipContext = {
   memberWindowDays: number;
   discountType: "flat" | "percent" | null;
   discountValue: number;
+  eventDiscountType: "flat" | "percent" | null;
+  eventDiscountValue: number;
   tierName: string | null;
   membershipEnabled: boolean;
 };
@@ -758,7 +761,11 @@ export function DynamicAvailabilityWidget(
       const res = await fetch("/api/stripe/create-checkout-intent-dynamic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ price_cents: selectedSlot.price_cents, location_id: locationId || null }),
+        body: JSON.stringify({
+          price_cents: selectedSlot.price_cents,
+          location_id: locationId || null,
+          discount_cents: calcDiscount(selectedSlot.price_cents).discountCents || undefined,
+        }),
       });
 
       if (!res.ok) {
@@ -1257,7 +1264,7 @@ export function DynamicAvailabilityWidget(
       )}
       {/* Select Date */}
       <div className="surface-1 rounded-xl bg-card px-4 py-3">
-        <p className="mb-2.5 text-sm font-medium text-foreground">Select Date</p>
+        <p className="mb-2.5 text-sm font-medium text-foreground">1. Select Date</p>
         <div className="flex items-center gap-1.5">
           {canPageBack && (
             <button
@@ -1329,7 +1336,7 @@ export function DynamicAvailabilityWidget(
       {hasMultipleOptions && (
         <div className="surface-1 rounded-xl bg-card px-4 py-3">
           <p className="mb-2.5 text-sm font-medium text-foreground">
-            Select Facility
+            2. Select Facility
           </p>
           <div className="flex flex-wrap gap-2">
             {facilityGroups.map((group) => (
@@ -1376,7 +1383,7 @@ export function DynamicAvailabilityWidget(
       {/* Play for [duration] */}
       <div className="surface-1 rounded-xl bg-card px-4 py-3">
         <p className="mb-2 text-sm font-medium text-foreground">
-          Play for {formatDuration(selectedDuration)}
+          {hasMultipleOptions ? "3" : "2"}. Play for {formatDuration(selectedDuration)}
         </p>
         <div className="flex flex-wrap gap-2">
           {durations.map((dur) => (
@@ -1402,7 +1409,7 @@ export function DynamicAvailabilityWidget(
       <div className="surface-1 rounded-xl bg-card px-4 py-3">
         <div className="mb-2.5 flex items-center justify-between">
           <h3 className="text-sm font-medium text-muted-foreground">
-            {selectedOption ? `Select a time – ${selectedOption}` : "Select a time"}
+            {selectedOption ? `${hasMultipleOptions ? "4" : "3"}. Select a time – ${selectedOption}` : `${hasMultipleOptions ? "4" : "3"}. Select a time`}
           </h3>
           {!loadingSlots && availableSlots.length > 0 && (
             <span className="text-xs text-muted-foreground">
@@ -1464,7 +1471,7 @@ export function DynamicAvailabilityWidget(
                             {formatTime(slot.start_time, timezone)}
                           </div>
                           <div className="mt-0.5 text-xs text-muted-foreground">
-                            ${(slot.price_cents / 100).toFixed(2)}
+                            {formatPrice(slot.price_cents)}
                           </div>
                         </button>
                       );
@@ -1502,7 +1509,7 @@ export function DynamicAvailabilityWidget(
                 const spotsLeft = evt.capacity - evt.registered_count;
                 const priceLabel = evt.price_cents === 0
                   ? "Free"
-                  : `$${(evt.price_cents / 100).toFixed(2)}`;
+                  : formatPrice(evt.price_cents);
 
                 return (
                   <button
@@ -1651,7 +1658,7 @@ export function DynamicAvailabilityWidget(
                           <>
                             <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
                               <span>Subtotal</span>
-                              <span>${(selectedSlot.price_cents / 100).toFixed(2)}</span>
+                              <span>{formatPrice(selectedSlot.price_cents)}</span>
                             </div>
                             <div className="flex items-center justify-between text-xs text-teal-600 dark:text-teal-400 mb-1">
                               <span className="flex items-center gap-1">
@@ -1860,8 +1867,8 @@ export function DynamicAvailabilityWidget(
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {formatDateLabel(selectedDate)} &middot;{" "}
-                      {formatDurationLong(selectedDuration)} &middot; $
-                      {(selectedSlot.price_cents / 100).toFixed(2)}
+                      {formatDurationLong(selectedDuration)} &middot;{" "}
+                      {formatPrice(selectedSlot.price_cents)}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1968,7 +1975,7 @@ export function DynamicAvailabilityWidget(
                             </p>
                           </div>
                           <span className="text-sm font-bold">
-                            ${(selectedSlot.price_cents / 100).toFixed(2)}
+                            {formatPrice(selectedSlot.price_cents)}
                           </span>
                         </div>
                       </div>
@@ -2148,7 +2155,7 @@ export function DynamicAvailabilityWidget(
                                     <>
                                       <div className="flex justify-between border-t pt-2 text-sm text-muted-foreground">
                                         <span>Subtotal</span>
-                                        <span>${(selectedSlot.price_cents / 100).toFixed(2)}</span>
+                                        <span>{formatPrice(selectedSlot.price_cents)}</span>
                                       </div>
                                       <div className="flex justify-between text-sm text-teal-600 dark:text-teal-400">
                                         <span className="flex items-center gap-1">
@@ -2588,6 +2595,11 @@ export function DynamicAvailabilityWidget(
           timezone={timezone}
           isAuthenticated={isAuthenticated}
           isMember={membership?.isMember ?? false}
+          eventDiscount={
+            membership?.isMember && membership.eventDiscountType && membership.eventDiscountValue > 0
+              ? { type: membership.eventDiscountType, value: membership.eventDiscountValue }
+              : null
+          }
           paymentMode={paymentMode}
           onClose={() => setSelectedEventForPanel(null)}
           onRegistered={() => {

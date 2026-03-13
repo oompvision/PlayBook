@@ -13,6 +13,8 @@ import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { formatPrice } from '../lib/format';
+import { Feather } from '@expo/vector-icons';
+import { CrownIcon } from '../components/TabIcons';
 import { colors, spacing, typography, borderRadius } from '../theme';
 
 export function MembershipScreen() {
@@ -100,7 +102,7 @@ export function MembershipScreen() {
             <View style={styles.benefitsList}>
               {/* Booking Window */}
               <View style={styles.benefitRow}>
-                <Text style={styles.benefitIcon}>&#x1F4C5;</Text>
+                <Feather name="calendar" size={20} color={colors.mutedForeground} style={styles.benefitIcon} />
                 <View style={styles.benefitContent}>
                   <Text style={styles.benefitLabel}>Book further ahead</Text>
                   <Text style={styles.benefitValue}>
@@ -112,7 +114,7 @@ export function MembershipScreen() {
               {/* Discount */}
               {tier.discount_value > 0 && (
                 <View style={styles.benefitRow}>
-                  <Text style={styles.benefitIcon}>&#x1F3F7;</Text>
+                  <CrownIcon size={20} color="#16a34a" />
                   <View style={styles.benefitContent}>
                     <Text style={styles.benefitLabel}>Booking discount</Text>
                     <Text style={styles.benefitValue}>
@@ -268,7 +270,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   benefitIcon: {
-    fontSize: 20,
     marginTop: 2,
   },
   benefitContent: {

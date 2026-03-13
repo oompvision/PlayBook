@@ -7,7 +7,8 @@ import Stripe from "stripe";
 
 /**
  * POST /api/stripe/record-booking-payment
- * Records a booking_payments row after a successful booking + payment/card save.
+ * Records a booking_payments row after a successful booking or event registration + payment/card save.
+ * Supports both booking_id and event_registration_id.
  * Uses service client for the insert (customers don't have INSERT policy on booking_payments).
  */
 export async function POST(request: NextRequest) {
@@ -19,7 +20,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = (await request.json()) as {
-      booking_id: string;
+      booking_id?: string;
+      event_registration_id?: string;
       intent_id: string;
       intent_type: "payment" | "setup";
       stripe_customer_id: string;
@@ -29,9 +31,16 @@ export async function POST(request: NextRequest) {
       policy_agreed_at?: string;
     };
 
-    if (!body.booking_id || !body.intent_id || !body.intent_type) {
+    if (!body.intent_id || !body.intent_type) {
       return NextResponse.json(
         { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
+    if (!body.booking_id && !body.event_registration_id) {
+      return NextResponse.json(
+        { error: "Either booking_id or event_registration_id is required" },
         { status: 400 }
       );
     }
@@ -60,25 +69,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Verify booking belongs to this user
-    const { data: booking } = await supabase
-      .from("bookings")
-      .select("id, customer_id, org_id")
-      .eq("id", body.booking_id)
-      .single();
+    // 3. Verify booking or event registration belongs to this user
+    if (body.booking_id) {
+      const { data: booking } = await supabase
+        .from("bookings")
+        .select("id, customer_id, org_id")
+        .eq("id", body.booking_id)
+        .single();
 
-    if (!booking) {
-      return NextResponse.json(
-        { error: "Booking not found" },
-        { status: 404 }
-      );
+      if (!booking) {
+        return NextResponse.json(
+          { error: "Booking not found" },
+          { status: 404 }
+        );
+      }
+
+      if (booking.customer_id !== auth.profile.id) {
+        return NextResponse.json(
+          { error: "Booking does not belong to this user" },
+          { status: 403 }
+        );
+      }
     }
 
-    if (booking.customer_id !== auth.profile.id) {
-      return NextResponse.json(
-        { error: "Booking does not belong to this user" },
-        { status: 403 }
-      );
+    if (body.event_registration_id) {
+      const { data: reg } = await supabase
+        .from("event_registrations")
+        .select("id, user_id")
+        .eq("id", body.event_registration_id)
+        .single();
+
+      if (!reg || reg.user_id !== auth.user.id) {
+        return NextResponse.json(
+          { error: "Registration not found" },
+          { status: 404 }
+        );
+      }
     }
 
     // 4. Get stripe account ID for verification
@@ -141,7 +167,8 @@ export async function POST(request: NextRequest) {
     const { data: payment, error: insertError } = await supabase
       .from("booking_payments")
       .insert({
-        booking_id: body.booking_id,
+        booking_id: body.booking_id || null,
+        event_registration_id: body.event_registration_id || null,
         org_id: org.id,
         customer_email: auth.profile.email,
         stripe_customer_id: body.stripe_customer_id,
@@ -166,6 +193,14 @@ export async function POST(request: NextRequest) {
         { error: `Failed to record payment: ${insertError.message}` },
         { status: 500 }
       );
+    }
+
+    // For event registrations: update status to confirmed and payment_status to paid
+    if (body.event_registration_id && isUpfront) {
+      await supabase
+        .from("event_registrations")
+        .update({ status: "confirmed", payment_status: "paid" })
+        .eq("id", body.event_registration_id);
     }
 
     return NextResponse.json(payment);

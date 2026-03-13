@@ -13,13 +13,15 @@ import {
   ArrowLeft,
   ArrowRight,
   X,
-  CreditCard,
+  Crown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   PaymentSection,
   type CheckoutFormHandle,
 } from "@/components/checkout-form";
+import type { EventDiscountInfo } from "./events-feed";
+import { formatPrice } from "@/lib/utils";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -41,6 +43,7 @@ type EventRegistrationPanelProps = {
   timezone: string;
   isAuthenticated: boolean;
   isMember: boolean;
+  eventDiscount?: EventDiscountInfo;
   paymentMode: string;
   onClose: () => void;
   onRegistered: (status: string) => void;
@@ -58,11 +61,26 @@ type CheckoutIntent = {
 
 // ─── Component ──────────────────────────────────────────────────────────────────
 
+function calcEventDiscount(priceCents: number, discount: EventDiscountInfo): { discountCents: number; finalCents: number; label: string } {
+  if (!discount || discount.value <= 0) return { discountCents: 0, finalCents: priceCents, label: "" };
+  let discountCents: number;
+  let label: string;
+  if (discount.type === "percent") {
+    discountCents = Math.round(priceCents * discount.value / 100);
+    label = `${discount.value}% member discount`;
+  } else {
+    discountCents = Math.min(discount.value * 100, priceCents);
+    label = `${formatPrice(discount.value * 100)} member discount`;
+  }
+  return { discountCents, finalCents: priceCents - discountCents, label };
+}
+
 export function EventRegistrationPanel({
   event,
   timezone,
   isAuthenticated,
   isMember,
+  eventDiscount = null,
   paymentMode,
   onClose,
   onRegistered,
@@ -73,16 +91,12 @@ export function EventRegistrationPanel({
   const [error, setError] = useState<string | null>(null);
   const [registrationId, setRegistrationId] = useState<string | null>(null);
   const [checkoutIntent, setCheckoutIntent] = useState<CheckoutIntent | null>(null);
-  const [paymentValidated, setPaymentValidated] = useState(false);
-  const [cardBrand, setCardBrand] = useState<string | null>(null);
-  const [cardLast4, setCardLast4] = useState<string | null>(null);
-  const [confirmedPaymentMethodId, setConfirmedPaymentMethodId] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const checkoutFormRef = useRef<CheckoutFormHandle | null>(null);
 
   const requiresPayment =
     paymentMode !== "none" && event.priceCents > 0;
-  const totalSteps = requiresPayment ? 3 : 1;
+  const totalSteps = requiresPayment ? 2 : 1;
   const spotsLeft = event.capacity - event.registeredCount;
 
   useEffect(() => {
@@ -172,10 +186,16 @@ export function EventRegistrationPanel({
         return;
       }
 
-      // Register for the event
+      // Register for the event (discount stored atomically in RPC)
+      const disc = calcEventDiscount(event.priceCents, eventDiscount);
       const { data: regResult, error: regError } = await supabase.rpc(
         "register_for_event",
-        { p_event_id: event.id, p_user_id: user.id }
+        {
+          p_event_id: event.id,
+          p_user_id: user.id,
+          p_discount_cents: disc.discountCents || 0,
+          p_discount_description: disc.label || null,
+        }
       );
 
       if (regError) {
@@ -213,6 +233,7 @@ export function EventRegistrationPanel({
         body: JSON.stringify({
           event_id: event.id,
           registration_id: result.registration_id,
+          discount_cents: disc.discountCents || undefined,
         }),
       });
 
@@ -232,66 +253,63 @@ export function EventRegistrationPanel({
     }
   }
 
-  // Step 2 → confirm card info
-  async function handleConfirmCard() {
-    if (!checkoutFormRef.current) return;
+  // Step 2 → confirm card + register & pay in one action
+  async function handleRegisterAndPay() {
+    if (!checkoutFormRef.current || !registrationId || !checkoutIntent) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const result = await checkoutFormRef.current.confirmAndGetCardInfo();
-      if (!result.success) {
-        setError(result.error || "Payment confirmation failed");
+      // Confirm card info
+      const cardResult = await checkoutFormRef.current.confirmAndGetCardInfo();
+      if (!cardResult.success) {
+        setError(cardResult.error || "Payment confirmation failed");
         return;
       }
-      setPaymentValidated(true);
-      setCardBrand(result.cardBrand || null);
-      setCardLast4(result.cardLast4 || null);
-      setConfirmedPaymentMethodId(result.paymentMethodId || null);
-      setStep(3);
-    } catch {
-      setError("Payment confirmation failed. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
 
-  // Step 3 → final confirmation (mark payment as complete)
-  async function handleFinalConfirm() {
-    if (!registrationId || !checkoutIntent) return;
+      // Record the payment in booking_payments (for refund tracking)
+      const recordRes = await fetch("/api/stripe/record-booking-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_registration_id: registrationId,
+          intent_id: checkoutIntent.intent_id,
+          intent_type: checkoutIntent.intent_type,
+          stripe_customer_id: checkoutIntent.stripe_customer_id,
+          stripe_payment_method_id: cardResult.paymentMethodId || null,
+          amount_cents: checkoutIntent.amount_cents,
+          cancellation_policy_text: checkoutIntent.cancellation_policy_text,
+          policy_agreed_at: new Date().toISOString(),
+        }),
+      });
 
-    setLoading(true);
-    setError(null);
-
-    try {
-      const supabase = createClient();
-      const { error: confirmError } = await supabase.rpc(
-        "confirm_event_payment",
-        {
+      if (!recordRes.ok) {
+        // Fallback: still try to confirm via RPC so registration isn't stuck
+        const supabase = createClient();
+        await supabase.rpc("confirm_event_payment", {
           p_registration_id: registrationId,
           p_payment_intent_id: checkoutIntent.intent_id,
-        }
-      );
-
-      if (confirmError) {
-        setError(confirmError.message);
-        return;
+        });
       }
 
       setConfirmed(true);
       onRegistered("confirmed");
     } catch {
-      setError("Confirmation failed. Please try again.");
+      setError("Payment failed. Please try again.");
     } finally {
       setLoading(false);
     }
   }
 
+  const disc = calcEventDiscount(event.priceCents, eventDiscount);
+  const hasDiscount = disc.discountCents > 0;
   const priceLabel =
     event.priceCents === 0
       ? "Free"
-      : `$${(event.priceCents / 100).toFixed(2)}`;
+      : hasDiscount
+        ? formatPrice(disc.finalCents)
+        : formatPrice(event.priceCents);
 
   if (!mounted) return null;
 
@@ -383,7 +401,14 @@ export function EventRegistrationPanel({
                       </p>
                     )}
                   </div>
-                  <span className="text-lg font-bold">{priceLabel}</span>
+                  <span className="text-lg font-bold">
+                    {hasDiscount ? (
+                      <span className="inline-flex flex-col items-end">
+                        <span className="text-sm text-gray-400 line-through">{formatPrice(event.priceCents)}</span>
+                        <span className="text-green-600 dark:text-green-400">{priceLabel}</span>
+                      </span>
+                    ) : priceLabel}
+                  </span>
                 </div>
 
                 <div className="mt-3 space-y-1.5">
@@ -414,6 +439,24 @@ export function EventRegistrationPanel({
                   </div>
                 </div>
               </div>
+
+              {/* Discount breakdown */}
+              {hasDiscount && event.priceCents > 0 && step === 1 && (
+                <div className="mt-3 rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-900/20">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span>{formatPrice(event.priceCents)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-green-600 dark:text-green-400">
+                    <span className="flex items-center gap-1"><Crown className="h-3.5 w-3.5" />{disc.label}</span>
+                    <span>-{formatPrice(disc.discountCents)}</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between border-t border-green-200 pt-1 text-sm font-semibold dark:border-green-800">
+                    <span>Total</span>
+                    <span>{formatPrice(disc.finalCents)}</span>
+                  </div>
+                </div>
+              )}
 
               {/* Step 1: Register / Continue to Payment */}
               {step === 1 && (
@@ -455,7 +498,7 @@ export function EventRegistrationPanel({
                 </div>
               )}
 
-              {/* Step 2: Payment */}
+              {/* Step 2: Payment — enter card & register in one step */}
               {step === 2 && checkoutIntent && (
                 <div className="mt-6">
                   <PaymentSection
@@ -470,51 +513,16 @@ export function EventRegistrationPanel({
                     checkoutFormRef={checkoutFormRef}
                   />
                   <Button
-                    onClick={handleConfirmCard}
+                    onClick={handleRegisterAndPay}
                     disabled={loading}
                     className="mt-4 w-full gap-2"
                   >
                     {loading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        Continue
-                        <ArrowRight className="h-4 w-4" />
-                      </>
-                    )}
-                  </Button>
-                </div>
-              )}
-
-              {/* Step 3: Confirm & Pay */}
-              {step === 3 && (
-                <div className="mt-6 space-y-4">
-                  {/* Card info summary */}
-                  {paymentValidated && cardLast4 && (
-                    <div className="flex items-center gap-3 rounded-lg border p-3">
-                      <CreditCard className="h-5 w-5 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">
-                          {cardBrand || "Card"} ending in {cardLast4}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Payment method confirmed
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <Button
-                    onClick={handleFinalConfirm}
-                    disabled={loading}
-                    className="w-full gap-2"
-                  >
-                    {loading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : paymentMode === "charge_upfront" ? (
-                      `Confirm & Pay ${priceLabel}`
+                      `Register & Pay ${priceLabel}`
                     ) : (
-                      `Confirm & Save Card`
+                      `Register & Save Card`
                     )}
                   </Button>
                 </div>

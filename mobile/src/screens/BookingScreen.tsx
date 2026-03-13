@@ -21,7 +21,9 @@ import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
 import { formatPrice, formatTimeInZone, getTodayInTimezone, formatDate } from '../lib/format';
 import { usePayment } from '../lib/use-payment';
+import { Feather } from '@expo/vector-icons';
 import { colors, spacing, typography, borderRadius, shadows } from '../theme';
+import { CrownIcon } from '../components/TabIcons';
 import { PressableScale } from '../components/PressableScale';
 import type { MainTabParamList, ModifyBookingParams } from '../navigation/types';
 import type { Bay, BayScheduleSlot, FacilityGroup, AvailableTimeSlot, FacilityEvent } from '../types';
@@ -489,7 +491,7 @@ export function BookingScreen({ route, navigation }: Props) {
       label = `${tier.discount_value}% member discount`;
     } else {
       discountCents = Math.min(tier.discount_value * 100, priceCents);
-      label = `$${(tier.discount_value).toFixed(2)} member discount`;
+      label = `${formatPrice(tier.discount_value * 100)} member discount`;
     }
     return { discountCents, finalCents: priceCents - discountCents, label };
   }
@@ -503,7 +505,7 @@ export function BookingScreen({ route, navigation }: Props) {
       label = `${tier.event_discount_value}% member discount`;
     } else {
       discountCents = Math.min(tier.event_discount_value * 100, priceCents);
-      label = `$${(tier.event_discount_value).toFixed(2)} member discount`;
+      label = `${formatPrice(tier.event_discount_value * 100)} member discount`;
     }
     return { discountCents, finalCents: priceCents - discountCents, label };
   }
@@ -895,7 +897,7 @@ export function BookingScreen({ route, navigation }: Props) {
 
         {/* Date Picker */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Select Date</Text>
+          <Text style={styles.sectionTitle}>1. Select Date</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -923,8 +925,9 @@ export function BookingScreen({ route, navigation }: Props) {
 
         {/* Facility / Bay Picker */}
         {isDynamic ? (
+          <>
           <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Select Facility</Text>
+            <Text style={styles.sectionTitle}>2. Select Facility</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -951,51 +954,52 @@ export function BookingScreen({ route, navigation }: Props) {
                 );
               })}
             </ScrollView>
+          </View>
 
-            {/* Duration Picker */}
+          {/* Duration Picker */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>
+              3. Play for {selectedDuration >= 60
+                ? selectedDuration % 60 === 0
+                  ? `${selectedDuration / 60}h`
+                  : `${Math.floor(selectedDuration / 60)}h ${selectedDuration % 60}m`
+                : `${selectedDuration}m`}
+            </Text>
             {availableDurations.length > 1 && (
-              <>
-                <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>
-                  Play for {selectedDuration >= 60
-                    ? selectedDuration % 60 === 0
-                      ? `${selectedDuration / 60}h`
-                      : `${Math.floor(selectedDuration / 60)}h ${selectedDuration % 60}m`
-                    : `${selectedDuration}m`}
-                </Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.bayRow}
-                >
-                  {availableDurations.map((dur) => {
-                    const isSelected = dur === selectedDuration;
-                    const label =
-                      dur >= 60
-                        ? dur % 60 === 0
-                          ? `${dur / 60}h`
-                          : `${Math.floor(dur / 60)}h ${dur % 60}m`
-                        : `${dur}m`;
-                    return (
-                      <TouchableOpacity
-                        key={dur}
-                        onPress={() => setSelectedDuration(dur)}
-                        style={[styles.durationChip, isSelected && styles.durationChipSelected]}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.bayRow}
+              >
+                {availableDurations.map((dur) => {
+                  const isSelected = dur === selectedDuration;
+                  const label =
+                    dur >= 60
+                      ? dur % 60 === 0
+                        ? `${dur / 60}h`
+                        : `${Math.floor(dur / 60)}h ${dur % 60}m`
+                      : `${dur}m`;
+                  return (
+                    <TouchableOpacity
+                      key={dur}
+                      onPress={() => setSelectedDuration(dur)}
+                      style={[styles.durationChip, isSelected && styles.durationChipSelected]}
+                    >
+                      <Text
+                        style={[
+                          styles.durationChipText,
+                          isSelected && styles.durationChipTextSelected,
+                        ]}
                       >
-                        <Text
-                          style={[
-                            styles.durationChipText,
-                            isSelected && styles.durationChipTextSelected,
-                          ]}
-                        >
-                          {label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </>
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             )}
           </View>
+          </>
         ) : (
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Select Bay</Text>
@@ -1078,7 +1082,7 @@ export function BookingScreen({ route, navigation }: Props) {
                 >
                   <View style={eventStyles.cardLeft}>
                     <View style={eventStyles.iconCircle}>
-                      <Text style={eventStyles.iconText}>📅</Text>
+                      <Feather name="calendar" size={16} color={colors.mutedForeground} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <View style={eventStyles.nameRow}>
@@ -1132,7 +1136,7 @@ export function BookingScreen({ route, navigation }: Props) {
           selectedOption ? (
             <View style={styles.sectionCard}>
               <Text style={styles.sectionTitle}>
-                Available Times — {formatDate(selectedDate)}
+                4. Select a time
               </Text>
               {loading ? (
                 <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
@@ -1328,7 +1332,10 @@ export function BookingScreen({ route, navigation }: Props) {
                         <Text style={styles.subtotalPrice}>{formatPrice(totalCents)}</Text>
                       </View>
                       <View style={styles.discountRow}>
-                        <Text style={styles.discountLabel}>★ {bookingDiscount.label}</Text>
+                        <View style={styles.discountLabelRow}>
+                          <CrownIcon size={13} color="#16a34a" />
+                          <Text style={styles.discountLabel}>{bookingDiscount.label}</Text>
+                        </View>
                         <Text style={styles.discountAmount}>-{formatPrice(bookingDiscount.discountCents)}</Text>
                       </View>
                     </>
@@ -1544,86 +1551,107 @@ export function BookingScreen({ route, navigation }: Props) {
             </View>
 
             {!eventConfirmStep ? (
-              /* ── Step 1: Event Details (paid events pay directly from here) ── */
+              /* ── Step 1: Event Details (matching web card layout) ── */
               <>
                 <ScrollView contentContainerStyle={eventStyles.modalContent}>
-                  <Badge label="Event" variant="success" />
-
-                  {selectedEvent.description && (
-                    <Text style={eventStyles.modalDescription}>{selectedEvent.description}</Text>
-                  )}
-
-                  <View style={eventStyles.detailRow}>
-                    <Text style={eventStyles.detailLabel}>Date</Text>
-                    <Text style={eventStyles.detailValue}>{formatDate(selectedDate)}</Text>
-                  </View>
-                  <View style={eventStyles.detailRow}>
-                    <Text style={eventStyles.detailLabel}>Time</Text>
-                    <Text style={eventStyles.detailValue}>
-                      {formatTimeInZone(selectedEvent.start_time, organization!.timezone)} –{' '}
-                      {formatTimeInZone(selectedEvent.end_time, organization!.timezone)}
-                    </Text>
-                  </View>
-                  {selectedEvent.bay_names.length > 0 && (
-                    <View style={eventStyles.detailRow}>
-                      <Text style={eventStyles.detailLabel}>Location</Text>
-                      <Text style={eventStyles.detailValue}>{selectedEvent.bay_names.join(', ')}</Text>
+                  {/* Event details card — mirrors web's bordered card */}
+                  <View style={eventStyles.detailsCard}>
+                    {/* Header: name + badge + price */}
+                    <View style={eventStyles.detailsCardHeader}>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={eventStyles.detailsCardName}>{selectedEvent.name}</Text>
+                          <Badge label="Event" variant="success" />
+                        </View>
+                        {selectedEvent.description && (
+                          <Text style={eventStyles.detailsCardDesc}>{selectedEvent.description}</Text>
+                        )}
+                      </View>
+                      {(() => {
+                        const evtDisc = calcEventDiscount(selectedEvent.price_cents);
+                        if (selectedEvent.price_cents === 0) {
+                          return <Text style={eventStyles.detailsCardPrice}>Free</Text>;
+                        }
+                        if (evtDisc.discountCents > 0) {
+                          return (
+                            <View style={{ alignItems: 'flex-end' }}>
+                              <Text style={eventStyles.detailsCardPriceStrike}>{formatPrice(selectedEvent.price_cents)}</Text>
+                              <Text style={eventStyles.detailsCardPriceDiscount}>{formatPrice(evtDisc.finalCents)}</Text>
+                            </View>
+                          );
+                        }
+                        return <Text style={eventStyles.detailsCardPrice}>{formatPrice(selectedEvent.price_cents)}</Text>;
+                      })()}
                     </View>
-                  )}
-                  <View style={eventStyles.detailRow}>
-                    <Text style={eventStyles.detailLabel}>Price</Text>
-                    {(() => {
-                      const evtDisc = calcEventDiscount(selectedEvent.price_cents);
-                      if (selectedEvent.price_cents === 0) return <Text style={eventStyles.detailValue}>Free</Text>;
-                      if (evtDisc.discountCents > 0) {
-                        return (
-                          <View style={{ alignItems: 'flex-end' }}>
-                            <Text style={[eventStyles.detailValue, { textDecorationLine: 'line-through', color: colors.mutedForeground, fontSize: 13 }]}>
-                              {formatPrice(selectedEvent.price_cents)}
-                            </Text>
-                            <Text style={[eventStyles.detailValue, { color: '#0d9488' }]}>
-                              {formatPrice(evtDisc.finalCents)}
-                            </Text>
+
+                    {/* Icon detail rows — matching web */}
+                    <View style={eventStyles.iconDetailRows}>
+                      <View style={eventStyles.iconDetailRow}>
+                        <View style={eventStyles.iconDetailIconWrap}>
+                          <Feather name="calendar" size={14} color={colors.mutedForeground} />
+                        </View>
+                        <Text style={eventStyles.iconDetailText}>{formatDate(selectedDate)}</Text>
+                      </View>
+                      <View style={eventStyles.iconDetailRow}>
+                        <View style={eventStyles.iconDetailIconWrap}>
+                          <Feather name="clock" size={14} color={colors.mutedForeground} />
+                        </View>
+                        <Text style={eventStyles.iconDetailText}>
+                          {formatTimeInZone(selectedEvent.start_time, organization!.timezone)} –{' '}
+                          {formatTimeInZone(selectedEvent.end_time, organization!.timezone)}
+                        </Text>
+                      </View>
+                      {selectedEvent.bay_names.length > 0 && (
+                        <View style={eventStyles.iconDetailRow}>
+                          <View style={eventStyles.iconDetailIconWrap}>
+                            <Feather name="map-pin" size={14} color={colors.mutedForeground} />
                           </View>
-                        );
-                      }
-                      return <Text style={eventStyles.detailValue}>{formatPrice(selectedEvent.price_cents)}</Text>;
-                    })()}
+                          <Text style={eventStyles.iconDetailText}>{selectedEvent.bay_names.join(', ')}</Text>
+                        </View>
+                      )}
+                      <View style={eventStyles.iconDetailRow}>
+                        <View style={eventStyles.iconDetailIconWrap}>
+                          <Feather name="users" size={14} color={colors.mutedForeground} />
+                        </View>
+                        <Text style={eventStyles.iconDetailText}>
+                          {(selectedEvent.capacity - selectedEvent.registered_count) > 0
+                            ? `${selectedEvent.capacity - selectedEvent.registered_count} spot${(selectedEvent.capacity - selectedEvent.registered_count) !== 1 ? 's' : ''} remaining`
+                            : 'Event is full'}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
-                  <View style={eventStyles.detailRow}>
-                    <Text style={eventStyles.detailLabel}>Spots</Text>
-                    <Text style={eventStyles.detailValue}>
-                      {(selectedEvent.capacity - selectedEvent.registered_count) > 0
-                        ? `${selectedEvent.capacity - selectedEvent.registered_count} of ${selectedEvent.capacity} remaining`
-                        : 'Full'}
-                    </Text>
-                  </View>
+
                   {selectedEvent.members_only && (
                     <View style={eventStyles.membersOnlyBanner}>
                       <Text style={eventStyles.membersOnlyText}>Members only</Text>
                     </View>
                   )}
 
-                  {/* Member discount breakdown for paid events */}
+                  {/* Member discount breakdown — matching web's green card with crown icon */}
                   {(() => {
                     const evtDisc = calcEventDiscount(selectedEvent.price_cents);
                     const requiresPayment = orgPaymentMode !== 'none' && selectedEvent.price_cents > 0;
                     if (!requiresPayment || evtDisc.discountCents <= 0) return null;
                     return (
-                      <Card style={{ marginTop: spacing.md }}>
-                        <View style={styles.summaryTotal}>
-                          <Text style={styles.totalLabel}>Subtotal</Text>
-                          <Text style={styles.subtotalPrice}>{formatPrice(selectedEvent.price_cents)}</Text>
+                      <View style={eventStyles.discountCard}>
+                        <View style={eventStyles.discountCardRow}>
+                          <Text style={eventStyles.discountCardLabel}>Subtotal</Text>
+                          <Text style={eventStyles.discountCardValue}>{formatPrice(selectedEvent.price_cents)}</Text>
                         </View>
-                        <View style={styles.discountRow}>
-                          <Text style={styles.discountLabel}>★ {evtDisc.label}</Text>
-                          <Text style={styles.discountAmount}>-{formatPrice(evtDisc.discountCents)}</Text>
+                        <View style={eventStyles.discountCardRow}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            <CrownIcon size={13} color="#16a34a" />
+                            <Text style={eventStyles.discountCardHighlight}>{evtDisc.label}</Text>
+                          </View>
+                          <Text style={eventStyles.discountCardHighlight}>-{formatPrice(evtDisc.discountCents)}</Text>
                         </View>
-                        <View style={styles.summaryTotal}>
-                          <Text style={styles.totalLabel}>Total</Text>
-                          <Text style={styles.totalPrice}>{formatPrice(evtDisc.finalCents)}</Text>
+                        <View style={eventStyles.discountCardDivider} />
+                        <View style={eventStyles.discountCardRow}>
+                          <Text style={eventStyles.discountCardTotal}>Total</Text>
+                          <Text style={eventStyles.discountCardTotal}>{formatPrice(evtDisc.finalCents)}</Text>
                         </View>
-                      </Card>
+                      </View>
                     );
                   })()}
                 </ScrollView>
@@ -1701,10 +1729,12 @@ export function BookingScreen({ route, navigation }: Props) {
                           }
                         }
 
-                        // Register for the event
+                        // Register for the event (discount stored atomically in RPC)
                         const { data, error } = await supabase.rpc('register_for_event', {
                           p_event_id: selectedEvent.id,
                           p_user_id: user.id,
+                          p_discount_cents: evtDiscount.discountCents || 0,
+                          p_discount_description: evtDiscount.label || null,
                         });
 
                         if (error) {
@@ -1820,10 +1850,13 @@ export function BookingScreen({ route, navigation }: Props) {
                         return;
                       }
 
-                      // Register for the event (free — no payment needed)
+                      // Register for the event (free — discount stored atomically in RPC)
+                      const freeDisc = calcEventDiscount(selectedEvent.price_cents);
                       const { data, error } = await supabase.rpc('register_for_event', {
                         p_event_id: selectedEvent.id,
                         p_user_id: user.id,
+                        p_discount_cents: freeDisc.discountCents || 0,
+                        p_discount_description: freeDisc.label || null,
                       });
 
                       if (error) {
@@ -2148,13 +2181,18 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     paddingHorizontal: spacing.xs,
   },
+  discountLabelRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+  },
   discountLabel: {
     ...typography.bodySmall,
-    color: '#0d9488',
+    color: '#16a34a',
   },
   discountAmount: {
     ...typography.bodySmall,
-    color: '#0d9488',
+    color: '#16a34a',
     fontWeight: '600',
   },
   ctaBar: {
@@ -2405,6 +2443,108 @@ const eventStyles = StyleSheet.create({
     textAlign: 'right',
     flex: 1,
     marginLeft: spacing.md,
+  },
+  // Details card — matches web's rounded-lg border border-gray-200 bg-gray-50
+  detailsCard: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb', // gray-200
+    backgroundColor: '#f9fafb', // gray-50
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+  },
+  detailsCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  detailsCardName: {
+    ...typography.label,
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.foreground,
+  },
+  detailsCardDesc: {
+    ...typography.body,
+    color: colors.mutedForeground,
+    marginTop: 4,
+    fontSize: 14,
+  },
+  detailsCardPrice: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.foreground,
+    marginLeft: spacing.sm,
+  },
+  detailsCardPriceStrike: {
+    fontSize: 13,
+    color: colors.mutedForeground,
+    textDecorationLine: 'line-through' as const,
+  },
+  detailsCardPriceDiscount: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#16a34a', // green-600
+    marginLeft: spacing.sm,
+  },
+  iconDetailRows: {
+    marginTop: spacing.md,
+    gap: 6,
+  },
+  iconDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconDetailIconWrap: {
+    width: 20,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  iconDetailIcon: {
+    fontSize: 14,
+    width: 20,
+    textAlign: 'center',
+  },
+  iconDetailText: {
+    ...typography.body,
+    color: colors.mutedForeground,
+    fontSize: 14,
+  },
+  // Discount card — matches web's green bordered card
+  discountCard: {
+    borderWidth: 1,
+    borderColor: '#bbf7d0', // green-200
+    backgroundColor: '#f0fdf4', // green-50
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    gap: 4,
+  },
+  discountCardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  discountCardLabel: {
+    fontSize: 14,
+    color: colors.mutedForeground,
+  },
+  discountCardValue: {
+    fontSize: 14,
+    color: colors.foreground,
+  },
+  discountCardHighlight: {
+    fontSize: 14,
+    color: '#16a34a', // green-600
+  },
+  discountCardDivider: {
+    borderTopWidth: 1,
+    borderTopColor: '#bbf7d0', // green-200
+    marginVertical: 2,
+  },
+  discountCardTotal: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.foreground,
   },
   membersOnlyBanner: {
     backgroundColor: '#fef3c7', // amber-100

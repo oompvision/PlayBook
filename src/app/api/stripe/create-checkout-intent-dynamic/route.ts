@@ -19,9 +19,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { price_cents, location_id } = (await request.json()) as {
+    const { price_cents, location_id, discount_cents: rawDiscount } = (await request.json()) as {
       price_cents: number;
       location_id?: string | null;
+      discount_cents?: number;
     };
 
     if (!price_cents || price_cents <= 0) {
@@ -29,6 +30,14 @@ export async function POST(request: NextRequest) {
         { error: "Valid price_cents is required" },
         { status: 400 }
       );
+    }
+
+    // Apply membership discount (clamped to not exceed price)
+    const discountCents = Math.max(0, Math.min(rawDiscount || 0, price_cents));
+    const chargeAmount = price_cents - discountCents;
+
+    if (chargeAmount <= 0) {
+      return NextResponse.json({ payment_required: false, amount_cents: 0 });
     }
 
     // 2. Resolve org from facility slug
@@ -155,12 +164,12 @@ export async function POST(request: NextRequest) {
       const platformFeePercent = Number(settings.platform_fee_percent) || 0;
       const applicationFeeAmount =
         platformFeePercent > 0
-          ? Math.round((price_cents * platformFeePercent) / 100)
+          ? Math.round((chargeAmount * platformFeePercent) / 100)
           : undefined;
 
       const paymentIntent = await stripe.paymentIntents.create(
         {
-          amount: price_cents,
+          amount: chargeAmount,
           currency: "usd",
           customer: stripeCustomerId,
           automatic_payment_methods: { enabled: true },
@@ -172,6 +181,8 @@ export async function POST(request: NextRequest) {
             org_id: org.id,
             profile_id: auth.profile.id,
             booking_type: "dynamic",
+            original_price_cents: String(price_cents),
+            discount_cents: String(discountCents),
             ...(location_id ? { location_id } : {}),
             ...(locationName ? { location_name: locationName } : {}),
           },
@@ -188,7 +199,9 @@ export async function POST(request: NextRequest) {
         intent_id: paymentIntent.id,
         stripe_customer_id: stripeCustomerId,
         stripe_account_id: stripeAccountId,
-        amount_cents: price_cents,
+        amount_cents: chargeAmount,
+        original_price_cents: price_cents,
+        discount_cents: discountCents,
         cancellation_policy_text: cancellationPolicyText,
         ...(customerSessionClientSecret
           ? { customer_session_client_secret: customerSessionClientSecret }
@@ -203,7 +216,9 @@ export async function POST(request: NextRequest) {
           metadata: {
             org_id: org.id,
             profile_id: auth.profile.id,
-            amount_cents: String(price_cents),
+            amount_cents: String(chargeAmount),
+            original_price_cents: String(price_cents),
+            discount_cents: String(discountCents),
             booking_type: "dynamic",
             ...(location_id ? { location_id } : {}),
             ...(locationName ? { location_name: locationName } : {}),
@@ -218,7 +233,9 @@ export async function POST(request: NextRequest) {
         intent_id: setupIntent.id,
         stripe_customer_id: stripeCustomerId,
         stripe_account_id: stripeAccountId,
-        amount_cents: price_cents,
+        amount_cents: chargeAmount,
+        original_price_cents: price_cents,
+        discount_cents: discountCents,
         cancellation_policy_text: cancellationPolicyText,
         ...(customerSessionClientSecret
           ? { customer_session_client_secret: customerSessionClientSecret }

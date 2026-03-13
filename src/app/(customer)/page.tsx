@@ -116,6 +116,8 @@ export default async function FacilityHomePage({
     memberWindowDays: number;
     discountType: "flat" | "percent" | null;
     discountValue: number;
+    eventDiscountType: "flat" | "percent" | null;
+    eventDiscountValue: number;
     tierName: string | null;
     membershipEnabled: boolean;
   } = {
@@ -125,6 +127,8 @@ export default async function FacilityHomePage({
     memberWindowDays: bookableWindowDays,
     discountType: null,
     discountValue: 0,
+    eventDiscountType: null,
+    eventDiscountValue: 0,
     tierName: null,
     membershipEnabled: false,
   };
@@ -144,7 +148,7 @@ export default async function FacilityHomePage({
       // Fetch tier for discount info
       const { data: tier } = await serviceClient
         .from("membership_tiers")
-        .select("name, discount_type, discount_value")
+        .select("name, discount_type, discount_value, event_discount_type, event_discount_value")
         .eq("org_id", org.id)
         .single();
 
@@ -178,6 +182,8 @@ export default async function FacilityHomePage({
         memberWindowDays: memberWindow,
         discountType: tier ? (tier.discount_type as "flat" | "percent") : null,
         discountValue: tier ? Number(tier.discount_value) : 0,
+        eventDiscountType: tier ? (tier.event_discount_type as "flat" | "percent" | null) : null,
+        eventDiscountValue: tier ? Number(tier.event_discount_value ?? 0) : 0,
         tierName: tier?.name ?? null,
         membershipEnabled: true,
       };

@@ -59,17 +59,43 @@ export default async function EventsPage({
     paymentMode = paymentSettings.payment_mode;
   }
 
-  // Resolve membership status
+  // Resolve membership status + tier discount info
   let isMember = false;
+  let eventDiscount: { type: "percent" | "flat"; value: number } | null = null;
   if (auth) {
-    const { data: membership } = await supabase
-      .from("customer_memberships")
-      .select("id")
-      .eq("user_id", auth.profile.id)
+    const { data: membership } = await serviceClient
+      .from("user_memberships")
+      .select("status, current_period_end, expires_at, tier_id")
       .eq("org_id", org.id)
-      .eq("status", "active")
-      .maybeSingle();
-    isMember = !!membership;
+      .eq("user_id", auth.user.id)
+      .single();
+
+    if (membership) {
+      const now = new Date();
+      isMember = !!(
+        (membership.status === "active" &&
+          (!membership.current_period_end || new Date(membership.current_period_end) > now)) ||
+        (membership.status === "admin_granted" &&
+          (!membership.expires_at || new Date(membership.expires_at) > now)) ||
+        (membership.status === "cancelled" &&
+          membership.current_period_end &&
+          new Date(membership.current_period_end) > now)
+      );
+
+      if (isMember) {
+        const { data: tier } = await serviceClient
+          .from("membership_tiers")
+          .select("event_discount_type, event_discount_value")
+          .eq("org_id", org.id)
+          .single();
+        if (tier && Number(tier.event_discount_value) > 0) {
+          eventDiscount = {
+            type: tier.event_discount_type as "percent" | "flat",
+            value: Number(tier.event_discount_value),
+          };
+        }
+      }
+    }
   }
 
   // Resolve location
@@ -90,6 +116,7 @@ export default async function EventsPage({
         timezone={timezone}
         isAuthenticated={!!auth}
         isMember={isMember}
+        eventDiscount={eventDiscount}
         userId={auth?.profile.id}
         paymentMode={paymentMode}
         locationId={activeLocationId}

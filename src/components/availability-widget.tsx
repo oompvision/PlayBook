@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { formatPrice } from "@/lib/utils";
 import {
   StripeCheckoutWrapper,
   CheckoutForm,
@@ -160,6 +161,8 @@ type AvailabilityWidgetProps = {
     memberWindowDays: number;
     discountType: "flat" | "percent" | null;
     discountValue: number;
+    eventDiscountType: "flat" | "percent" | null;
+    eventDiscountValue: number;
     tierName: string | null;
     membershipEnabled: boolean;
   };
@@ -461,6 +464,8 @@ export function AvailabilityWidget({
     status: string;
     waitlist_position: number | null;
     registered_at: string;
+    discount_cents: number;
+    discount_description: string | null;
     event: {
       name: string;
       description: string | null;
@@ -567,7 +572,7 @@ export function AvailabilityWidget({
       supabase
         .from("event_registrations")
         .select(`
-          id, event_id, status, waitlist_position, registered_at,
+          id, event_id, status, waitlist_position, registered_at, discount_cents, discount_description,
           events:event_id (
             name, description, start_time, end_time, price_cents, capacity,
             event_bays (bay_id, bays:bay_id (name))
@@ -587,6 +592,8 @@ export function AvailabilityWidget({
       status: string;
       waitlist_position: number | null;
       registered_at: string;
+      discount_cents: number;
+      discount_description: string | null;
       events: {
         name: string;
         description: string | null;
@@ -624,6 +631,8 @@ export function AvailabilityWidget({
         status: r.status,
         waitlist_position: r.waitlist_position,
         registered_at: r.registered_at,
+        discount_cents: r.discount_cents || 0,
+        discount_description: r.discount_description || null,
         event: {
           name: evt.name,
           description: evt.description,
@@ -1136,7 +1145,11 @@ export function AvailabilityWidget({
       const res = await fetch("/api/stripe/create-checkout-intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slot_ids: slotIdsArray, location_id: locationId || null }),
+        body: JSON.stringify({
+          slot_ids: slotIdsArray,
+          location_id: locationId || null,
+          discount_cents: calcDiscount(selectedSlotInfo.reduce((sum, s) => sum + s.price_cents, 0)).discountCents || undefined,
+        }),
       });
 
       if (!res.ok) {
@@ -1560,6 +1573,8 @@ export function AvailabilityWidget({
       startTime: reg.event.start_time,
       endTime: reg.event.end_time,
       priceCents: reg.event.price_cents,
+      discountCents: reg.discount_cents || 0,
+      discountDescription: reg.discount_description || null,
       capacity: reg.event.capacity,
       registeredCount: reg.event.registered_count,
       bayNames: reg.event.bay_names,
@@ -1790,7 +1805,7 @@ export function AvailabilityWidget({
                   const spotsLeft = (group.eventCapacity || 0) - (group.eventRegisteredCount || 0);
                   const priceLabel = group.eventPriceCents === 0
                     ? "Free"
-                    : `$${((group.eventPriceCents || 0) / 100).toFixed(2)}`;
+                    : formatPrice(group.eventPriceCents || 0);
 
                   // Check if user is already registered for this event
                   const existingReg = sidebarEventRegs.find(
@@ -1875,8 +1890,8 @@ export function AvailabilityWidget({
 
                 // Regular slot row
                 const priceLabel = group.all_same_price
-                  ? `$${(group.min_price_cents / 100).toFixed(2)}`
-                  : `from $${(group.min_price_cents / 100).toFixed(2)}`;
+                  ? formatPrice(group.min_price_cents)
+                  : `from ${formatPrice(group.min_price_cents)}`;
                 const isSelected = selectedTimeKeys.has(group.key);
 
                 // Check if this slot could be added (at least one bay in common with current selection)
@@ -2208,6 +2223,7 @@ export function AvailabilityWidget({
                                   org_id: orgId,
                                   slot_ids: slotIds,
                                   bay_id: effectiveBayId,
+                                  discount_cents: calcDiscount(totalCents).discountCents || undefined,
                                 }),
                               });
                               if (!res.ok) throw new Error("Failed to create checkout");
@@ -3399,6 +3415,11 @@ export function AvailabilityWidget({
           timezone={timezone}
           isAuthenticated={!!isAuthenticated}
           isMember={!!membership?.isMember}
+          eventDiscount={
+            membership?.isMember && membership.eventDiscountType && membership.eventDiscountValue > 0
+              ? { type: membership.eventDiscountType, value: membership.eventDiscountValue }
+              : null
+          }
           paymentMode={paymentMode}
           onClose={() => setSelectedEventForPanel(null)}
           onRegistered={() => {

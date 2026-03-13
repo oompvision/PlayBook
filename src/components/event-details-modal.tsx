@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,18 +8,21 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import {
   Calendar,
   Clock,
   MapPin,
   Users,
-  DollarSign,
+  Crown,
   X,
   AlertTriangle,
   Loader2,
   FileText,
+  Settings2,
+  ChevronDown,
+  CheckCircle2,
 } from "lucide-react";
+import { formatPrice } from "@/lib/utils";
 
 export type EventDetailData = {
   registrationId: string;
@@ -29,6 +32,8 @@ export type EventDetailData = {
   startTime: string;
   endTime: string;
   priceCents: number;
+  discountCents: number;
+  discountDescription: string | null;
   capacity: number;
   registeredCount: number;
   bayNames: string;
@@ -44,6 +49,9 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   cancelAction?: (formData: FormData) => Promise<void>;
   onCancelClient?: (registrationId: string) => Promise<void>;
+  onCancelComplete?: (eventName: string) => void;
+  cancellationWindowHours?: number;
+  paymentMode?: string;
 };
 
 function formatTime(timestamp: string, timezone: string): string {
@@ -54,27 +62,13 @@ function formatTime(timestamp: string, timezone: string): string {
   });
 }
 
-function getStatusBadge(status: string, waitlistPosition: number | null) {
-  switch (status) {
-    case "confirmed":
-      return <Badge className="bg-green-600 text-white hover:bg-green-600">Confirmed</Badge>;
-    case "waitlisted":
-      return (
-        <Badge className="bg-blue-600 text-white hover:bg-blue-600">
-          Waitlisted{waitlistPosition != null ? ` #${waitlistPosition}` : ""}
-        </Badge>
-      );
-    case "pending_payment":
-      return (
-        <Badge className="bg-amber-500 text-white hover:bg-amber-500">
-          Payment Pending
-        </Badge>
-      );
-    case "cancelled":
-      return <Badge variant="secondary">Cancelled</Badge>;
-    default:
-      return <Badge variant="outline">{status}</Badge>;
-  }
+function isInsideCancellationWindow(
+  eventStartTime: string,
+  windowHours: number
+): boolean {
+  const eventStart = new Date(eventStartTime).getTime();
+  const cutoff = eventStart - windowHours * 60 * 60 * 1000;
+  return Date.now() >= cutoff;
 }
 
 export function EventDetailsModal({
@@ -84,9 +78,21 @@ export function EventDetailsModal({
   onOpenChange,
   cancelAction,
   onCancelClient,
+  onCancelComplete,
+  cancellationWindowHours = 24,
+  paymentMode = "none",
 }: Props) {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setShowCancelConfirm(false);
+      setCancelling(false);
+      setManageOpen(false);
+    }
+  }, [open]);
 
   if (!event) return null;
 
@@ -106,21 +112,25 @@ export function EventDetailsModal({
     minute: "2-digit",
   });
 
-  const spotsLeft = event.capacity - event.registeredCount;
-  const isFull = spotsLeft <= 0;
   const canCancel = event.registrationStatus !== "cancelled";
+  const hasPaidEvent = paymentMode !== "none" && event.priceCents > 0;
+  const insideWindow = isInsideCancellationWindow(event.startTime, cancellationWindowHours);
+  const discount = event.discountCents || 0;
+  const total = event.priceCents - discount;
 
   async function handleCancel() {
+    const eventName = event!.eventName;
     setCancelling(true);
     try {
-      if (cancelAction) {
+      if (onCancelClient) {
+        await onCancelClient(event!.registrationId);
+      } else if (cancelAction) {
         const formData = new FormData();
         formData.set("registration_id", event!.registrationId);
         await cancelAction(formData);
-      } else if (onCancelClient) {
-        await onCancelClient(event!.registrationId);
       }
       onOpenChange(false);
+      onCancelComplete?.(eventName);
     } catch {
       setCancelling(false);
     }
@@ -133,21 +143,19 @@ export function EventDetailsModal({
         if (!v) {
           setShowCancelConfirm(false);
           setCancelling(false);
+          setManageOpen(false);
         }
         onOpenChange(v);
       }}
     >
       <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-md">
         <DialogHeader>
-          <div className="flex items-center justify-between pr-6">
-            <div className="flex items-center gap-2">
-              <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400">
-                Event
-              </Badge>
-              {getStatusBadge(event.registrationStatus, event.waitlistPosition)}
-            </div>
+          <div className="flex items-center gap-2">
+            <DialogTitle className="text-lg">{event.eventName}</DialogTitle>
+            <span className="inline-flex items-center rounded-full bg-foreground px-2 py-0.5 text-[10px] font-semibold text-background">
+              Event
+            </span>
           </div>
-          <DialogTitle className="text-lg">{event.eventName}</DialogTitle>
           <DialogDescription>Registered on {registeredStr}</DialogDescription>
         </DialogHeader>
 
@@ -168,35 +176,29 @@ export function EventDetailsModal({
                 <span>{event.bayNames}</span>
               </div>
             )}
-            <div className="flex items-center gap-2 text-sm">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              <span>
-                {isFull ? (
-                  <>
-                    <span className="font-medium text-amber-600 dark:text-amber-400">Full</span>
-                    {" · "}{event.registeredCount} / {event.capacity} registered
-                  </>
-                ) : (
-                  <>
-                    {spotsLeft} {spotsLeft === 1 ? "spot" : "spots"} left
-                    {" · "}{event.registeredCount} / {event.capacity} registered
-                  </>
-                )}
+          </div>
+
+          {/* Status */}
+          <div className="flex items-center gap-1.5">
+            {event.registrationStatus === "confirmed" && (
+              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                Confirmed
               </span>
-            </div>
-            {event.priceCents > 0 && (
-              <div className="flex items-center gap-2 text-sm">
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">
-                  ${(event.priceCents / 100).toFixed(2)}
-                </span>
-              </div>
             )}
-            {event.priceCents === 0 && (
-              <div className="flex items-center gap-2 text-sm">
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium text-green-600 dark:text-green-400">Free</span>
-              </div>
+            {event.registrationStatus === "waitlisted" && (
+              <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                Waitlisted{event.waitlistPosition != null ? ` #${event.waitlistPosition}` : ""}
+              </span>
+            )}
+            {event.registrationStatus === "pending_payment" && (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                Payment Pending
+              </span>
+            )}
+            {event.registrationStatus === "cancelled" && (
+              <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                Cancelled
+              </span>
             )}
           </div>
 
@@ -211,7 +213,47 @@ export function EventDetailsModal({
             </div>
           )}
 
-          {/* Description */}
+          {/* Pricing Breakdown */}
+          <div>
+            <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Pricing
+            </h4>
+            <div className="rounded-lg bg-muted/50 p-3">
+              {event.priceCents > 0 ? (
+                discount > 0 ? (
+                  <>
+                    <div className="flex items-center justify-between py-1 text-sm text-muted-foreground">
+                      <span>Event price</span>
+                      <span>{formatPrice(event.priceCents)}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1 text-sm">
+                      <span className="flex items-center gap-1 text-teal-600 dark:text-teal-400">
+                        <Crown className="h-3 w-3" />
+                        {event.discountDescription || "Member discount"}
+                      </span>
+                      <span className="text-teal-600 dark:text-teal-400">-{formatPrice(discount)}</span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between border-t pt-2 text-sm font-semibold">
+                      <span>Total</span>
+                      <span>{formatPrice(total)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between py-1 text-sm font-semibold">
+                    <span>Total</span>
+                    <span>{formatPrice(event.priceCents)}</span>
+                  </div>
+                )
+              ) : (
+                <div className="flex items-center justify-between py-1 text-sm font-semibold">
+                  <span>Total</span>
+                  <span className="text-green-600 dark:text-green-400">Free</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* About */}
           {event.description && (
             <div>
               <h4 className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -223,54 +265,138 @@ export function EventDetailsModal({
               </p>
             </div>
           )}
-
-          {/* Cancel Confirmation */}
-          {showCancelConfirm && canCancel && (
-            <div className="space-y-3">
-              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>
-                  Are you sure you want to cancel your registration for this event?
-                  This action cannot be undone.
-                </span>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCancelConfirm(false)}
-                  className="flex-1 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  Go Back
-                </button>
-                <button
-                  type="button"
-                  disabled={cancelling}
-                  onClick={handleCancel}
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
-                >
-                  {cancelling ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <X className="h-4 w-4" />
-                  )}
-                  Cancel Registration
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Footer Actions */}
-        {canCancel && !showCancelConfirm && (
-          <div className="border-t pt-4">
+        {/* Collapsible Manage section */}
+        {canCancel && (cancelAction || onCancelClient) && (
+          <div className="border-t">
             <button
               type="button"
-              onClick={() => setShowCancelConfirm(true)}
-              className="w-full rounded-lg border border-red-200 px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30"
+              onClick={() => setManageOpen(!manageOpen)}
+              className="flex w-full items-center justify-between py-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              Cancel Registration
+              <span className="flex items-center gap-2">
+                <Settings2 className="h-4 w-4" />
+                Manage
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform duration-200 ${manageOpen ? "rotate-180" : ""}`}
+              />
             </button>
+
+            {manageOpen && (
+              <div className="space-y-2 pb-2">
+                {/* Cancellation window notice */}
+                {!showCancelConfirm && (() => {
+                  if (hasPaidEvent && insideWindow) {
+                    return (
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>
+                          This event is within the {cancellationWindowHours}-hour cancellation window. Cancellations will not receive a refund.
+                        </span>
+                      </div>
+                    );
+                  }
+                  if (hasPaidEvent && !insideWindow) {
+                    const deadlineMs =
+                      new Date(event.startTime).getTime() -
+                      cancellationWindowHours * 60 * 60 * 1000;
+                    const deadline = new Date(deadlineMs);
+                    const dlDateStr = deadline.toLocaleDateString("en-US", {
+                      timeZone: timezone,
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    });
+                    const dlTimeStr = deadline.toLocaleTimeString("en-US", {
+                      timeZone: timezone,
+                      hour: "numeric",
+                      minute: "2-digit",
+                    });
+                    return (
+                      <p className="text-xs text-muted-foreground pb-1">
+                        Free cancellation until {dlDateStr} at {dlTimeStr}
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {showCancelConfirm ? (
+                  <div className="space-y-3">
+                    {hasPaidEvent && insideWindow && (
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div>
+                          <p className="font-medium">No refund will be issued</p>
+                          <p className="mt-0.5 text-xs">
+                            This event is within the {cancellationWindowHours}-hour
+                            cancellation window. If you believe you should receive a refund,
+                            please contact the facility after cancelling.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {hasPaidEvent && !insideWindow && (
+                      <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div>
+                          <p className="font-medium">Full refund will be issued</p>
+                          <p className="mt-0.5 text-xs">
+                            You&apos;re cancelling more than {cancellationWindowHours} hours
+                            before the event start time. A full refund of{" "}
+                            {formatPrice(total)} will be processed automatically.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {!hasPaidEvent && (
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>
+                          Are you sure you want to cancel your registration? This action cannot be undone.
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowCancelConfirm(false)}
+                        className="flex-1 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800"
+                      >
+                        Go Back
+                      </button>
+                      <button
+                        type="button"
+                        disabled={cancelling}
+                        onClick={handleCancel}
+                        className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                      >
+                        {cancelling ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <X className="h-4 w-4" />
+                        )}
+                        Cancel Registration
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowCancelConfirm(true)}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 dark:border-red-800 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
+                  >
+                    <X className="h-4 w-4" />
+                    Cancel Registration
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </DialogContent>

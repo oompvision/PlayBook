@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Crown } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   BookingDetailsModal,
@@ -13,7 +13,8 @@ import {
   EventDetailsModal,
   type EventDetailData,
 } from "@/components/event-details-modal";
-import { formatTimeInZone, getVisualBookingStatus } from "@/lib/utils";
+import { Toast } from "@/components/ui/toast";
+import { formatPrice, formatTimeInZone, getVisualBookingStatus } from "@/lib/utils";
 
 type ModifiedFromInfo = {
   startTime: string;
@@ -21,6 +22,12 @@ type ModifiedFromInfo = {
   date: string;
   bayName: string;
 };
+
+type RefundInfo = {
+  status: string;
+  amount_cents: number | null;
+  refunded_amount_cents: number | null;
+} | null;
 
 type Booking = {
   id: string;
@@ -38,6 +45,7 @@ type Booking = {
   modified_from: string | null;
   modified_from_info?: ModifiedFromInfo | null;
   locationName?: string | null;
+  refundInfo?: RefundInfo;
 };
 
 type EventReg = {
@@ -57,6 +65,8 @@ type EventData = {
   startTime: string;
   endTime: string;
   priceCents: number;
+  discountCents: number;
+  discountDescription: string | null;
   capacity: number;
   registeredCount: number;
   bayNames: string;
@@ -120,6 +130,7 @@ export function MyBookingsList({
   const [filterNotice, setFilterNotice] = useState<string | null>(null);
   const [autoOpenedCode, setAutoOpenedCode] = useState<string | null>(null);
   const [pastTab, setPastTab] = useState<"past" | "cancelled">("past");
+  const [cancelToast, setCancelToast] = useState<string | null>(null);
 
   const allBookings = [...upcoming, ...past]
     .filter((item): item is FeedItemBooking => item.kind === "booking")
@@ -277,6 +288,8 @@ export function MyBookingsList({
       startTime: eventData.startTime,
       endTime: eventData.endTime,
       priceCents: eventData.priceCents,
+      discountCents: eventData.discountCents || 0,
+      discountDescription: eventData.discountDescription || null,
       capacity: eventData.capacity,
       registeredCount: eventData.registeredCount,
       bayNames: eventData.bayNames,
@@ -317,6 +330,9 @@ export function MyBookingsList({
       const visualStatus = getVisualBookingStatus(booking.status, booking.start_time, booking.end_time);
       const isActive = visualStatus === "active";
 
+      const discount = booking.discount_cents || 0;
+      const total = booking.total_price_cents - discount;
+
       return (
         <button
           key={booking.id}
@@ -324,14 +340,28 @@ export function MyBookingsList({
           onClick={() => openBooking(booking, true)}
           className="w-full rounded-lg border p-4 text-left hover-lift press-feedback hover:bg-muted/50"
         >
-          <p className="font-medium">{dateStr}</p>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {timeStr} · {bayMap[booking.bay_id] || "Facility"}
-            {booking.locationName ? ` · ${booking.locationName}` : ""} · $
-            {((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">
+              {dateStr} &middot; {timeStr}
+            </p>
+            <ArrowUpRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {bayMap[booking.bay_id] || "Facility"}
+            {booking.locationName ? ` · ${booking.locationName}` : ""}
           </p>
-          <div className="mt-1 flex items-center gap-2">
-            <span className="font-mono text-xs text-muted-foreground">
+          {discount > 0 ? (
+            <p className="mt-0.5 text-xs">
+              <span className="text-muted-foreground line-through">{formatPrice(booking.total_price_cents)}</span>
+              <span className="ml-1 font-semibold text-teal-600 dark:text-teal-400">
+                <Crown className="mr-0.5 inline h-3 w-3" /> {formatPrice(total)}
+              </span>
+            </p>
+          ) : (
+            <p className="mt-0.5 text-xs font-semibold">{formatPrice(total)}</p>
+          )}
+          <div className="mt-0.5 flex items-center gap-1.5">
+            <span className="font-mono text-[11px] text-muted-foreground">
               {booking.confirmation_code}
             </span>
             {isActive ? (
@@ -364,11 +394,6 @@ export function MyBookingsList({
               </span>
             </p>
           )}
-          {booking.notes && (
-            <p className="mt-1 text-xs italic text-muted-foreground">
-              {booking.notes}
-            </p>
-          )}
         </button>
       );
     }
@@ -384,17 +409,24 @@ export function MyBookingsList({
         <p className={`font-medium ${isCancelled ? "text-muted-foreground" : ""}`}>{dateStr}</p>
         <p className="mt-0.5 text-sm text-muted-foreground">
           {timeStr} · {bayMap[booking.bay_id] || "Facility"}
-          {booking.locationName ? ` · ${booking.locationName}` : ""} · $
-          {((booking.total_price_cents - (booking.discount_cents || 0)) / 100).toFixed(2)}
+          {booking.locationName ? ` · ${booking.locationName}` : ""} ·{" "}
+          {formatPrice(booking.total_price_cents - (booking.discount_cents || 0))}
         </p>
         <div className="mt-1 flex items-center gap-2">
           <span className="font-mono text-xs text-muted-foreground">
             {booking.confirmation_code}
           </span>
           {isCancelled ? (
-            <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
-              Cancelled
-            </span>
+            <>
+              <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                Cancelled
+              </span>
+              {booking.refundInfo && (booking.refundInfo.status === "refunded" || booking.refundInfo.status === "partially_refunded") && booking.refundInfo.refunded_amount_cents && booking.refundInfo.amount_cents ? (
+                <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                  {Math.round((booking.refundInfo.refunded_amount_cents / booking.refundInfo.amount_cents) * 100)}% Refunded
+                </span>
+              ) : null}
+            </>
           ) : (
             <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
               Completed
@@ -414,49 +446,101 @@ export function MyBookingsList({
       day: "numeric",
     });
     const timeStr = `${formatTimeInZone(eventData.startTime, timezone)} – ${formatTimeInZone(eventData.endTime, timezone)}`;
+    const isCancelled = reg.status === "cancelled";
 
-    const statusBadge = (() => {
-      switch (reg.status) {
-        case "confirmed":
-          return <Badge className="bg-green-600 text-white hover:bg-green-600">Confirmed</Badge>;
-        case "waitlisted":
-          return (
-            <Badge className="bg-blue-600 text-white hover:bg-blue-600">
-              Waitlisted{reg.waitlist_position ? ` #${reg.waitlist_position}` : ""}
-            </Badge>
-          );
-        case "pending_payment":
-          return <Badge className="bg-amber-500 text-white hover:bg-amber-500">Payment Pending</Badge>;
-        case "cancelled":
-          return <Badge variant="secondary">Cancelled</Badge>;
-        default:
-          return <Badge variant="outline">{reg.status}</Badge>;
-      }
-    })();
+    if (isUpcoming) {
+      const discount = eventData.discountCents || 0;
+      const total = eventData.priceCents - discount;
 
+      return (
+        <button
+          key={reg.id}
+          type="button"
+          onClick={() => openEvent(reg, eventData)}
+          className="w-full rounded-lg border p-4 text-left hover-lift press-feedback hover:bg-muted/50"
+        >
+          {/* Event name + black pill */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium">{eventData.name}</p>
+              <span className="inline-flex items-center rounded-full bg-foreground px-2 py-0.5 text-[10px] font-semibold text-background">
+                Event
+              </span>
+            </div>
+            <ArrowUpRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+          </div>
+          {/* Date */}
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {dateStr} &middot; {timeStr}
+          </p>
+          {/* Bays */}
+          {eventData.bayNames && (
+            <p className="mt-0.5 text-xs text-muted-foreground">{eventData.bayNames}</p>
+          )}
+          {/* Price */}
+          {eventData.priceCents > 0 ? (
+            discount > 0 ? (
+              <p className="mt-0.5 text-xs">
+                <span className="text-muted-foreground line-through">{formatPrice(eventData.priceCents)}</span>
+                <span className="ml-1 font-semibold text-teal-600 dark:text-teal-400">
+                  <Crown className="mr-0.5 inline h-3 w-3" /> {formatPrice(total)}
+                </span>
+              </p>
+            ) : (
+              <p className="mt-0.5 text-xs font-semibold">{formatPrice(eventData.priceCents)}</p>
+            )
+          ) : (
+            <p className="mt-0.5 text-xs font-semibold text-green-600 dark:text-green-400">Free</p>
+          )}
+          {/* Status badge */}
+          <div className="mt-0.5 flex items-center gap-1.5">
+            {reg.status === "confirmed" ? (
+              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                Confirmed
+              </span>
+            ) : reg.status === "waitlisted" ? (
+              <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                Waitlisted{reg.waitlist_position ? ` #${reg.waitlist_position}` : ""}
+              </span>
+            ) : reg.status === "pending_payment" ? (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                Payment Pending
+              </span>
+            ) : null}
+          </div>
+        </button>
+      );
+    }
+
+    // Past / Cancelled event
     return (
       <button
         key={reg.id}
         type="button"
         onClick={() => openEvent(reg, eventData)}
-        className={`w-full rounded-lg border p-4 text-left hover-lift press-feedback hover:bg-muted/50 ${!isUpcoming ? "opacity-60" : ""}`}
+        className="w-full rounded-lg border p-4 text-left opacity-60 hover-lift press-feedback hover:bg-muted/50"
       >
-        <div>
-          <div className="flex items-center gap-2">
-            <p className="font-medium">{dateStr}</p>
-            <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400">
-              Event
-            </Badge>
-            {statusBadge}
-          </div>
-          <p className="mt-1 font-semibold">{eventData.name}</p>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {timeStr}
-            {eventData.bayNames ? ` · ${eventData.bayNames}` : ""}
-            {eventData.priceCents > 0
-              ? ` · $${(eventData.priceCents / 100).toFixed(2)}`
-              : " · Free"}
-          </p>
+        <div className="flex items-center gap-2">
+          <p className={`font-medium ${isCancelled ? "text-muted-foreground" : ""}`}>{eventData.name}</p>
+          <span className="inline-flex items-center rounded-full bg-foreground px-2 py-0.5 text-[10px] font-semibold text-background">
+            Event
+          </span>
+        </div>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          {dateStr} · {timeStr}
+          {eventData.bayNames ? ` · ${eventData.bayNames}` : ""} ·{" "}
+          {eventData.priceCents > 0 ? formatPrice(eventData.priceCents - (eventData.discountCents || 0)) : "Free"}
+        </p>
+        <div className="mt-1 flex items-center gap-2">
+          {isCancelled ? (
+            <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
+              Cancelled
+            </span>
+          ) : (
+            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+              Completed
+            </span>
+          )}
         </div>
       </button>
     );
@@ -487,7 +571,11 @@ export function MyBookingsList({
     <>
       {/* Upcoming */}
       <div className="mt-8">
-        <h2 className="text-lg font-semibold">Upcoming</h2>
+        <div className="flex items-center gap-1 rounded-lg bg-muted p-1">
+          <div className="flex-1 rounded-md bg-background px-3 py-1.5 text-center text-sm font-medium text-foreground shadow-sm">
+            Upcoming{upcoming.length > 0 ? ` (${upcoming.length})` : ""}
+          </div>
+        </div>
         {!hasUpcoming && (
           <p className="mt-4 py-8 text-center text-muted-foreground">
             No upcoming bookings or events.{" "}
@@ -553,6 +641,7 @@ export function MyBookingsList({
         open={bookingModalOpen}
         onOpenChange={handleBookingOpenChange}
         cancelAction={cancelAction}
+        onCancelComplete={() => setCancelToast("Booking cancelled.")}
         notice={filterNotice}
         cancellationWindowHours={cancellationWindowHours}
         paymentMode={paymentMode}
@@ -564,7 +653,18 @@ export function MyBookingsList({
         open={eventModalOpen}
         onOpenChange={setEventModalOpen}
         cancelAction={cancelEventAction}
+        onCancelComplete={(name) => setCancelToast(`You have unregistered from ${name}.`)}
+        cancellationWindowHours={cancellationWindowHours}
+        paymentMode={paymentMode}
       />
+
+      {cancelToast && (
+        <Toast
+          message={cancelToast}
+          duration={5000}
+          onClose={() => setCancelToast(null)}
+        />
+      )}
     </>
   );
 }

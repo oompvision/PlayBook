@@ -12,24 +12,16 @@ import {
 import { supabase } from '../lib/supabase';
 import { formatPrice, formatTimeInZone, formatDateLong } from '../lib/format';
 import { Badge } from './Badge';
-import { Button } from './Button';
 import { Feather } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../theme';
 import { CrownIcon } from './TabIcons';
-import type { Booking, ModifiedFromInfo } from '../types';
+import type { EventRegistration } from '../types';
 
-// Enable LayoutAnimation on Android
 if (
   Platform.OS === 'android' &&
   UIManager.setLayoutAnimationEnabledExperimental
 ) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
-interface SlotDetail {
-  start_time: string;
-  end_time: string;
-  price_cents: number;
 }
 
 interface PaymentInfo {
@@ -41,23 +33,21 @@ interface PaymentInfo {
 }
 
 interface Props {
-  booking: Booking;
+  registration: EventRegistration;
   timezone: string;
   cancellationWindowHours: number | null;
   hasPaymentMode: boolean;
   paymentMode?: string;
-  canModify: boolean;
-  onModify: () => void;
   onCancelled: () => void;
   onCollapse: () => void;
 }
 
 function isInsideCancellationWindow(
-  bookingStartTime: string,
+  eventStartTime: string,
   windowHours: number
 ): boolean {
-  const bookingStart = new Date(bookingStartTime).getTime();
-  const cutoff = bookingStart - windowHours * 60 * 60 * 1000;
+  const eventStart = new Date(eventStartTime).getTime();
+  const cutoff = eventStart - windowHours * 60 * 60 * 1000;
   return Date.now() >= cutoff;
 }
 
@@ -75,22 +65,45 @@ function formatCreatedAt(timestamp: string, timezone: string): string {
     hour12: true,
     timeZone: timezone,
   }).format(date);
-  return `Booked on ${datePart}, ${timePart}`;
+  return `Registered on ${datePart}, ${timePart}`;
 }
 
-export function ExpandedBookingCard({
-  booking,
+function getBayNames(reg: EventRegistration): string {
+  if (!reg.events?.event_bays) return '';
+  return reg.events.event_bays
+    .map((eb) => {
+      const b = eb.bays;
+      if (Array.isArray(b)) return b.map((x) => x.name).join(', ');
+      return b?.name ?? '';
+    })
+    .filter(Boolean)
+    .join(', ');
+}
+
+function getStatusBadge(reg: EventRegistration): { label: string; variant: 'success' | 'destructive' | 'default' | 'muted' } {
+  switch (reg.status) {
+    case 'confirmed':
+      return { label: 'Confirmed', variant: 'success' };
+    case 'waitlisted':
+      return { label: `Waitlisted${reg.waitlist_position != null ? ` #${reg.waitlist_position}` : ''}`, variant: 'default' };
+    case 'pending_payment':
+      return { label: 'Payment Pending', variant: 'default' };
+    case 'cancelled':
+      return { label: 'Cancelled', variant: 'destructive' };
+    default:
+      return { label: reg.status, variant: 'muted' };
+  }
+}
+
+export function ExpandedEventCard({
+  registration: reg,
   timezone,
   cancellationWindowHours,
   hasPaymentMode,
   paymentMode,
-  canModify,
-  onModify,
   onCancelled,
   onCollapse,
 }: Props) {
-  const [slots, setSlots] = useState<SlotDetail[]>([]);
-  const [loadingSlots, setLoadingSlots] = useState(true);
   const [paymentInfo, setPaymentInfo] = useState<PaymentInfo | null>(null);
   const [loadingPayment, setLoadingPayment] = useState(true);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -98,48 +111,28 @@ export function ExpandedBookingCard({
   const [showPolicy, setShowPolicy] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
 
-  const isUpcoming =
-    booking.status === 'confirmed' && booking.date >= new Date().toISOString().slice(0, 10);
+  const evt = reg.events;
+  if (!evt) return null;
+
+  const bayNames = getBayNames(reg);
+  const statusBadge = getStatusBadge(reg);
+  const isUpcoming = reg.status !== 'cancelled' && new Date(evt.end_time) >= new Date();
   const insideWindow =
     hasPaymentMode &&
     cancellationWindowHours !== null &&
-    isInsideCancellationWindow(booking.start_time, cancellationWindowHours);
+    isInsideCancellationWindow(evt.start_time, cancellationWindowHours);
+
+  const priceCents = evt.price_cents;
+  const discount = reg.discount_cents || 0;
+  const total = priceCents - discount;
 
   useEffect(() => {
-    // Fetch slot details for pricing breakdown
-    supabase
-      .from('booking_slots')
-      .select('bay_schedule_slot_id, bay_schedule_slots:bay_schedule_slot_id(start_time, end_time, price_cents)')
-      .eq('booking_id', booking.id)
-      .then(({ data }) => {
-        if (data) {
-          const slotDetails: SlotDetail[] = data
-            .map((row: any) => {
-              const s = row.bay_schedule_slots;
-              if (!s) return null;
-              return {
-                start_time: s.start_time,
-                end_time: s.end_time,
-                price_cents: s.price_cents,
-              };
-            })
-            .filter(Boolean) as SlotDetail[];
-          // Sort by start time
-          slotDetails.sort(
-            (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-          );
-          setSlots(slotDetails);
-        }
-        setLoadingSlots(false);
-      });
-
-    // Fetch payment info
     supabase
       .from('booking_payments')
       .select(
         'status, amount_cents, refunded_amount_cents, cancellation_policy_text, stripe_payment_intent_id'
       )
-      .eq('booking_id', booking.id)
+      .eq('event_registration_id', reg.id)
       .order('created_at', { ascending: false })
       .limit(1)
       .then(({ data }) => {
@@ -148,9 +141,9 @@ export function ExpandedBookingCard({
         }
         setLoadingPayment(false);
       });
-  }, [booking.id]);
+  }, [reg.id]);
 
-  const hasPaidBooking =
+  const hasPaidEvent =
     paymentInfo &&
     (paymentInfo.status === 'charged' || paymentInfo.status === 'card_saved');
 
@@ -170,19 +163,19 @@ export function ExpandedBookingCard({
     setCancelling(true);
     try {
       // Fire-and-forget auto-refund if paid and outside window
-      if (hasPaidBooking && !insideWindow) {
+      if (hasPaidEvent && !insideWindow) {
         fetch(
           `${process.env.EXPO_PUBLIC_WEB_URL || ''}/api/stripe/auto-refund`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ booking_id: booking.id }),
+            body: JSON.stringify({ event_registration_id: reg.id }),
           }
         ).catch(() => {});
       }
 
-      const { error } = await supabase.rpc('cancel_booking', {
-        p_booking_id: booking.id,
+      const { error } = await supabase.rpc('cancel_event_registration', {
+        p_registration_id: reg.id,
       });
 
       if (error) {
@@ -199,16 +192,10 @@ export function ExpandedBookingCard({
     }
   };
 
-  // Compute subtotal from slots
-  const subtotal = slots.reduce((sum, s) => sum + s.price_cents, 0);
-  const discount = booking.discount_cents || 0;
-  const total = booking.total_price_cents - discount;
-
-  // Cancellation window deadline text
   const getCancellationDeadline = (): string | null => {
     if (!hasPaymentMode || cancellationWindowHours === null) return null;
-    const bookingStart = new Date(booking.start_time).getTime();
-    const deadline = new Date(bookingStart - cancellationWindowHours * 60 * 60 * 1000);
+    const eventStart = new Date(evt.start_time).getTime();
+    const deadline = new Date(eventStart - cancellationWindowHours * 60 * 60 * 1000);
     const datePart = new Intl.DateTimeFormat('en-US', {
       month: 'short',
       day: 'numeric',
@@ -223,69 +210,64 @@ export function ExpandedBookingCard({
     return `${datePart}, ${timePart}`;
   };
 
-  // Determine paid badge
   const showPaidBadge =
-    paymentMode === 'charge_upfront' && booking.status === 'confirmed';
+    paymentMode === 'charge_upfront' && reg.status === 'confirmed';
 
   return (
     <View style={styles.container}>
-      {/* Header — Date as primary title */}
+      {/* Header */}
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
+          {/* Event name + pill */}
+          <View style={styles.nameRow}>
+            <Text style={styles.eventName} numberOfLines={2}>{evt.name}</Text>
+            <View style={styles.eventPill}>
+              <Text style={styles.eventPillText}>Event</Text>
+            </View>
+          </View>
+
           <View style={styles.detailRow}>
             <Feather name="calendar" size={16} color={colors.mutedForeground} />
-            <Text style={styles.dateTitle}>{formatDateLong(booking.date)}</Text>
+            <Text style={styles.dateTitle}>
+              {new Date(evt.start_time).toLocaleDateString('en-US', {
+                timeZone: timezone,
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+              })}
+            </Text>
           </View>
           <View style={styles.detailRow}>
             <Feather name="clock" size={16} color={colors.mutedForeground} />
             <Text style={styles.timeSubtitle}>
-              {formatTimeInZone(booking.start_time, timezone)} – {formatTimeInZone(booking.end_time, timezone)}
+              {formatTimeInZone(evt.start_time, timezone)} – {formatTimeInZone(evt.end_time, timezone)}
             </Text>
           </View>
-          <View style={styles.detailRow}>
-            <Feather name="map-pin" size={16} color={colors.mutedForeground} />
-            <Text style={styles.locationSubtitle}>
-              {booking.bays?.name ?? 'Unknown'}
-              {booking.organizations?.name ? ` – ${booking.organizations.name}` : ''}
-            </Text>
-          </View>
+          {bayNames ? (
+            <View style={styles.detailRow}>
+              <Feather name="map-pin" size={16} color={colors.mutedForeground} />
+              <Text style={styles.locationSubtitle}>{bayNames}</Text>
+            </View>
+          ) : null}
           <Text style={styles.createdAt}>
-            {formatCreatedAt(booking.created_at, timezone)}
+            {formatCreatedAt(reg.registered_at, timezone)}
           </Text>
           <View style={styles.codeBadgeRow}>
-            <Text style={styles.confirmationCodeSmall}>{booking.confirmation_code}</Text>
-            <Badge
-              label={booking.status === 'confirmed' ? 'Confirmed' : 'Cancelled'}
-              variant={booking.status === 'confirmed' ? 'success' : 'destructive'}
-            />
-            {booking.status === 'cancelled' && !loadingPayment && paymentInfo && (paymentInfo.status === 'refunded' || paymentInfo.status === 'partial_refund') && paymentInfo.refunded_amount_cents && paymentInfo.amount_cents ? (
+            <Badge label={statusBadge.label} variant={statusBadge.variant} />
+            {showPaidBadge && <Badge label="Paid" variant="success" />}
+            {!showPaidBadge && !loadingPayment && paymentInfo && (
               <Badge
-                label={`${Math.round((paymentInfo.refunded_amount_cents / paymentInfo.amount_cents) * 100)}% Refunded`}
-                variant="muted"
+                label={
+                  paymentInfo.status === 'charged'
+                    ? 'Paid'
+                    : paymentInfo.status === 'card_saved'
+                    ? 'Card Saved'
+                    : paymentInfo.status
+                }
+                variant={paymentInfo.status === 'charged' ? 'success' : 'default'}
               />
-            ) : booking.status !== 'cancelled' ? (
-              <>
-                {showPaidBadge && (
-                  <Badge label="Paid" variant="success" />
-                )}
-                {!showPaidBadge && !loadingPayment && paymentInfo && (
-                  <Badge
-                    label={
-                      paymentInfo.status === 'charged'
-                        ? 'Paid'
-                        : paymentInfo.status === 'card_saved'
-                        ? 'Card Saved'
-                        : paymentInfo.status
-                    }
-                    variant={
-                      paymentInfo.status === 'charged'
-                        ? 'success'
-                        : 'default'
-                    }
-                  />
-                )}
-              </>
-            ) : null}
+            )}
           </View>
         </View>
         <TouchableOpacity onPress={onCollapse} style={styles.closeButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -293,101 +275,58 @@ export function ExpandedBookingCard({
         </TouchableOpacity>
       </View>
 
-      {/* Modified from info */}
-      {booking.modified_from_info && (
-        <View style={styles.modifiedFromBox}>
-          <Text style={styles.modifiedFromText}>
-            Modified from {formatTimeInZone(booking.modified_from_info.startTime, timezone)} –{' '}
-            {formatTimeInZone(booking.modified_from_info.endTime, timezone)},{' '}
-            {new Date(booking.modified_from_info.date + 'T12:00:00').toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-            })}
-            , {booking.modified_from_info.bayName}
-          </Text>
-        </View>
-      )}
-
-      {/* Pricing breakdown */}
+      {/* Pricing */}
       <View style={styles.pricingSection}>
         <Text style={styles.pricingHeader}>PRICING</Text>
         <View style={styles.pricingBox}>
-          {loadingSlots ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : slots.length > 0 ? (
+          {priceCents > 0 ? (
             <>
-              {slots.map((slot, i) => (
-                <View key={i} style={styles.slotRow}>
-                  <Text style={styles.slotTime}>
-                    {formatTimeInZone(slot.start_time, timezone)} –{' '}
-                    {formatTimeInZone(slot.end_time, timezone)}
-                  </Text>
-                  <Text style={styles.slotPrice}>{formatPrice(slot.price_cents)}</Text>
-                </View>
-              ))}
-              {discount > 0 && (
+              {discount > 0 ? (
                 <>
-                  <View style={[styles.slotRow, styles.subtotalRow]}>
-                    <Text style={styles.subtotalLabel}>Subtotal</Text>
-                    <Text style={styles.subtotalValue}>{formatPrice(subtotal)}</Text>
+                  <View style={styles.slotRow}>
+                    <Text style={styles.subtotalLabel}>Event price</Text>
+                    <Text style={styles.subtotalValue}>{formatPrice(priceCents)}</Text>
                   </View>
                   <View style={styles.slotRow}>
                     <View style={styles.discountLabelRow}>
                       <CrownIcon size={13} color="#16a34a" />
                       <Text style={styles.discountLabel}>
-                        {booking.discount_description || 'Member discount'}
+                        {reg.discount_description || 'Member discount'}
                       </Text>
                     </View>
                     <Text style={styles.discountValue}>-{formatPrice(discount)}</Text>
                   </View>
+                  <View style={[styles.slotRow, styles.totalRow]}>
+                    <Text style={styles.totalLabel}>Total</Text>
+                    <Text style={styles.totalValue}>{formatPrice(total)}</Text>
+                  </View>
                 </>
+              ) : (
+                <View style={styles.slotRow}>
+                  <Text style={styles.totalLabel}>Total</Text>
+                  <Text style={styles.totalValue}>{formatPrice(priceCents)}</Text>
+                </View>
               )}
-              <View style={[styles.slotRow, styles.totalRow]}>
-                <Text style={styles.totalLabel}>Total</Text>
-                <Text style={styles.totalValue}>{formatPrice(total)}</Text>
-              </View>
             </>
           ) : (
-            // Fallback: no slot data (e.g. dynamic booking)
-            <>
-              {discount > 0 && (
-                <>
-                  <View style={styles.slotRow}>
-                    <Text style={styles.subtotalLabel}>Subtotal</Text>
-                    <Text style={styles.subtotalValue}>
-                      {formatPrice(booking.total_price_cents)}
-                    </Text>
-                  </View>
-                  <View style={styles.slotRow}>
-                    <View style={styles.discountLabelRow}>
-                      <CrownIcon size={13} color="#16a34a" />
-                      <Text style={styles.discountLabel}>
-                        {booking.discount_description || 'Member discount'}
-                      </Text>
-                    </View>
-                    <Text style={styles.discountValue}>-{formatPrice(discount)}</Text>
-                  </View>
-                </>
-              )}
-              <View style={[styles.slotRow, discount > 0 ? styles.totalRow : undefined]}>
-                <Text style={styles.totalLabel}>Total</Text>
-                <Text style={styles.totalValue}>{formatPrice(total)}</Text>
-              </View>
-            </>
+            <View style={styles.slotRow}>
+              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={[styles.totalValue, { color: '#16a34a' }]}>Free</Text>
+            </View>
           )}
         </View>
       </View>
 
-      {/* Notes */}
-      {booking.notes && (
-        <View style={styles.notesSection}>
-          <Text style={styles.notesLabel}>Notes</Text>
-          <Text style={styles.notesText}>{booking.notes}</Text>
+      {/* About */}
+      {evt.description ? (
+        <View style={styles.aboutSection}>
+          <Text style={styles.aboutHeader}>ABOUT</Text>
+          <Text style={styles.aboutText}>{evt.description}</Text>
         </View>
-      )}
+      ) : null}
 
-      {/* Collapsible Manage section */}
-      {isUpcoming && (
+      {/* Manage section */}
+      {isUpcoming && reg.status !== 'cancelled' && (
         <View style={styles.manageSection}>
           <TouchableOpacity
             style={styles.manageHeader}
@@ -415,23 +354,22 @@ export function ExpandedBookingCard({
                 insideWindow ? (
                   <View style={styles.windowBannerAmber}>
                     <Text style={styles.windowTitleAmber}>
-                      This booking is within the {cancellationWindowHours}-hour cancellation window.
+                      This event is within the {cancellationWindowHours}-hour cancellation window.
                     </Text>
                     <Text style={styles.windowDescAmber}>
-                      Cancellations will not receive a refund. Modifications are not available.
+                      Cancellations will not receive a refund.
                     </Text>
                   </View>
                 ) : (
                   <Text style={styles.manageDeadlineText}>
-                    This booking can be canceled or modified until {getCancellationDeadline()}
+                    Free cancellation until {getCancellationDeadline()}
                   </Text>
                 )
               )}
 
-              {/* Cancel confirmation inline */}
               {showCancelConfirm ? (
                 <View style={styles.cancelConfirmSection}>
-                  <Text style={styles.cancelConfirmTitle}>Cancel Booking</Text>
+                  <Text style={styles.cancelConfirmTitle}>Cancel Registration</Text>
 
                   {loadingPayment ? (
                     <View style={styles.loadingRow}>
@@ -440,11 +378,11 @@ export function ExpandedBookingCard({
                     </View>
                   ) : (
                     <>
-                      {insideWindow && (
+                      {insideWindow && hasPaidEvent && (
                         <View style={styles.refundBannerAmber}>
                           <Text style={styles.refundTitleAmber}>No refund will be issued</Text>
                           <Text style={styles.refundDescAmber}>
-                            This booking is within the {cancellationWindowHours}-hour cancellation
+                            This event is within the {cancellationWindowHours}-hour cancellation
                             window. If you believe you should receive a refund, please contact the
                             facility after cancelling.
                           </Text>
@@ -458,11 +396,11 @@ export function ExpandedBookingCard({
                         </View>
                       )}
 
-                      {!insideWindow && hasPaidBooking && (
+                      {!insideWindow && hasPaidEvent && (
                         <View style={styles.refundBannerGreen}>
                           <Text style={styles.refundTitleGreen}>Full refund will be issued</Text>
                           <Text style={styles.refundDescGreen}>
-                            A full refund of {formatPrice(paymentInfo?.amount_cents || 0)} will be
+                            A full refund of {formatPrice(paymentInfo?.amount_cents || total)} will be
                             processed automatically.
                           </Text>
                           {policyText && (
@@ -475,9 +413,9 @@ export function ExpandedBookingCard({
                         </View>
                       )}
 
-                      {!insideWindow && !hasPaidBooking && (
+                      {!hasPaidEvent && (
                         <Text style={styles.simpleConfirmText}>
-                          Are you sure you want to cancel this booking? This action cannot be undone.
+                          Are you sure you want to cancel your registration? This action cannot be undone.
                         </Text>
                       )}
 
@@ -506,28 +444,18 @@ export function ExpandedBookingCard({
                       {cancelling ? (
                         <ActivityIndicator size="small" color="#fff" />
                       ) : (
-                        <Text style={styles.confirmCancelText}>Cancel Booking</Text>
+                        <Text style={styles.confirmCancelText}>Cancel Registration</Text>
                       )}
                     </TouchableOpacity>
                   </View>
                 </View>
               ) : (
-                /* Action buttons */
                 <View style={styles.actionButtons}>
-                  {canModify && (
-                    <Button
-                      title="Modify Booking"
-                      variant="secondary"
-                      size="md"
-                      onPress={onModify}
-                      style={styles.actionButton}
-                    />
-                  )}
                   <TouchableOpacity
                     style={styles.cancelBookingButton}
                     onPress={handleCancelPress}
                   >
-                    <Text style={styles.cancelBookingText}>✕  Cancel Booking</Text>
+                    <Text style={styles.cancelBookingText}>✕  Cancel Registration</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -539,7 +467,6 @@ export function ExpandedBookingCard({
   );
 }
 
-
 const styles = StyleSheet.create({
   container: {
     paddingTop: spacing.xs,
@@ -548,6 +475,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: spacing.sm,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: 4,
+  },
+  eventName: {
+    ...typography.h3,
+    color: colors.foreground,
+    fontSize: 18,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  eventPill: {
+    backgroundColor: colors.foreground,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  eventPillText: {
+    color: colors.background,
+    fontSize: 11,
+    fontWeight: '600',
   },
   dateTitle: {
     ...typography.h3,
@@ -565,17 +516,6 @@ const styles = StyleSheet.create({
     color: colors.mutedForeground,
     marginTop: 4,
   },
-  confirmationCodeSmall: {
-    ...typography.caption,
-    color: colors.mutedForeground,
-    fontFamily: 'monospace',
-  },
-  codeBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: 4,
-  },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -587,29 +527,16 @@ const styles = StyleSheet.create({
     color: colors.mutedForeground,
     marginTop: 6,
   },
-  closeButton: {
-    padding: spacing.xs,
-  },
-  manageHeaderLeft: {
+  codeBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    marginTop: 4,
   },
-  badgeRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
+  closeButton: {
+    padding: spacing.xs,
   },
-  modifiedFromBox: {
-    backgroundColor: '#eff6ff',
-    borderRadius: borderRadius.md,
-    padding: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  modifiedFromText: {
-    ...typography.caption,
-    color: '#2563eb',
-  },
+  // Pricing
   pricingSection: {
     marginBottom: spacing.md,
   },
@@ -631,20 +558,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 4,
   },
-  slotTime: {
-    ...typography.bodySmall,
-    color: colors.foreground,
-  },
-  slotPrice: {
-    ...typography.bodySmall,
-    color: colors.foreground,
-  },
-  subtotalRow: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    marginTop: spacing.sm,
-    paddingTop: spacing.sm,
-  },
   subtotalLabel: {
     ...typography.bodySmall,
     color: colors.mutedForeground,
@@ -654,8 +567,8 @@ const styles = StyleSheet.create({
     color: colors.mutedForeground,
   },
   discountLabelRow: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 4,
   },
   discountLabel: {
@@ -684,21 +597,53 @@ const styles = StyleSheet.create({
     color: colors.foreground,
     fontWeight: '600',
   },
-  notesSection: {
+  // About
+  aboutSection: {
     marginBottom: spacing.md,
   },
-  notesLabel: {
+  aboutHeader: {
     ...typography.caption,
     color: colors.mutedForeground,
     fontWeight: '600',
-    marginBottom: 4,
+    letterSpacing: 1,
+    marginBottom: spacing.sm,
   },
-  notesText: {
+  aboutText: {
     ...typography.bodySmall,
     color: colors.mutedForeground,
-    fontStyle: 'italic',
+    lineHeight: 20,
   },
-  // Cancellation window banners (pre-cancel view)
+  // Manage section (reuse booking styles)
+  manageSection: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: spacing.sm,
+  },
+  manageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+  },
+  manageHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  manageHeaderText: {
+    ...typography.body,
+    color: colors.mutedForeground,
+    fontWeight: '600',
+  },
+  manageContent: {
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  manageDeadlineText: {
+    ...typography.caption,
+    color: colors.mutedForeground,
+    marginBottom: spacing.xs,
+  },
   windowBannerAmber: {
     backgroundColor: '#fffbeb',
     borderWidth: 1,
@@ -718,32 +663,9 @@ const styles = StyleSheet.create({
     color: '#d97706',
     lineHeight: 18,
   },
-  windowBannerGreen: {
-    backgroundColor: '#f0fdf4',
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  windowTitleGreen: {
-    ...typography.bodySmall,
-    color: '#15803d',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  windowDescGreen: {
-    ...typography.caption,
-    color: '#16a34a',
-    lineHeight: 18,
-  },
-  // Action buttons
   actionButtons: {
     gap: spacing.sm,
     marginTop: spacing.sm,
-  },
-  actionButton: {
-    width: '100%',
   },
   cancelBookingButton: {
     borderWidth: 1,
@@ -758,7 +680,6 @@ const styles = StyleSheet.create({
     color: '#dc2626',
     fontWeight: '600',
   },
-  // Cancel confirmation section
   cancelConfirmSection: {
     borderTopWidth: 1,
     borderTopColor: colors.border,
@@ -887,31 +808,5 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
-  },
-  // Collapsible Manage section
-  manageSection: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    marginTop: spacing.sm,
-  },
-  manageHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.md,
-  },
-  manageHeaderText: {
-    ...typography.body,
-    color: colors.mutedForeground,
-    fontWeight: '600',
-  },
-  manageContent: {
-    paddingBottom: spacing.sm,
-    gap: spacing.sm,
-  },
-  manageDeadlineText: {
-    ...typography.caption,
-    color: colors.mutedForeground,
-    marginBottom: spacing.xs,
   },
 });
