@@ -8,13 +8,12 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import {
   Calendar,
   Clock,
   MapPin,
   Users,
-  DollarSign,
+  Crown,
   X,
   AlertTriangle,
   Loader2,
@@ -72,29 +71,6 @@ function isInsideCancellationWindow(
   return Date.now() >= cutoff;
 }
 
-function getStatusBadge(status: string, waitlistPosition: number | null) {
-  switch (status) {
-    case "confirmed":
-      return <Badge className="bg-green-600 text-white hover:bg-green-600">Confirmed</Badge>;
-    case "waitlisted":
-      return (
-        <Badge className="bg-blue-600 text-white hover:bg-blue-600">
-          Waitlisted{waitlistPosition != null ? ` #${waitlistPosition}` : ""}
-        </Badge>
-      );
-    case "pending_payment":
-      return (
-        <Badge className="bg-amber-500 text-white hover:bg-amber-500">
-          Payment Pending
-        </Badge>
-      );
-    case "cancelled":
-      return <Badge variant="secondary">Cancelled</Badge>;
-    default:
-      return <Badge variant="outline">{status}</Badge>;
-  }
-}
-
 export function EventDetailsModal({
   event,
   timezone,
@@ -110,7 +86,6 @@ export function EventDetailsModal({
   const [cancelling, setCancelling] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
 
-  // Reset state when modal closes
   useEffect(() => {
     if (!open) {
       setShowCancelConfirm(false);
@@ -137,11 +112,11 @@ export function EventDetailsModal({
     minute: "2-digit",
   });
 
-  const spotsLeft = event.capacity - event.registeredCount;
-  const isFull = spotsLeft <= 0;
   const canCancel = event.registrationStatus !== "cancelled";
   const hasPaidEvent = paymentMode !== "none" && event.priceCents > 0;
   const insideWindow = isInsideCancellationWindow(event.startTime, cancellationWindowHours);
+  const discount = event.discountCents || 0;
+  const total = event.priceCents - discount;
 
   async function handleCancel() {
     const eventName = event!.eventName;
@@ -154,7 +129,6 @@ export function EventDetailsModal({
         formData.set("registration_id", event!.registrationId);
         await cancelAction(formData);
       }
-      // Close modal immediately and show toast
       onOpenChange(false);
       onCancelComplete?.(eventName);
     } catch {
@@ -176,15 +150,12 @@ export function EventDetailsModal({
     >
       <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-md">
         <DialogHeader>
-          <div className="flex items-center justify-between pr-6">
-            <div className="flex items-center gap-2">
-              <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400">
-                Event
-              </Badge>
-              {getStatusBadge(event.registrationStatus, event.waitlistPosition)}
-            </div>
+          <div className="flex items-center gap-2">
+            <DialogTitle className="text-lg">{event.eventName}</DialogTitle>
+            <span className="inline-flex items-center rounded-full bg-foreground px-2 py-0.5 text-[10px] font-semibold text-background">
+              Event
+            </span>
           </div>
-          <DialogTitle className="text-lg">{event.eventName}</DialogTitle>
           <DialogDescription>Registered on {registeredStr}</DialogDescription>
         </DialogHeader>
 
@@ -205,44 +176,29 @@ export function EventDetailsModal({
                 <span>{event.bayNames}</span>
               </div>
             )}
-            <div className="flex items-center gap-2 text-sm">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              <span>
-                {isFull ? (
-                  <>
-                    <span className="font-medium text-amber-600 dark:text-amber-400">Full</span>
-                    {" · "}{event.registeredCount} / {event.capacity} registered
-                  </>
-                ) : (
-                  <>
-                    {spotsLeft} {spotsLeft === 1 ? "spot" : "spots"} left
-                    {" · "}{event.registeredCount} / {event.capacity} registered
-                  </>
-                )}
+          </div>
+
+          {/* Status */}
+          <div className="flex items-center gap-1.5">
+            {event.registrationStatus === "confirmed" && (
+              <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                Confirmed
               </span>
-            </div>
-            {event.priceCents > 0 && (
-              <div className="flex items-center gap-2 text-sm">
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-                {event.discountCents > 0 ? (
-                  <span className="font-medium">
-                    <span className="text-muted-foreground line-through">{formatPrice(event.priceCents)}</span>
-                    <span className="ml-1.5 text-teal-600 dark:text-teal-400">
-                      {formatPrice(event.priceCents - event.discountCents)}
-                    </span>
-                  </span>
-                ) : (
-                  <span className="font-medium">
-                    {formatPrice(event.priceCents)}
-                  </span>
-                )}
-              </div>
             )}
-            {event.priceCents === 0 && (
-              <div className="flex items-center gap-2 text-sm">
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium text-green-600 dark:text-green-400">Free</span>
-              </div>
+            {event.registrationStatus === "waitlisted" && (
+              <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                Waitlisted{event.waitlistPosition != null ? ` #${event.waitlistPosition}` : ""}
+              </span>
+            )}
+            {event.registrationStatus === "pending_payment" && (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                Payment Pending
+              </span>
+            )}
+            {event.registrationStatus === "cancelled" && (
+              <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                Cancelled
+              </span>
             )}
           </div>
 
@@ -257,7 +213,47 @@ export function EventDetailsModal({
             </div>
           )}
 
-          {/* Description */}
+          {/* Pricing Breakdown */}
+          <div>
+            <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Pricing
+            </h4>
+            <div className="rounded-lg bg-muted/50 p-3">
+              {event.priceCents > 0 ? (
+                discount > 0 ? (
+                  <>
+                    <div className="flex items-center justify-between py-1 text-sm text-muted-foreground">
+                      <span>Event price</span>
+                      <span>{formatPrice(event.priceCents)}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1 text-sm">
+                      <span className="flex items-center gap-1 text-teal-600 dark:text-teal-400">
+                        <Crown className="h-3 w-3" />
+                        {event.discountDescription || "Member discount"}
+                      </span>
+                      <span className="text-teal-600 dark:text-teal-400">-{formatPrice(discount)}</span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between border-t pt-2 text-sm font-semibold">
+                      <span>Total</span>
+                      <span>{formatPrice(total)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center justify-between py-1 text-sm font-semibold">
+                    <span>Total</span>
+                    <span>{formatPrice(event.priceCents)}</span>
+                  </div>
+                )
+              ) : (
+                <div className="flex items-center justify-between py-1 text-sm font-semibold">
+                  <span>Total</span>
+                  <span className="text-green-600 dark:text-green-400">Free</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* About */}
           {event.description && (
             <div>
               <h4 className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -351,7 +347,7 @@ export function EventDetailsModal({
                           <p className="mt-0.5 text-xs">
                             You&apos;re cancelling more than {cancellationWindowHours} hours
                             before the event start time. A full refund of{" "}
-                            {formatPrice(event.priceCents - (event.discountCents || 0))} will be processed automatically.
+                            {formatPrice(total)} will be processed automatically.
                           </p>
                         </div>
                       </div>

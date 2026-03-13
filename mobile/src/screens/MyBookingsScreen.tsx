@@ -24,6 +24,7 @@ import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { ExpandedBookingCard } from '../components/ExpandedBookingCard';
+import { ExpandedEventCard } from '../components/ExpandedEventCard';
 import { CrownIcon } from '../components/TabIcons';
 import { formatPrice, formatTimeInZone, formatDateLong } from '../lib/format';
 import { colors, spacing, typography } from '../theme';
@@ -57,6 +58,7 @@ export function MyBookingsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [pastTab, setPastTab] = useState<'past' | 'cancelled'>('past');
   const sectionListRef = useRef<SectionList<FeedItem>>(null);
   const pendingScrollId = useRef<string | null>(null);
@@ -252,11 +254,19 @@ export function MyBookingsScreen() {
   const handleToggleExpand = (bookingId: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpandedBookingId((prev) => (prev === bookingId ? null : bookingId));
+    setExpandedEventId(null);
+  };
+
+  const handleToggleEventExpand = (regId: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedEventId((prev) => (prev === regId ? null : regId));
+    setExpandedBookingId(null);
   };
 
   const handleCollapse = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpandedBookingId(null);
+    setExpandedEventId(null);
   };
 
   const handleCancelComplete = (booking: Booking) => {
@@ -266,30 +276,11 @@ export function MyBookingsScreen() {
     fetchData();
   };
 
-  const handleCancelRegistration = (reg: EventRegistration) => {
-    const eventName = reg.events?.name ?? 'this event';
-    Alert.alert(
-      'Cancel Registration',
-      `Cancel your registration for ${eventName}?`,
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            const { error } = await supabase.rpc('cancel_event_registration', {
-              p_registration_id: reg.id,
-            });
-            if (error) {
-              Alert.alert('Error', error.message);
-            } else {
-              Alert.alert('Cancelled', `Your registration for ${eventName} has been cancelled.`);
-              fetchData();
-            }
-          },
-        },
-      ]
-    );
+  const handleEventCancelComplete = (reg: EventRegistration) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedEventId(null);
+    Alert.alert('Cancelled', `Your registration for ${reg.events?.name ?? 'this event'} has been cancelled.`);
+    fetchData();
   };
 
   // Scroll to the expanded booking after data loads
@@ -558,57 +549,90 @@ export function MyBookingsScreen() {
     const evt = reg.events;
     if (!evt) return null;
 
+    const isEventExpanded = expandedEventId === reg.id;
+
+    if (isEventExpanded) {
+      return (
+        <Card style={[styles.bookingCard, styles.expandedCard]}>
+          <ExpandedEventCard
+            registration={reg}
+            timezone={tz}
+            cancellationWindowHours={cancellationWindowHours}
+            hasPaymentMode={hasPaymentMode}
+            paymentMode={paymentModeStr}
+            onCancelled={() => handleEventCancelComplete(reg)}
+            onCollapse={handleCollapse}
+          />
+        </Card>
+      );
+    }
+
+    const isCancelled = reg.status === 'cancelled';
     const bayNames = getBayNames(reg);
     const statusBadge = getEventStatusBadge(reg);
-    const canCancel = isUpcoming && reg.status !== 'cancelled';
+    const discount = reg.discount_cents || 0;
+    const total = evt.price_cents - discount;
 
     return (
-      <Card style={[styles.bookingCard, !isUpcoming && styles.pastCard]}>
-        <View style={styles.bookingHeader}>
-          <Badge label="Event" variant="default" />
-          <Badge label={statusBadge.label} variant={statusBadge.variant} />
-        </View>
-
-        <Text style={styles.eventName}>{evt.name}</Text>
-        <Text style={styles.bookingDate}>
-          {new Date(evt.start_time).toLocaleDateString('en-US', {
-            timeZone: tz,
-            weekday: 'long',
-            month: 'long',
-            day: 'numeric',
-            year: 'numeric',
-          })}
-        </Text>
-        <Text style={styles.bookingTime}>
-          {formatTimeInZone(evt.start_time, tz)} – {formatTimeInZone(evt.end_time, tz)}
-        </Text>
-
-        {bayNames ? <Text style={styles.bookingBay}>{bayNames}</Text> : null}
-
-        <View style={styles.bookingFooter}>
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => handleToggleEventExpand(reg.id)}
+      >
+        <Card style={[styles.bookingCard, !isUpcoming && styles.pastCard]}>
+          {/* Event name + black pill */}
+          <View style={styles.eventNameRow}>
+            <Text style={[styles.cardDateTitle, isCancelled && styles.mutedText]} numberOfLines={1}>
+              {evt.name}
+            </Text>
+            <View style={styles.eventPill}>
+              <Text style={styles.eventPillText}>Event</Text>
+            </View>
+          </View>
+          {/* Date */}
+          <Text style={[styles.cardTimeText, isCancelled && styles.mutedText]}>
+            {new Date(evt.start_time).toLocaleDateString('en-US', {
+              timeZone: tz,
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+            })}
+          </Text>
+          {/* Time range */}
+          <Text style={[styles.cardBayText, isCancelled && styles.mutedText]}>
+            {formatTimeInZone(evt.start_time, tz)} – {formatTimeInZone(evt.end_time, tz)}
+          </Text>
+          {/* Bays */}
+          {bayNames ? (
+            <Text style={[styles.cardBayText, isCancelled && styles.mutedText]}>{bayNames}</Text>
+          ) : null}
+          {/* Price */}
           {evt.price_cents > 0 ? (
-            (reg.discount_cents || 0) > 0 ? (
+            discount > 0 ? (
               <View style={styles.cardPriceRow}>
-                <Text style={styles.cardPriceStrike}>{formatPrice(evt.price_cents)}</Text>
-                <CrownIcon size={13} color="#0d9488" />
-                <Text style={styles.cardPriceDiscount}>{formatPrice(evt.price_cents - (reg.discount_cents || 0))}</Text>
+                <Text style={[styles.cardPriceStrike, isCancelled && styles.mutedText]}>
+                  {formatPrice(evt.price_cents)}
+                </Text>
+                <CrownIcon size={13} color={isCancelled ? colors.mutedForeground : '#0d9488'} />
+                <Text style={[styles.cardPriceDiscount, isCancelled && styles.mutedText]}>
+                  {formatPrice(total)}
+                </Text>
               </View>
             ) : (
-              <Text style={styles.bookingPrice}>{formatPrice(evt.price_cents)}</Text>
+              <Text style={[styles.cardPriceText, isCancelled && styles.mutedText]}>
+                {formatPrice(evt.price_cents)}
+              </Text>
             )
           ) : (
-            <Text style={styles.bookingPrice}>Free</Text>
+            <Text style={[styles.cardPriceText, { color: '#16a34a' }, isCancelled && styles.mutedText]}>
+              Free
+            </Text>
           )}
-          {canCancel && (
-            <Button
-              title="Cancel"
-              variant="destructive"
-              size="sm"
-              onPress={() => handleCancelRegistration(reg)}
-            />
-          )}
-        </View>
-      </Card>
+          {/* Status badge */}
+          <View style={styles.cardCodeRow}>
+            <Badge label={statusBadge.label} variant={statusBadge.variant} />
+          </View>
+        </Card>
+      </TouchableOpacity>
     );
   };
 
@@ -796,5 +820,22 @@ const styles = StyleSheet.create({
     ...typography.h3,
     color: colors.foreground,
     marginBottom: 4,
+  },
+  eventNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: 2,
+  },
+  eventPill: {
+    backgroundColor: colors.foreground,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  eventPillText: {
+    color: colors.background,
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
