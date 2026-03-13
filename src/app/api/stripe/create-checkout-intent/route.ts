@@ -18,9 +18,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { slot_ids, location_id } = (await request.json()) as {
+    const { slot_ids, location_id, discount_cents: rawDiscount } = (await request.json()) as {
       slot_ids: string[];
       location_id?: string | null;
+      discount_cents?: number;
     };
 
     if (!slot_ids || slot_ids.length === 0) {
@@ -109,7 +110,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const totalCents = slots.reduce((sum, s) => sum + (s.price_cents || 0), 0);
+    const grossCents = slots.reduce((sum, s) => sum + (s.price_cents || 0), 0);
+
+    // Apply membership discount (clamped to not exceed total)
+    const discountCents = Math.max(0, Math.min(rawDiscount || 0, grossCents));
+    const totalCents = grossCents - discountCents;
+
+    if (totalCents <= 0) {
+      return NextResponse.json({ payment_required: false, amount_cents: 0 });
+    }
 
     // 5. Find or create Stripe Customer on connected account
     let stripeCustomerId: string = "";
@@ -196,6 +205,8 @@ export async function POST(request: NextRequest) {
             org_id: org.id,
             profile_id: auth.profile.id,
             slot_ids: JSON.stringify(slot_ids),
+            original_price_cents: String(grossCents),
+            discount_cents: String(discountCents),
             ...(location_id ? { location_id } : {}),
             ...(locationName ? { location_name: locationName } : {}),
           },
@@ -213,6 +224,8 @@ export async function POST(request: NextRequest) {
         stripe_customer_id: stripeCustomerId,
         stripe_account_id: stripeAccountId,
         amount_cents: totalCents,
+        original_price_cents: grossCents,
+        discount_cents: discountCents,
         cancellation_policy_text: cancellationPolicyText,
         ...(customerSessionClientSecret
           ? { customer_session_client_secret: customerSessionClientSecret }
@@ -229,6 +242,8 @@ export async function POST(request: NextRequest) {
             profile_id: auth.profile.id,
             slot_ids: JSON.stringify(slot_ids),
             amount_cents: String(totalCents),
+            original_price_cents: String(grossCents),
+            discount_cents: String(discountCents),
             ...(location_id ? { location_id } : {}),
             ...(locationName ? { location_name: locationName } : {}),
           },
@@ -243,6 +258,8 @@ export async function POST(request: NextRequest) {
         stripe_customer_id: stripeCustomerId,
         stripe_account_id: stripeAccountId,
         amount_cents: totalCents,
+        original_price_cents: grossCents,
+        discount_cents: discountCents,
         cancellation_policy_text: cancellationPolicyText,
         ...(customerSessionClientSecret
           ? { customer_session_client_secret: customerSessionClientSecret }

@@ -759,7 +759,11 @@ export function DynamicAvailabilityWidget(
       const res = await fetch("/api/stripe/create-checkout-intent-dynamic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ price_cents: selectedSlot.price_cents, location_id: locationId || null }),
+        body: JSON.stringify({
+          price_cents: selectedSlot.price_cents,
+          location_id: locationId || null,
+          discount_cents: calcDiscount(selectedSlot.price_cents).discountCents || undefined,
+        }),
       });
 
       if (!res.ok) {

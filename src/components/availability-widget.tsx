@@ -1137,7 +1137,11 @@ export function AvailabilityWidget({
       const res = await fetch("/api/stripe/create-checkout-intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slot_ids: slotIdsArray, location_id: locationId || null }),
+        body: JSON.stringify({
+          slot_ids: slotIdsArray,
+          location_id: locationId || null,
+          discount_cents: calcDiscount(selectedSlotInfo.reduce((sum, s) => sum + s.price_cents, 0)).discountCents || undefined,
+        }),
       });
 
       if (!res.ok) {
@@ -2209,6 +2213,7 @@ export function AvailabilityWidget({
                                   org_id: orgId,
                                   slot_ids: slotIds,
                                   bay_id: effectiveBayId,
+                                  discount_cents: calcDiscount(totalCents).discountCents || undefined,
                                 }),
                               });
                               if (!res.ok) throw new Error("Failed to create checkout");
