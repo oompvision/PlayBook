@@ -186,10 +186,16 @@ export function EventRegistrationPanel({
         return;
       }
 
-      // Register for the event
+      // Register for the event (discount stored atomically in RPC)
+      const disc = calcEventDiscount(event.priceCents, eventDiscount);
       const { data: regResult, error: regError } = await supabase.rpc(
         "register_for_event",
-        { p_event_id: event.id, p_user_id: user.id }
+        {
+          p_event_id: event.id,
+          p_user_id: user.id,
+          p_discount_cents: disc.discountCents || 0,
+          p_discount_description: disc.label || null,
+        }
       );
 
       if (regError) {
@@ -205,18 +211,6 @@ export function EventRegistrationPanel({
       };
 
       setRegistrationId(result.registration_id);
-
-      // Store member discount on the registration so my-bookings can display it
-      const disc = calcEventDiscount(event.priceCents, eventDiscount);
-      if (disc.discountCents > 0) {
-        await supabase
-          .from("event_registrations")
-          .update({
-            discount_cents: disc.discountCents,
-            discount_description: disc.label,
-          })
-          .eq("id", result.registration_id);
-      }
 
       // Free event or no payment required → confirmed immediately
       if (!requiresPayment || result.status === "confirmed") {
