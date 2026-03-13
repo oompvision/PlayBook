@@ -142,6 +142,7 @@ export function BookingDetailsModal({
   const [partialAmount, setPartialAmount] = useState("");
   const [refundNote, setRefundNote] = useState("");
   const [cancelling, setCancelling] = useState(false);
+  const [cancelSuccess, setCancelSuccess] = useState(false);
 
   // Process refund state (for already-cancelled bookings)
   const [showRefundForm, setShowRefundForm] = useState(false);
@@ -171,6 +172,7 @@ export function BookingDetailsModal({
       setPartialAmount("");
       setRefundNote("");
       setManageOpen(false);
+      setCancelSuccess(false);
       return;
     }
 
@@ -319,6 +321,10 @@ export function BookingDetailsModal({
       const formData = new FormData();
       formData.set("booking_id", booking.id);
       await cancelAction(formData);
+      setCancelSuccess(true);
+      setTimeout(() => {
+        onOpenChange(false);
+      }, 1500);
     } catch {
       setCancelling(false);
     }
@@ -350,6 +356,10 @@ export function BookingDetailsModal({
       }
 
       await cancelAction(formData);
+      setCancelSuccess(true);
+      setTimeout(() => {
+        onOpenChange(false);
+      }, 1500);
     } catch {
       setCancelling(false);
     }
@@ -1091,6 +1101,13 @@ export function BookingDetailsModal({
             </div>
           )}
 
+          {cancelSuccess && (
+            <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>Booking cancelled.</span>
+            </div>
+          )}
+
           {refundResult && !showCancelConfirm && !showRefundForm && (
             <div
               className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
@@ -1260,7 +1277,7 @@ export function BookingDetailsModal({
         </div>
 
         {/* Collapsible Manage section */}
-        {(booking.canCancel || effectiveCanModify || canProcessRefund) && (
+        {!cancelSuccess && (booking.canCancel || effectiveCanModify || canProcessRefund) && (
           <div className="border-t">
             <button
               type="button"

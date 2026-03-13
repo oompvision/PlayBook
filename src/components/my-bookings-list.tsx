@@ -594,6 +594,8 @@ export function MyBookingsList({
         open={eventModalOpen}
         onOpenChange={setEventModalOpen}
         cancelAction={cancelEventAction}
+        cancellationWindowHours={cancellationWindowHours}
+        paymentMode={paymentMode}
       />
     </>
   );

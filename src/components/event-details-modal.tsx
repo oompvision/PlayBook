@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,9 @@ import {
   AlertTriangle,
   Loader2,
   FileText,
+  Settings2,
+  ChevronDown,
+  CheckCircle2,
 } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
 
@@ -45,6 +48,8 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   cancelAction?: (formData: FormData) => Promise<void>;
   onCancelClient?: (registrationId: string) => Promise<void>;
+  cancellationWindowHours?: number;
+  paymentMode?: string;
 };
 
 function formatTime(timestamp: string, timezone: string): string {
@@ -53,6 +58,15 @@ function formatTime(timestamp: string, timezone: string): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function isInsideCancellationWindow(
+  eventStartTime: string,
+  windowHours: number
+): boolean {
+  const eventStart = new Date(eventStartTime).getTime();
+  const cutoff = eventStart - windowHours * 60 * 60 * 1000;
+  return Date.now() >= cutoff;
 }
 
 function getStatusBadge(status: string, waitlistPosition: number | null) {
@@ -85,9 +99,23 @@ export function EventDetailsModal({
   onOpenChange,
   cancelAction,
   onCancelClient,
+  cancellationWindowHours = 24,
+  paymentMode = "none",
 }: Props) {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
+  const [cancelSuccess, setCancelSuccess] = useState(false);
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!open) {
+      setShowCancelConfirm(false);
+      setCancelling(false);
+      setManageOpen(false);
+      setCancelSuccess(false);
+    }
+  }, [open]);
 
   if (!event) return null;
 
@@ -109,7 +137,9 @@ export function EventDetailsModal({
 
   const spotsLeft = event.capacity - event.registeredCount;
   const isFull = spotsLeft <= 0;
-  const canCancel = event.registrationStatus !== "cancelled";
+  const canCancel = event.registrationStatus !== "cancelled" && !cancelSuccess;
+  const hasPaidEvent = paymentMode !== "none" && event.priceCents > 0;
+  const insideWindow = isInsideCancellationWindow(event.startTime, cancellationWindowHours);
 
   async function handleCancel() {
     setCancelling(true);
@@ -121,7 +151,10 @@ export function EventDetailsModal({
       } else if (onCancelClient) {
         await onCancelClient(event!.registrationId);
       }
-      onOpenChange(false);
+      setCancelSuccess(true);
+      setTimeout(() => {
+        onOpenChange(false);
+      }, 1500);
     } catch {
       setCancelling(false);
     }
@@ -134,6 +167,8 @@ export function EventDetailsModal({
         if (!v) {
           setShowCancelConfirm(false);
           setCancelling(false);
+          setManageOpen(false);
+          setCancelSuccess(false);
         }
         onOpenChange(v);
       }}
@@ -145,7 +180,11 @@ export function EventDetailsModal({
               <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400">
                 Event
               </Badge>
-              {getStatusBadge(event.registrationStatus, event.waitlistPosition)}
+              {cancelSuccess ? (
+                <Badge variant="secondary">Cancelled</Badge>
+              ) : (
+                getStatusBadge(event.registrationStatus, event.waitlistPosition)
+              )}
             </div>
           </div>
           <DialogTitle className="text-lg">{event.eventName}</DialogTitle>
@@ -153,6 +192,14 @@ export function EventDetailsModal({
         </DialogHeader>
 
         <div className="-mx-6 flex-1 space-y-4 overflow-y-auto px-6">
+          {/* Success message after cancellation */}
+          {cancelSuccess && (
+            <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>Registration cancelled.</span>
+            </div>
+          )}
+
           {/* Event Details */}
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-sm">
@@ -224,54 +271,138 @@ export function EventDetailsModal({
               </p>
             </div>
           )}
-
-          {/* Cancel Confirmation */}
-          {showCancelConfirm && canCancel && (
-            <div className="space-y-3">
-              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>
-                  Are you sure you want to cancel your registration for this event?
-                  This action cannot be undone.
-                </span>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCancelConfirm(false)}
-                  className="flex-1 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  Go Back
-                </button>
-                <button
-                  type="button"
-                  disabled={cancelling}
-                  onClick={handleCancel}
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
-                >
-                  {cancelling ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <X className="h-4 w-4" />
-                  )}
-                  Cancel Registration
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Footer Actions */}
-        {canCancel && !showCancelConfirm && (
-          <div className="border-t pt-4">
+        {/* Collapsible Manage section */}
+        {canCancel && (cancelAction || onCancelClient) && (
+          <div className="border-t">
             <button
               type="button"
-              onClick={() => setShowCancelConfirm(true)}
-              className="w-full rounded-lg border border-red-200 px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30"
+              onClick={() => setManageOpen(!manageOpen)}
+              className="flex w-full items-center justify-between py-3 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              Cancel Registration
+              <span className="flex items-center gap-2">
+                <Settings2 className="h-4 w-4" />
+                Manage
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform duration-200 ${manageOpen ? "rotate-180" : ""}`}
+              />
             </button>
+
+            {manageOpen && (
+              <div className="space-y-2 pb-2">
+                {/* Cancellation window notice */}
+                {!showCancelConfirm && (() => {
+                  if (hasPaidEvent && insideWindow) {
+                    return (
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>
+                          This event is within the {cancellationWindowHours}-hour cancellation window. Cancellations will not receive a refund.
+                        </span>
+                      </div>
+                    );
+                  }
+                  if (hasPaidEvent && !insideWindow) {
+                    const deadlineMs =
+                      new Date(event.startTime).getTime() -
+                      cancellationWindowHours * 60 * 60 * 1000;
+                    const deadline = new Date(deadlineMs);
+                    const dlDateStr = deadline.toLocaleDateString("en-US", {
+                      timeZone: timezone,
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    });
+                    const dlTimeStr = deadline.toLocaleTimeString("en-US", {
+                      timeZone: timezone,
+                      hour: "numeric",
+                      minute: "2-digit",
+                    });
+                    return (
+                      <p className="text-xs text-muted-foreground pb-1">
+                        Free cancellation until {dlDateStr} at {dlTimeStr}
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {showCancelConfirm ? (
+                  <div className="space-y-3">
+                    {hasPaidEvent && insideWindow && (
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div>
+                          <p className="font-medium">No refund will be issued</p>
+                          <p className="mt-0.5 text-xs">
+                            This event is within the {cancellationWindowHours}-hour
+                            cancellation window. If you believe you should receive a refund,
+                            please contact the facility after cancelling.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {hasPaidEvent && !insideWindow && (
+                      <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div>
+                          <p className="font-medium">Full refund will be issued</p>
+                          <p className="mt-0.5 text-xs">
+                            You&apos;re cancelling more than {cancellationWindowHours} hours
+                            before the event start time. A full refund of{" "}
+                            {formatPrice(event.priceCents)} will be processed automatically.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {!hasPaidEvent && (
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>
+                          Are you sure you want to cancel your registration? This action cannot be undone.
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowCancelConfirm(false)}
+                        className="flex-1 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-transparent dark:text-gray-300 dark:hover:bg-gray-800"
+                      >
+                        Go Back
+                      </button>
+                      <button
+                        type="button"
+                        disabled={cancelling}
+                        onClick={handleCancel}
+                        className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                      >
+                        {cancelling ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <X className="h-4 w-4" />
+                        )}
+                        Cancel Registration
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowCancelConfirm(true)}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 dark:border-red-800 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
+                  >
+                    <X className="h-4 w-4" />
+                    Cancel Registration
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </DialogContent>

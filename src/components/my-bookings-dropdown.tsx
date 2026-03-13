@@ -256,9 +256,8 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
     if (!bookingId) return;
     const supabase = createClient();
     await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
-    setBookingModalOpen(false);
-    setSelectedBooking(null);
-    // Refresh data
+    // Don't close the modal here — the BookingDetailsModal handles
+    // showing a success message and auto-closing after a brief delay
     fetchData();
     router.refresh();
   }
@@ -270,8 +269,8 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
       .from("event_registrations")
       .update({ status: "cancelled" })
       .eq("id", selectedEvent.registrationId);
-    setEventModalOpen(false);
-    setSelectedEvent(null);
+    // Don't close the modal here — the EventDetailsModal handles
+    // showing a success message and auto-closing after a brief delay
     fetchData();
     router.refresh();
   }
@@ -445,6 +444,8 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
           if (!isOpen) setSelectedEvent(null);
         }}
         onCancelClient={handleCancelEvent}
+        cancellationWindowHours={cancellationWindowHours}
+        paymentMode={paymentMode}
       />
     </>
   );
