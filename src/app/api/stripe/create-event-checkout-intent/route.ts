@@ -18,9 +18,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { event_id, registration_id } = (await request.json()) as {
+    const { event_id, registration_id, discount_cents: rawDiscount } = (await request.json()) as {
       event_id: string;
       registration_id: string;
+      discount_cents?: number;
     };
 
     if (!event_id || !registration_id) {
@@ -98,13 +99,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const totalCents = event.price_cents || 0;
+    const grossCents = event.price_cents || 0;
 
-    if (totalCents === 0) {
+    if (grossCents === 0) {
       return NextResponse.json(
         { error: "Event is free — no payment intent needed" },
         { status: 400 }
       );
+    }
+
+    // Apply membership discount (clamped to not exceed price)
+    const discountCents = Math.max(0, Math.min(rawDiscount || 0, grossCents));
+    const totalCents = grossCents - discountCents;
+
+    if (totalCents <= 0) {
+      return NextResponse.json({ payment_required: false, amount_cents: 0 });
     }
 
     // 5. Verify registration exists and belongs to user
@@ -187,6 +196,8 @@ export async function POST(request: NextRequest) {
             event_id,
             registration_id,
             type: "event_registration",
+            original_price_cents: String(grossCents),
+            discount_cents: String(discountCents),
           },
         },
         { stripeAccount: stripeAccountId }
@@ -199,6 +210,8 @@ export async function POST(request: NextRequest) {
         stripe_customer_id: stripeCustomerId,
         stripe_account_id: stripeAccountId,
         amount_cents: totalCents,
+        original_price_cents: grossCents,
+        discount_cents: discountCents,
         cancellation_policy_text: cancellationPolicyText,
       });
     } else {
@@ -213,6 +226,8 @@ export async function POST(request: NextRequest) {
             event_id,
             registration_id,
             amount_cents: String(totalCents),
+            original_price_cents: String(grossCents),
+            discount_cents: String(discountCents),
             type: "event_registration",
           },
         },
@@ -226,6 +241,8 @@ export async function POST(request: NextRequest) {
         stripe_customer_id: stripeCustomerId,
         stripe_account_id: stripeAccountId,
         amount_cents: totalCents,
+        original_price_cents: grossCents,
+        discount_cents: discountCents,
         cancellation_policy_text: cancellationPolicyText,
       });
     }

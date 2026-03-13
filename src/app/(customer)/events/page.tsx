@@ -59,17 +59,32 @@ export default async function EventsPage({
     paymentMode = paymentSettings.payment_mode;
   }
 
-  // Resolve membership status
+  // Resolve membership status + tier discount info
   let isMember = false;
+  let eventDiscount: { type: "percent" | "flat"; value: number } | null = null;
   if (auth) {
     const { data: membership } = await supabase
       .from("customer_memberships")
-      .select("id")
+      .select("id, tier_id")
       .eq("user_id", auth.profile.id)
       .eq("org_id", org.id)
       .eq("status", "active")
       .maybeSingle();
     isMember = !!membership;
+
+    if (membership?.tier_id) {
+      const { data: tier } = await supabase
+        .from("membership_tiers")
+        .select("event_discount_type, event_discount_value")
+        .eq("id", membership.tier_id)
+        .single();
+      if (tier && tier.event_discount_value > 0) {
+        eventDiscount = {
+          type: tier.event_discount_type as "percent" | "flat",
+          value: Number(tier.event_discount_value),
+        };
+      }
+    }
   }
 
   // Resolve location
@@ -90,6 +105,7 @@ export default async function EventsPage({
         timezone={timezone}
         isAuthenticated={!!auth}
         isMember={isMember}
+        eventDiscount={eventDiscount}
         userId={auth?.profile.id}
         paymentMode={paymentMode}
         locationId={activeLocationId}

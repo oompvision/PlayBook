@@ -8,6 +8,7 @@ import {
   Users,
 } from "lucide-react";
 import { EventRegistrationPanel, type EventForPanel } from "./event-registration-panel";
+import type { EventDiscountInfo } from "./events-feed";
 import { formatPrice } from "@/lib/utils";
 
 type EventCardEvent = {
@@ -30,15 +31,31 @@ type EventCardProps = {
   timezone: string;
   isAuthenticated: boolean;
   isMember: boolean;
+  eventDiscount?: EventDiscountInfo;
   userRegistrationStatus: string | null;
   paymentMode: string;
 };
+
+function calcEventDiscount(priceCents: number, discount: EventDiscountInfo): { discountCents: number; finalCents: number; label: string } {
+  if (!discount || discount.value <= 0) return { discountCents: 0, finalCents: priceCents, label: "" };
+  let discountCents: number;
+  let label: string;
+  if (discount.type === "percent") {
+    discountCents = Math.round(priceCents * discount.value / 100);
+    label = `${discount.value}% member discount`;
+  } else {
+    discountCents = Math.min(discount.value * 100, priceCents);
+    label = `${formatPrice(discount.value * 100)} member discount`;
+  }
+  return { discountCents, finalCents: priceCents - discountCents, label };
+}
 
 export function EventCard({
   event,
   timezone,
   isAuthenticated,
   isMember,
+  eventDiscount = null,
   userRegistrationStatus,
   paymentMode,
 }: EventCardProps) {
@@ -201,7 +218,18 @@ export function EventCard({
           <span className="text-sm font-semibold text-gray-800 dark:text-white/90">
             {event.priceCents === 0
               ? "Free"
-              : formatPrice(event.priceCents)}
+              : (() => {
+                  const disc = calcEventDiscount(event.priceCents, eventDiscount);
+                  if (disc.discountCents > 0) {
+                    return (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="text-gray-400 line-through">${formatPrice(event.priceCents)}</span>
+                        <span className="text-green-600 dark:text-green-400">${formatPrice(disc.finalCents)}</span>
+                      </span>
+                    );
+                  }
+                  return `$${formatPrice(event.priceCents)}`;
+                })()}
           </span>
         </div>
 
@@ -234,6 +262,7 @@ export function EventCard({
           timezone={timezone}
           isAuthenticated={isAuthenticated}
           isMember={isMember}
+          eventDiscount={eventDiscount}
           paymentMode={paymentMode}
           onClose={() => setShowPanel(false)}
           onRegistered={handleRegistered}

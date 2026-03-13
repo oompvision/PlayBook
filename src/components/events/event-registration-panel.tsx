@@ -20,6 +20,7 @@ import {
   PaymentSection,
   type CheckoutFormHandle,
 } from "@/components/checkout-form";
+import type { EventDiscountInfo } from "./events-feed";
 import { formatPrice } from "@/lib/utils";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ type EventRegistrationPanelProps = {
   timezone: string;
   isAuthenticated: boolean;
   isMember: boolean;
+  eventDiscount?: EventDiscountInfo;
   paymentMode: string;
   onClose: () => void;
   onRegistered: (status: string) => void;
@@ -59,11 +61,26 @@ type CheckoutIntent = {
 
 // ─── Component ──────────────────────────────────────────────────────────────────
 
+function calcEventDiscount(priceCents: number, discount: EventDiscountInfo): { discountCents: number; finalCents: number; label: string } {
+  if (!discount || discount.value <= 0) return { discountCents: 0, finalCents: priceCents, label: "" };
+  let discountCents: number;
+  let label: string;
+  if (discount.type === "percent") {
+    discountCents = Math.round(priceCents * discount.value / 100);
+    label = `${discount.value}% member discount`;
+  } else {
+    discountCents = Math.min(discount.value * 100, priceCents);
+    label = `$${formatPrice(discount.value * 100)} member discount`;
+  }
+  return { discountCents, finalCents: priceCents - discountCents, label };
+}
+
 export function EventRegistrationPanel({
   event,
   timezone,
   isAuthenticated,
   isMember,
+  eventDiscount = null,
   paymentMode,
   onClose,
   onRegistered,
@@ -208,12 +225,14 @@ export function EventRegistrationPanel({
       }
 
       // Paid event → create checkout intent
+      const disc = calcEventDiscount(event.priceCents, eventDiscount);
       const intentRes = await fetch("/api/stripe/create-event-checkout-intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           event_id: event.id,
           registration_id: result.registration_id,
+          discount_cents: disc.discountCents || undefined,
         }),
       });
 
@@ -289,10 +308,14 @@ export function EventRegistrationPanel({
     }
   }
 
+  const disc = calcEventDiscount(event.priceCents, eventDiscount);
+  const hasDiscount = disc.discountCents > 0;
   const priceLabel =
     event.priceCents === 0
       ? "Free"
-      : formatPrice(event.priceCents);
+      : hasDiscount
+        ? `$${formatPrice(disc.finalCents)}`
+        : `$${formatPrice(event.priceCents)}`;
 
   if (!mounted) return null;
 
@@ -384,7 +407,14 @@ export function EventRegistrationPanel({
                       </p>
                     )}
                   </div>
-                  <span className="text-lg font-bold">{priceLabel}</span>
+                  <span className="text-lg font-bold">
+                    {hasDiscount ? (
+                      <span className="inline-flex flex-col items-end">
+                        <span className="text-sm text-gray-400 line-through">${formatPrice(event.priceCents)}</span>
+                        <span className="text-green-600 dark:text-green-400">{priceLabel}</span>
+                      </span>
+                    ) : priceLabel}
+                  </span>
                 </div>
 
                 <div className="mt-3 space-y-1.5">
@@ -415,6 +445,24 @@ export function EventRegistrationPanel({
                   </div>
                 </div>
               </div>
+
+              {/* Discount breakdown */}
+              {hasDiscount && event.priceCents > 0 && step === 1 && (
+                <div className="mt-3 rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-900/20">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span>${formatPrice(event.priceCents)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm text-green-600 dark:text-green-400">
+                    <span>{disc.label}</span>
+                    <span>-${formatPrice(disc.discountCents)}</span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between border-t border-green-200 pt-1 text-sm font-semibold dark:border-green-800">
+                    <span>Total</span>
+                    <span>${formatPrice(disc.finalCents)}</span>
+                  </div>
+                </div>
+              )}
 
               {/* Step 1: Register / Continue to Payment */}
               {step === 1 && (
