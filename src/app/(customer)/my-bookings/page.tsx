@@ -413,7 +413,7 @@ export default async function MyBookingsPage({
     });
 
     if (error) {
-      redirect(`/my-bookings?error=${encodeURIComponent(error.message)}`);
+      throw new Error(error.message);
     }
 
     // Process Stripe refund if this was a paid event registration
@@ -489,7 +489,6 @@ export default async function MyBookingsPage({
     }
 
     revalidatePath("/my-bookings");
-    redirect("/my-bookings?cancelled=true");
   }
 
   return (

@@ -144,17 +144,19 @@ export function EventDetailsModal({
   const insideWindow = isInsideCancellationWindow(event.startTime, cancellationWindowHours);
 
   async function handleCancel() {
+    const eventName = event!.eventName;
     setCancelling(true);
     try {
-      if (cancelAction) {
+      if (onCancelClient) {
+        await onCancelClient(event!.registrationId);
+      } else if (cancelAction) {
         const formData = new FormData();
         formData.set("registration_id", event!.registrationId);
         await cancelAction(formData);
-      } else if (onCancelClient) {
-        await onCancelClient(event!.registrationId);
       }
+      // Close modal immediately and show toast
       onOpenChange(false);
-      onCancelComplete?.(event!.eventName);
+      onCancelComplete?.(eventName);
     } catch {
       setCancelling(false);
     }
