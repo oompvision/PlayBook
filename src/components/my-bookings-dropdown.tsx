@@ -46,6 +46,8 @@ type RawEventReg = {
   status: string;
   waitlist_position: number | null;
   registered_at: string;
+  discount_cents: number;
+  discount_description: string | null;
   events: {
     name: string;
     description: string | null;
@@ -64,6 +66,8 @@ type EventReg = {
   status: string;
   waitlist_position: number | null;
   registered_at: string;
+  discount_cents: number;
+  discount_description: string | null;
   event: {
     name: string;
     description: string | null;
@@ -144,7 +148,7 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
       supabase
         .from("event_registrations")
         .select(`
-          id, event_id, status, waitlist_position, registered_at,
+          id, event_id, status, waitlist_position, registered_at, discount_cents, discount_description,
           events:event_id (
             name, description, start_time, end_time, price_cents, capacity,
             registered_count,
@@ -178,6 +182,8 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
         status: r.status,
         waitlist_position: r.waitlist_position,
         registered_at: r.registered_at,
+        discount_cents: r.discount_cents || 0,
+        discount_description: r.discount_description || null,
         event: r.events!,
       }))
       .sort((a, b) => a.event.start_time.localeCompare(b.event.start_time));
@@ -242,6 +248,8 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
       startTime: reg.event.start_time,
       endTime: reg.event.end_time,
       priceCents: reg.event.price_cents,
+      discountCents: reg.discount_cents || 0,
+      discountDescription: reg.discount_description || null,
       capacity: reg.event.capacity,
       registeredCount: reg.event.registered_count ?? 0,
       bayNames,

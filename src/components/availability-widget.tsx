@@ -464,6 +464,8 @@ export function AvailabilityWidget({
     status: string;
     waitlist_position: number | null;
     registered_at: string;
+    discount_cents: number;
+    discount_description: string | null;
     event: {
       name: string;
       description: string | null;
@@ -570,7 +572,7 @@ export function AvailabilityWidget({
       supabase
         .from("event_registrations")
         .select(`
-          id, event_id, status, waitlist_position, registered_at,
+          id, event_id, status, waitlist_position, registered_at, discount_cents, discount_description,
           events:event_id (
             name, description, start_time, end_time, price_cents, capacity,
             event_bays (bay_id, bays:bay_id (name))
@@ -590,6 +592,8 @@ export function AvailabilityWidget({
       status: string;
       waitlist_position: number | null;
       registered_at: string;
+      discount_cents: number;
+      discount_description: string | null;
       events: {
         name: string;
         description: string | null;
@@ -627,6 +631,8 @@ export function AvailabilityWidget({
         status: r.status,
         waitlist_position: r.waitlist_position,
         registered_at: r.registered_at,
+        discount_cents: r.discount_cents || 0,
+        discount_description: r.discount_description || null,
         event: {
           name: evt.name,
           description: evt.description,
@@ -1567,6 +1573,8 @@ export function AvailabilityWidget({
       startTime: reg.event.start_time,
       endTime: reg.event.end_time,
       priceCents: reg.event.price_cents,
+      discountCents: reg.discount_cents || 0,
+      discountDescription: reg.discount_description || null,
       capacity: reg.event.capacity,
       registeredCount: reg.event.registered_count,
       bayNames: reg.event.bay_names,
