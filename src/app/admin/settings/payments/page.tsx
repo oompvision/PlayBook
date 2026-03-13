@@ -5,6 +5,8 @@ import { getFacilitySlug } from "@/lib/facility";
 import { redirect } from "next/navigation";
 import { PaymentSettings } from "../payment-settings";
 import { CancellationPolicySettings } from "../cancellation-policy-settings";
+import { SettingsAccordion } from "@/components/admin/settings-accordion";
+import { CreditCard, ShieldCheck } from "lucide-react";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -61,10 +63,23 @@ export default async function PaymentSettingsPage() {
       </div>
 
       {/* Payment Processing */}
-      <PaymentSettings initialSettings={initialPaymentSettings} />
+      <SettingsAccordion
+        icon={CreditCard}
+        title="Payment Processing"
+        description="Connect your Stripe account to collect payments from customers."
+        defaultOpen
+      >
+        <PaymentSettings initialSettings={initialPaymentSettings} />
+      </SettingsAccordion>
 
       {/* Cancellation Policy */}
-      <CancellationPolicySettings initialSettings={initialCancellationSettings} />
+      <SettingsAccordion
+        icon={ShieldCheck}
+        title="Cancellation Policy"
+        description="Configure your cancellation window and refund policy."
+      >
+        <CancellationPolicySettings initialSettings={initialCancellationSettings} />
+      </SettingsAccordion>
     </div>
   );
 }

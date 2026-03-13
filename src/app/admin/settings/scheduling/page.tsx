@@ -7,10 +7,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { SchedulingModeSettings } from "../scheduling-mode-settings";
 import { EventsSettings } from "../events-settings";
+import { SettingsAccordion } from "@/components/admin/settings-accordion";
 import {
   Globe,
   Clock,
   CheckCircle2,
+  CalendarCog,
+  CalendarDays,
 } from "lucide-react";
 
 const TIMEZONES = [
@@ -143,112 +146,109 @@ export default async function SchedulingSettingsPage({
       )}
 
       {/* Scheduling Mode */}
-      <SchedulingModeSettings
-        initialMode={org.scheduling_type ?? "slot_based"}
-        initialBookableWindowDays={org.bookable_window_days ?? 30}
-      />
+      <SettingsAccordion
+        icon={CalendarCog}
+        title="Scheduling Mode"
+        description="Choose how customers book time at your facility."
+        defaultOpen
+      >
+        <SchedulingModeSettings
+          initialMode={org.scheduling_type ?? "slot_based"}
+          initialBookableWindowDays={org.bookable_window_days ?? 30}
+        />
+      </SettingsAccordion>
 
-      {/* Timezone & Booking Settings */}
-      <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-        <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
-          <div className="flex items-center gap-2">
-            <Globe className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-            <h2 className="font-semibold text-gray-800 dark:text-white/90">
-              Timezone & Scheduling
-            </h2>
+      {/* Timezone & Scheduling + Booking Settings share one form */}
+      <form action={updateSchedulingSettings} className="space-y-6">
+        <SettingsAccordion
+          icon={Globe}
+          title="Timezone & Scheduling"
+          description="Set your facility timezone and default slot duration."
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                Timezone
+              </label>
+              <select
+                name="timezone"
+                defaultValue={org.timezone}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+              >
+                {TIMEZONES.map((tz) => (
+                  <option key={tz} value={tz}>
+                    {tz.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                All schedule times are displayed in this timezone.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                Default Slot Duration (minutes)
+              </label>
+              <input
+                name="default_slot_duration_minutes"
+                type="number"
+                min="15"
+                step="15"
+                defaultValue={org.default_slot_duration_minutes}
+                className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+              />
+            </div>
           </div>
-          <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-            Set your facility timezone and default slot duration.
-          </p>
-        </div>
-        <div className="p-6">
-          <form action={updateSchedulingSettings} className="space-y-6">
+        </SettingsAccordion>
+
+        <SettingsAccordion
+          icon={Clock}
+          title="Booking Settings"
+          description="Configure minimum lead times and bookable windows."
+        >
+          <div className="space-y-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Timezone
+                  Minimum Booking Lead Time (minutes)
                 </label>
-                <select
-                  name="timezone"
-                  defaultValue={org.timezone}
+                <input
+                  name="min_booking_lead_minutes"
+                  type="number"
+                  min="0"
+                  step="5"
+                  defaultValue={org.min_booking_lead_minutes ?? 15}
                   className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-                >
-                  {TIMEZONES.map((tz) => (
-                    <option key={tz} value={tz}>
-                      {tz.replace(/_/g, " ")}
-                    </option>
-                  ))}
-                </select>
+                />
                 <p className="text-xs text-gray-400 dark:text-gray-500">
-                  All schedule times are displayed in this timezone.
+                  Time slots starting within this many minutes from now will
+                  not be shown to customers. Set to 0 to show all slots until
+                  their start time.
                 </p>
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Default Slot Duration (minutes)
+                  Bookable Window (days)
                 </label>
-                <input
-                  name="default_slot_duration_minutes"
-                  type="number"
-                  min="15"
-                  step="15"
-                  defaultValue={org.default_slot_duration_minutes}
-                  className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-                />
-              </div>
-            </div>
-
-            {/* Booking Settings */}
-            <div className="border-t border-gray-200 pt-6 dark:border-white/[0.05]">
-              <div className="mb-4 flex items-center gap-2">
-                <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90">
-                  Booking Settings
-                </h3>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Minimum Booking Lead Time (minutes)
-                  </label>
+                {org.membership_tiers_enabled ? (
+                  <div className="flex h-10 items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-400">
+                    {org.guest_booking_window_days ?? org.bookable_window_days ?? 30} days (guest) / {org.member_booking_window_days ?? org.bookable_window_days ?? 30} days (member)
+                  </div>
+                ) : (
                   <input
-                    name="min_booking_lead_minutes"
+                    name="bookable_window_days"
                     type="number"
-                    min="0"
-                    step="5"
-                    defaultValue={org.min_booking_lead_minutes ?? 15}
+                    min="1"
+                    max="365"
+                    defaultValue={org.bookable_window_days ?? 30}
                     className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
                   />
-                  <p className="text-xs text-gray-400 dark:text-gray-500">
-                    Time slots starting within this many minutes from now will
-                    not be shown to customers. Set to 0 to show all slots until
-                    their start time.
-                  </p>
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    Bookable Window (days)
-                  </label>
-                  {org.membership_tiers_enabled ? (
-                    <div className="flex h-10 items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-gray-400">
-                      {org.guest_booking_window_days ?? org.bookable_window_days ?? 30} days (guest) / {org.member_booking_window_days ?? org.bookable_window_days ?? 30} days (member)
-                    </div>
-                  ) : (
-                    <input
-                      name="bookable_window_days"
-                      type="number"
-                      min="1"
-                      max="365"
-                      defaultValue={org.bookable_window_days ?? 30}
-                      className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
-                    />
-                  )}
-                  <p className="text-xs text-gray-400 dark:text-gray-500">
-                    {org.membership_tiers_enabled
-                      ? "Bookable Window is managed in the Membership Management settings."
-                      : "How many days into the future customers can book. Admins can still build schedules beyond this window."}
-                  </p>
-                </div>
+                )}
+                <p className="text-xs text-gray-400 dark:text-gray-500">
+                  {org.membership_tiers_enabled
+                    ? "Bookable Window is managed in the Membership Management settings."
+                    : "How many days into the future customers can book. Admins can still build schedules beyond this window."}
+                </p>
               </div>
             </div>
 
@@ -260,15 +260,21 @@ export default async function SchedulingSettingsPage({
                 Save Settings
               </button>
             </div>
-          </form>
-        </div>
-      </div>
+          </div>
+        </SettingsAccordion>
+      </form>
 
       {/* Events Toggle */}
-      <EventsSettings
-        initialEnabled={org.events_enabled ?? true}
-        activeEventCount={activeEventCount}
-      />
+      <SettingsAccordion
+        icon={CalendarDays}
+        title="Events"
+        description="Create and manage open-enrollment events — clinics, group sessions, and more."
+      >
+        <EventsSettings
+          initialEnabled={org.events_enabled ?? true}
+          activeEventCount={activeEventCount}
+        />
+      </SettingsAccordion>
     </div>
   );
 }

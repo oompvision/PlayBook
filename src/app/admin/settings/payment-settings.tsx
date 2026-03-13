@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
-  CreditCard,
   ExternalLink,
   CheckCircle2,
   AlertCircle,
@@ -176,32 +175,7 @@ export function PaymentSettings({
     connectStatus?.status !== "not_started";
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-      <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
-        <div className="flex items-center gap-2">
-          <CreditCard className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-          <h2 className="font-semibold text-gray-800 dark:text-white/90">
-            Payment Processing
-          </h2>
-          {isConnected && (
-            <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950/30 dark:text-green-400">
-              <CheckCircle2 className="h-3 w-3" />
-              Connected
-            </span>
-          )}
-          {isIncomplete && (
-            <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
-              <AlertCircle className="h-3 w-3" />
-              Incomplete
-            </span>
-          )}
-        </div>
-        <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-          Connect your Stripe account to collect payments from customers.
-        </p>
-      </div>
-
-      <div className="p-6 space-y-6">
+      <div className="space-y-6">
         {/* Status Message */}
         {statusMessage && (
           <div
@@ -359,6 +333,6 @@ export function PaymentSettings({
           </>
         )}
       </div>
-    </div>
   );
 }
+

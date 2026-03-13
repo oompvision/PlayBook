@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarCog, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
 type SchedulingMode = "slot_based" | "dynamic";
 
@@ -76,19 +76,8 @@ export function SchedulingModeSettings({
   }
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-      <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
-        <div className="flex items-center gap-2">
-          <CalendarCog className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-          <h2 className="font-semibold text-gray-800 dark:text-white/90">
-            Scheduling Mode
-          </h2>
-        </div>
-        <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-          Choose how customers book time at your facility.
-        </p>
-      </div>
-      <div className="p-6 space-y-6">
+    <>
+      <div className="space-y-6">
         {/* Mode Selection */}
         <div className="grid gap-3 sm:grid-cols-2">
           <button
@@ -195,6 +184,6 @@ export function SchedulingModeSettings({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

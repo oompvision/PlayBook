@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Crown, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
 type DiscountType = "flat" | "percent";
 
@@ -176,20 +176,7 @@ export function MembershipTierSettings({
   }
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-      <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
-        <div className="flex items-center gap-2">
-          <Crown className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-          <h2 className="font-semibold text-gray-800 dark:text-white/90">
-            Membership Management
-          </h2>
-        </div>
-        <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-          Offer paid memberships with extended booking windows and discounts.
-        </p>
-      </div>
-
-      <div className="p-6 space-y-6">
+      <div className="space-y-6">
         {/* Toggle */}
         <div className="flex items-center justify-between">
           <div>
@@ -539,6 +526,5 @@ export function MembershipTierSettings({
           </div>
         )}
       </div>
-    </div>
   );
 }

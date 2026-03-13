@@ -99,21 +99,7 @@ export function CancellationPolicySettings({
   }
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-      <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-          <h2 className="font-semibold text-gray-800 dark:text-white/90">
-            Cancellation Policy
-          </h2>
-        </div>
-        <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-          Configure your cancellation window and refund policy. This policy is shown to
-          customers during checkout and when they cancel a booking.
-        </p>
-      </div>
-
-      <div className="p-6 space-y-6">
+      <div className="space-y-6">
         {/* Status Message */}
         {statusMessage && (
           <div
@@ -248,6 +234,5 @@ export function CancellationPolicySettings({
           )}
         </div>
       </div>
-    </div>
   );
 }
