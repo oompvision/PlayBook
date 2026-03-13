@@ -13,6 +13,7 @@ import {
   EventDetailsModal,
   type EventDetailData,
 } from "@/components/event-details-modal";
+import { Toast } from "@/components/ui/toast";
 import { formatPrice, formatTimeInZone, getVisualBookingStatus } from "@/lib/utils";
 
 type ModifiedFromInfo = {
@@ -127,6 +128,7 @@ export function MyBookingsList({
   const [filterNotice, setFilterNotice] = useState<string | null>(null);
   const [autoOpenedCode, setAutoOpenedCode] = useState<string | null>(null);
   const [pastTab, setPastTab] = useState<"past" | "cancelled">("past");
+  const [cancelToast, setCancelToast] = useState<string | null>(null);
 
   const allBookings = [...upcoming, ...past]
     .filter((item): item is FeedItemBooking => item.kind === "booking")
@@ -583,6 +585,7 @@ export function MyBookingsList({
         open={bookingModalOpen}
         onOpenChange={handleBookingOpenChange}
         cancelAction={cancelAction}
+        onCancelComplete={() => setCancelToast("Booking cancelled.")}
         notice={filterNotice}
         cancellationWindowHours={cancellationWindowHours}
         paymentMode={paymentMode}
@@ -594,9 +597,18 @@ export function MyBookingsList({
         open={eventModalOpen}
         onOpenChange={setEventModalOpen}
         cancelAction={cancelEventAction}
+        onCancelComplete={(name) => setCancelToast(`You have unregistered from ${name}.`)}
         cancellationWindowHours={cancellationWindowHours}
         paymentMode={paymentMode}
       />
+
+      {cancelToast && (
+        <Toast
+          message={cancelToast}
+          duration={5000}
+          onClose={() => setCancelToast(null)}
+        />
+      )}
     </>
   );
 }

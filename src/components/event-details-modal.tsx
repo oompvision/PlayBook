@@ -48,6 +48,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   cancelAction?: (formData: FormData) => Promise<void>;
   onCancelClient?: (registrationId: string) => Promise<void>;
+  onCancelComplete?: (eventName: string) => void;
   cancellationWindowHours?: number;
   paymentMode?: string;
 };
@@ -99,13 +100,13 @@ export function EventDetailsModal({
   onOpenChange,
   cancelAction,
   onCancelClient,
+  onCancelComplete,
   cancellationWindowHours = 24,
   paymentMode = "none",
 }: Props) {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
-  const [cancelSuccess, setCancelSuccess] = useState(false);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -113,7 +114,6 @@ export function EventDetailsModal({
       setShowCancelConfirm(false);
       setCancelling(false);
       setManageOpen(false);
-      setCancelSuccess(false);
     }
   }, [open]);
 
@@ -137,7 +137,7 @@ export function EventDetailsModal({
 
   const spotsLeft = event.capacity - event.registeredCount;
   const isFull = spotsLeft <= 0;
-  const canCancel = event.registrationStatus !== "cancelled" && !cancelSuccess;
+  const canCancel = event.registrationStatus !== "cancelled";
   const hasPaidEvent = paymentMode !== "none" && event.priceCents > 0;
   const insideWindow = isInsideCancellationWindow(event.startTime, cancellationWindowHours);
 
@@ -151,10 +151,8 @@ export function EventDetailsModal({
       } else if (onCancelClient) {
         await onCancelClient(event!.registrationId);
       }
-      setCancelSuccess(true);
-      setTimeout(() => {
-        onOpenChange(false);
-      }, 1500);
+      onOpenChange(false);
+      onCancelComplete?.(event!.eventName);
     } catch {
       setCancelling(false);
     }
@@ -168,7 +166,6 @@ export function EventDetailsModal({
           setShowCancelConfirm(false);
           setCancelling(false);
           setManageOpen(false);
-          setCancelSuccess(false);
         }
         onOpenChange(v);
       }}
@@ -180,11 +177,7 @@ export function EventDetailsModal({
               <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400">
                 Event
               </Badge>
-              {cancelSuccess ? (
-                <Badge variant="secondary">Cancelled</Badge>
-              ) : (
-                getStatusBadge(event.registrationStatus, event.waitlistPosition)
-              )}
+              {getStatusBadge(event.registrationStatus, event.waitlistPosition)}
             </div>
           </div>
           <DialogTitle className="text-lg">{event.eventName}</DialogTitle>
@@ -192,14 +185,6 @@ export function EventDetailsModal({
         </DialogHeader>
 
         <div className="-mx-6 flex-1 space-y-4 overflow-y-auto px-6">
-          {/* Success message after cancellation */}
-          {cancelSuccess && (
-            <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>Registration cancelled.</span>
-            </div>
-          )}
-
           {/* Event Details */}
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-sm">

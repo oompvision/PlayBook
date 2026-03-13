@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { Toast } from "@/components/ui/toast";
 import {
   BookingDetailsModal,
   type BookingDetailData,
@@ -114,6 +115,7 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
   // Event detail modal
   const [selectedEvent, setSelectedEvent] = useState<EventDetailData | null>(null);
   const [eventModalOpen, setEventModalOpen] = useState(false);
+  const [cancelToast, setCancelToast] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -430,6 +432,7 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
           if (!isOpen) setSelectedBooking(null);
         }}
         cancelAction={handleCancelBooking}
+        onCancelComplete={() => setCancelToast("Booking cancelled.")}
         cancellationWindowHours={cancellationWindowHours}
         paymentMode={paymentMode}
       />
@@ -444,9 +447,18 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
           if (!isOpen) setSelectedEvent(null);
         }}
         onCancelClient={handleCancelEvent}
+        onCancelComplete={(name) => setCancelToast(`You have unregistered from ${name}.`)}
         cancellationWindowHours={cancellationWindowHours}
         paymentMode={paymentMode}
       />
+
+      {cancelToast && (
+        <Toast
+          message={cancelToast}
+          duration={5000}
+          onClose={() => setCancelToast(null)}
+        />
+      )}
     </>
   );
 }
