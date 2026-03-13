@@ -64,7 +64,7 @@ export default async function PaymentSettingsPage() {
 
       {/* Payment Processing */}
       <SettingsAccordion
-        icon={CreditCard}
+        icon={<CreditCard className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
         title="Payment Processing"
         description="Connect your Stripe account to collect payments from customers."
         defaultOpen
@@ -74,7 +74,7 @@ export default async function PaymentSettingsPage() {
 
       {/* Cancellation Policy */}
       <SettingsAccordion
-        icon={ShieldCheck}
+        icon={<ShieldCheck className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
         title="Cancellation Policy"
         description="Configure your cancellation window and refund policy."
       >

@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { ChevronDown, type LucideIcon } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 type SettingsAccordionProps = {
-  icon: LucideIcon;
+  icon: ReactNode;
   title: string;
   description: string;
   defaultOpen?: boolean;
@@ -13,7 +13,7 @@ type SettingsAccordionProps = {
 };
 
 export function SettingsAccordion({
-  icon: Icon,
+  icon,
   title,
   description,
   defaultOpen = false,
@@ -29,7 +29,7 @@ export function SettingsAccordion({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-3 px-5 py-[18px] text-left border-b border-[#E6E8EB] dark:border-white/[0.05] cursor-pointer"
       >
-        <Icon className="h-[18px] w-[18px] shrink-0 text-gray-500 dark:text-gray-400" />
+        <span className="shrink-0">{icon}</span>
         <div className="flex-1 min-w-0">
           <h2 className="font-semibold text-gray-800 dark:text-white/90">
             {title}

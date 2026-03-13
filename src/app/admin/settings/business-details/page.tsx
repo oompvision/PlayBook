@@ -89,7 +89,7 @@ export default async function BusinessDetailsPage({
 
       {/* Business Details */}
       <SettingsAccordion
-        icon={Building2}
+        icon={<Building2 className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
         title="Business Details"
         description="These details are shown to customers on your booking pages."
         defaultOpen
@@ -159,7 +159,7 @@ export default async function BusinessDetailsPage({
 
       {/* Branding Section */}
       <SettingsAccordion
-        icon={Palette}
+        icon={<Palette className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
         title="Branding"
         description="Customize how your facility appears to customers."
       >

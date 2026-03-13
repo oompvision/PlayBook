@@ -72,7 +72,7 @@ export default async function MembershipManagementPage() {
 
       {/* Membership Management */}
       <SettingsAccordion
-        icon={Crown}
+        icon={<Crown className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
         title="Membership Management"
         description="Offer paid memberships with extended booking windows and discounts."
         defaultOpen

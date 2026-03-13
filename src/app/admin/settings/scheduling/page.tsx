@@ -147,7 +147,7 @@ export default async function SchedulingSettingsPage({
 
       {/* Scheduling Mode */}
       <SettingsAccordion
-        icon={CalendarCog}
+        icon={<CalendarCog className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
         title="Scheduling Mode"
         description="Choose how customers book time at your facility."
         defaultOpen
@@ -161,7 +161,7 @@ export default async function SchedulingSettingsPage({
       {/* Timezone & Scheduling + Booking Settings share one form */}
       <form action={updateSchedulingSettings} className="space-y-6">
         <SettingsAccordion
-          icon={Globe}
+          icon={<Globe className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
           title="Timezone & Scheduling"
           description="Set your facility timezone and default slot duration."
         >
@@ -202,7 +202,7 @@ export default async function SchedulingSettingsPage({
         </SettingsAccordion>
 
         <SettingsAccordion
-          icon={Clock}
+          icon={<Clock className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
           title="Booking Settings"
           description="Configure minimum lead times and bookable windows."
         >
@@ -266,7 +266,7 @@ export default async function SchedulingSettingsPage({
 
       {/* Events Toggle */}
       <SettingsAccordion
-        icon={CalendarDays}
+        icon={<CalendarDays className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
         title="Events"
         description="Create and manage open-enrollment events — clinics, group sessions, and more."
       >

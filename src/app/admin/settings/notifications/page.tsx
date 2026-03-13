@@ -44,7 +44,7 @@ export default async function NotificationsSettingsPage() {
 
       {/* Email Notifications */}
       <SettingsAccordion
-        icon={Mail}
+        icon={<Mail className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
         title="Email Notifications"
         description="Control which email notifications are sent to customers and admins. Sign-up confirmation emails are always sent by the auth system and cannot be disabled here."
         defaultOpen
