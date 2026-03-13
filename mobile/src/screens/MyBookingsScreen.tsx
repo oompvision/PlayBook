@@ -24,6 +24,7 @@ import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { ExpandedBookingCard } from '../components/ExpandedBookingCard';
+import { CrownIcon } from '../components/TabIcons';
 import { formatPrice, formatTimeInZone, formatDateLong } from '../lib/format';
 import { colors, spacing, typography } from '../theme';
 import type { Booking, EventRegistration, ModifiedFromInfo } from '../types';
@@ -497,6 +498,28 @@ export function MyBookingsScreen() {
                 {booking.bays.name}
               </Text>
             )}
+            {(() => {
+              const discount = booking.discount_cents || 0;
+              const total = booking.total_price_cents - discount;
+              if (discount > 0) {
+                return (
+                  <View style={styles.cardPriceRow}>
+                    <Text style={[styles.cardPriceStrike, isCancelled && styles.mutedText]}>
+                      {formatPrice(booking.total_price_cents)}
+                    </Text>
+                    <CrownIcon size={13} color={isCancelled ? colors.mutedForeground : '#0d9488'} />
+                    <Text style={[styles.cardPriceDiscount, isCancelled && styles.mutedText]}>
+                      {formatPrice(total)}
+                    </Text>
+                  </View>
+                );
+              }
+              return (
+                <Text style={[styles.cardPriceText, isCancelled && styles.mutedText]}>
+                  {formatPrice(total)}
+                </Text>
+              );
+            })()}
             <View style={styles.cardCodeRow}>
               <Text style={styles.cardCodeText}>{booking.confirmation_code}</Text>
               {isCancelled ? (
@@ -720,6 +743,28 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.mutedForeground,
     marginTop: 2,
+  },
+  cardPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  cardPriceStrike: {
+    ...typography.bodySmall,
+    color: colors.mutedForeground,
+    textDecorationLine: 'line-through',
+  },
+  cardPriceDiscount: {
+    ...typography.bodySmall,
+    color: '#0d9488',
+    fontWeight: '600',
+  },
+  cardPriceText: {
+    ...typography.bodySmall,
+    color: colors.foreground,
+    fontWeight: '600',
+    marginTop: 4,
   },
   cardCodeRow: {
     flexDirection: 'row',
