@@ -48,15 +48,14 @@ export default async function DynamicScheduleRulesPage({
   ]);
 
   return (
-    <div className="mx-auto max-w-[1100px] space-y-6">
+    <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
           Schedule Rules
         </h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Configure operating hours, booking durations, and buffers for each
-          facility. Available time slots are calculated automatically based on
-          these rules.
+          Configure operating hours, booking durations, and pricing for each
+          facility.
         </p>
       </div>
 
