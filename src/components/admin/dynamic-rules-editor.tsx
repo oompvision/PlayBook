@@ -66,6 +66,7 @@ type Bay = {
 };
 
 type RateTier = {
+  type?: "rate" | "blockout";
   start_time: string;
   end_time: string;
   hourly_rate_cents: number;
@@ -164,6 +165,11 @@ export function DynamicRulesEditor({
   const [tierSelection, setTierSelection] = useState<TierSelection>(null);
   const [editingTierIndex, setEditingTierIndex] = useState<number | null>(null);
   const [tierToast, setTierToast] = useState<string | null>(null);
+  const [tierCreateMode, setTierCreateMode] = useState<"rate" | "blockout">("rate");
+  const [blockoutConfirm, setBlockoutConfirm] = useState<{
+    blockout: { start_time: string; end_time: string };
+    consumed: RateTier[];
+  } | null>(null);
   const tierSectionRef = useRef<HTMLDivElement>(null);
 
   const selectedBay = bays.find((b) => b.id === selectedBayId);
@@ -377,48 +383,153 @@ export function DynamicRulesEditor({
   }
 
   function handleApplyTier(tier: RateTier) {
-    // Check rate differs from default
-    if (tier.hourly_rate_cents === (selectedBay?.hourly_rate_cents || 0)) {
-      setTierToast("Rate tier must be a different rate from the default rate");
-      setTimeout(() => setTierToast(null), 4000);
-      return;
+    const isBlockout = tier.type === "blockout";
+    const newStart = timeToMinutes(tier.start_time);
+    const newEnd = timeToMinutes(tier.end_time);
+
+    // Rate tier validation
+    if (!isBlockout) {
+      if (tier.hourly_rate_cents === (selectedBay?.hourly_rate_cents || 0)) {
+        setTierToast("Rate tier must be a different rate from the default rate");
+        setTimeout(() => setTierToast(null), 4000);
+        return;
+      }
     }
 
-    // Check for overlaps on all selected days
+    // Check overlaps and handle trim/consume logic
     for (const dayOfWeek of selectedDays) {
       const rule = bayRulesMap.get(dayOfWeek);
       if (!rule) continue;
       const existingTiers = rule.rate_tiers || [];
-      const newStart = timeToMinutes(tier.start_time);
-      const newEnd = timeToMinutes(tier.end_time);
+
       for (const existing of existingTiers) {
         const exStart = timeToMinutes(existing.start_time);
         const exEnd = timeToMinutes(existing.end_time);
-        if (newStart < exEnd && newEnd > exStart) {
+        if (newStart >= exEnd || newEnd <= exStart) continue; // no overlap
+
+        const existingIsBlockout = existing.type === "blockout";
+
+        if (isBlockout && !existingIsBlockout) {
+          // Block-out overlapping rate tier
+          if (newStart <= exStart && newEnd >= exEnd) {
+            // Full consume — ask confirmation
+            const consumed = existingTiers.filter((t) => {
+              if (t.type === "blockout") return false;
+              const s = timeToMinutes(t.start_time);
+              const e = timeToMinutes(t.end_time);
+              return newStart <= s && newEnd >= e;
+            });
+            if (consumed.length > 0) {
+              setBlockoutConfirm({ blockout: { start_time: tier.start_time, end_time: tier.end_time }, consumed });
+              return;
+            }
+          }
+          // Partial overlap — will be auto-trimmed in applyTierToRules
+        } else if (!isBlockout && existingIsBlockout) {
+          // Rate tier overlapping block-out — auto-trim rate tier to block-out edge
+          if (newStart < exEnd && newEnd > exStart) {
+            // Trim the new tier to avoid the blockout
+            if (newStart < exStart) {
+              tier = { ...tier, end_time: existing.start_time };
+            } else {
+              tier = { ...tier, start_time: existing.end_time };
+            }
+            const trimmedStart = timeToMinutes(tier.start_time);
+            const trimmedEnd = timeToMinutes(tier.end_time);
+            if (trimmedEnd <= trimmedStart) {
+              setTierToast("Rate tier cannot overlap a block-out");
+              setTimeout(() => setTierToast(null), 3000);
+              return;
+            }
+          }
+        } else if (!isBlockout && !existingIsBlockout) {
+          // Rate tier on rate tier — reject
           setTierToast("Rate tiers cannot overlap");
           setTimeout(() => setTierToast(null), 3000);
           return;
+        } else {
+          // Block-out on block-out — merge
+          tier = {
+            ...tier,
+            start_time: minutesToTime(Math.min(newStart, exStart)),
+            end_time: minutesToTime(Math.max(newEnd, exEnd)),
+          };
         }
       }
     }
 
+    applyTierToRules(tier);
+  }
+
+  function applyTierToRules(tier: RateTier) {
+    const isBlockout = tier.type === "blockout";
+    const newStart = timeToMinutes(tier.start_time);
+    const newEnd = timeToMinutes(tier.end_time);
     const dayLabels: string[] = [];
+
     for (const dayOfWeek of selectedDays) {
       const rule = bayRulesMap.get(dayOfWeek);
       if (!rule) continue;
       const existingTiers = rule.rate_tiers || [];
-      const newTiers = [...existingTiers, { ...tier }].sort(
-        (a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time)
-      );
-      updateRule(dayOfWeek, { rate_tiers: newTiers });
+
+      // Process existing tiers: trim, remove consumed, merge blockouts
+      let processed: RateTier[] = [];
+      for (const existing of existingTiers) {
+        const exStart = timeToMinutes(existing.start_time);
+        const exEnd = timeToMinutes(existing.end_time);
+        const existingIsBlockout = existing.type === "blockout";
+
+        if (newStart >= exEnd || newEnd <= exStart) {
+          // No overlap — keep as is
+          processed.push(existing);
+        } else if (isBlockout && existingIsBlockout) {
+          // Merge overlapping blockouts — skip existing, the new merged one will be added
+        } else if (isBlockout && !existingIsBlockout) {
+          // Block-out trims rate tier
+          if (newStart <= exStart && newEnd >= exEnd) {
+            // Fully consumed — remove
+          } else if (newStart <= exStart) {
+            // Trim left side
+            processed.push({ ...existing, start_time: tier.end_time });
+          } else if (newEnd >= exEnd) {
+            // Trim right side
+            processed.push({ ...existing, end_time: tier.start_time });
+          } else {
+            // Split rate tier around blockout
+            processed.push({ ...existing, end_time: tier.start_time });
+            processed.push({ ...existing, start_time: tier.end_time });
+          }
+        } else {
+          // Rate on blockout — should have been handled by trim in handleApplyTier
+          processed.push(existing);
+        }
+      }
+
+      processed.push({ ...tier });
+      processed.sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
+
+      updateRule(dayOfWeek, { rate_tiers: processed.length > 0 ? processed : null });
       dayLabels.push(DAYS_OF_WEEK.find((d) => d.value === dayOfWeek)?.short || "");
     }
 
     setTierSelection(null);
+    setTierCreateMode("rate");
+    const label = isBlockout ? "Block-out" : "Rate tier";
     if (selectedDays.size > 1) {
-      setTierToast(`Rate tier applied to ${dayLabels.join(", ")}`);
+      setTierToast(`${label} applied to ${dayLabels.join(", ")}`);
       setTimeout(() => setTierToast(null), 4000);
     }
+  }
+
+  function confirmBlockoutApply() {
+    if (!blockoutConfirm) return;
+    applyTierToRules({
+      type: "blockout",
+      start_time: blockoutConfirm.blockout.start_time,
+      end_time: blockoutConfirm.blockout.end_time,
+      hourly_rate_cents: 0,
+    });
+    setBlockoutConfirm(null);
   }
 
   function handleUpdateTier(tierIndex: number, updates: Partial<RateTier>) {
@@ -482,7 +593,8 @@ export function DynamicRulesEditor({
         (t, i) =>
           t.start_time === first[i].start_time &&
           t.end_time === first[i].end_time &&
-          t.hourly_rate_cents === first[i].hourly_rate_cents
+          t.hourly_rate_cents === first[i].hourly_rate_cents &&
+          (t.type || "rate") === (first[i].type || "rate")
       );
     });
   }, [selectedDays, bayRulesMap]);
@@ -773,8 +885,10 @@ export function DynamicRulesEditor({
                 editingTierIndex={editingTierIndex}
                 tierToast={tierToast}
                 tiersIdentical={selectedTiersIdentical}
+                tierCreateMode={tierCreateMode}
                 onSetTierSelection={setTierSelection}
                 onSetEditingTierIndex={setEditingTierIndex}
+                onSetTierCreateMode={setTierCreateMode}
                 onApplyTier={handleApplyTier}
                 onUpdateTier={handleUpdateTier}
                 onDeleteTier={handleDeleteTier}
@@ -837,6 +951,45 @@ export function DynamicRulesEditor({
           </div>
         )}
       </div>
+
+      {/* ─── Block-out Confirmation Dialog ──────────────────────────── */}
+      <Dialog open={!!blockoutConfirm} onOpenChange={(open) => !open && setBlockoutConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Remove Rate Tiers?
+            </DialogTitle>
+            <DialogDescription>
+              This block-out will remove the following rate tier{blockoutConfirm && blockoutConfirm.consumed.length > 1 ? "s" : ""}:
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5 py-2">
+            {blockoutConfirm?.consumed.map((t, i) => (
+              <div key={i} className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm dark:border-white/10 dark:bg-white/[0.04]">
+                <span className="text-gray-500">
+                  {formatTimeShort(t.start_time)} – {formatTimeShort(t.end_time)}
+                </span>
+                <span className="font-medium text-gray-700 dark:text-gray-300">
+                  ${(t.hourly_rate_cents / 100).toFixed(2)}/hr
+                </span>
+              </div>
+            ))}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setBlockoutConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-gray-600 hover:bg-gray-700"
+              onClick={confirmBlockoutApply}
+            >
+              <Ban className="mr-1.5 h-3.5 w-3.5" />
+              Apply Block-out
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ─── Unsaved Changes Dialog ───────────────────────────────── */}
       <Dialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
@@ -1332,18 +1485,47 @@ function DayRow({
               });
             })()}
 
-            {/* Rate tier segments — shaded by price level */}
+            {/* Rate tier & block-out segments */}
             {rateTiers.map((tier, idx) => {
               const tierStart = timeToMinutes(tier.start_time);
               const tierEnd = timeToMinutes(tier.end_time);
               const leftPct = minsToBarPercent(tierStart);
               const widthPct = minsToBarPercent(tierEnd) - leftPct;
               const isEditing = editingTierIndex === idx;
+              const isBlockout = tier.type === "blockout";
 
-              // Shade by price: ratio relative to default rate
-              // < 1 = discount (lighter blue), > 1 = premium (darker blue)
+              if (isBlockout) {
+                // Block-out: grey with diagonal stripes + circle-cross icon
+                return (
+                  <div
+                    key={idx}
+                    className={`absolute top-0 h-full cursor-pointer overflow-hidden rounded-sm transition-colors ${
+                      isEditing ? "ring-2 ring-amber-400" : ""
+                    }`}
+                    style={{
+                      left: `${leftPct}%`,
+                      width: `${widthPct}%`,
+                      backgroundColor: "#9ca3af",
+                      backgroundImage:
+                        "repeating-linear-gradient(135deg, transparent, transparent 3px, rgba(255,255,255,0.2) 3px, rgba(255,255,255,0.2) 5px)",
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onTierClick(idx);
+                    }}
+                    title="Block-out"
+                  >
+                    <div className="flex h-full items-center justify-center select-none">
+                      <Ban className="h-3 w-3 text-white/80 drop-shadow-sm" />
+                    </div>
+                    <div className="absolute left-0 top-1 bottom-1 w-px bg-white/30" />
+                    <div className="absolute right-0 top-1 bottom-1 w-px bg-white/30" />
+                  </div>
+                );
+              }
+
+              // Rate tier: shade by price level
               const ratio = defaultRate > 0 ? tier.hourly_rate_cents / defaultRate : 1;
-              // Map ratio to lightness: 0.5x → light (65%), 1x → medium (48%), 2x → dark (28%)
               const lightness = isEditing
                 ? undefined
                 : Math.max(25, Math.min(70, 65 - (ratio - 0.5) * 25));
@@ -1655,8 +1837,10 @@ function RateTierEditor({
   editingTierIndex,
   tierToast,
   tiersIdentical,
+  tierCreateMode,
   onSetTierSelection,
   onSetEditingTierIndex,
+  onSetTierCreateMode,
   onApplyTier,
   onUpdateTier,
   onDeleteTier,
@@ -1668,8 +1852,10 @@ function RateTierEditor({
   editingTierIndex: number | null;
   tierToast: string | null;
   tiersIdentical: boolean;
+  tierCreateMode: "rate" | "blockout";
   onSetTierSelection: (s: TierSelection) => void;
   onSetEditingTierIndex: (i: number | null) => void;
+  onSetTierCreateMode: (m: "rate" | "blockout") => void;
   onApplyTier: (tier: RateTier) => void;
   onUpdateTier: (index: number, updates: Partial<RateTier>) => void;
   onDeleteTier: (index: number) => void;
@@ -1719,18 +1905,70 @@ function RateTierEditor({
         </div>
       )}
 
-      {/* Existing tiers */}
+      {/* Existing tiers & block-outs */}
       {displayTiers !== null && displayTiers.length > 0 && (
         <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-4 dark:border-white/[0.04] dark:bg-white/[0.02]">
           <div className="mb-2 flex items-center gap-1.5">
             <DollarSign className="h-3.5 w-3.5 text-gray-400" />
             <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
-              Rate Tiers
+              Rate Tiers & Block-outs
             </span>
           </div>
           <div className="space-y-2">
             {displayTiers.map((tier, idx) => {
               const isEditing = editingTierIndex === idx;
+              const isBlockout = tier.type === "blockout";
+
+              if (isBlockout) {
+                return (
+                  <div
+                    key={idx}
+                    className={`rounded-lg border p-3 transition-colors ${
+                      isEditing
+                        ? "border-amber-300 bg-amber-50/50 dark:border-amber-700 dark:bg-amber-950/20"
+                        : "border-gray-300 bg-gray-100 dark:border-white/10 dark:bg-white/[0.06]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Ban className="h-3.5 w-3.5 shrink-0 text-gray-500" />
+                      <div className="flex flex-1 items-center gap-2">
+                        <input
+                          type="time"
+                          value={tier.start_time}
+                          disabled={!canEditTiers}
+                          onChange={(e) =>
+                            onUpdateTier(idx, { start_time: e.target.value })
+                          }
+                          className="h-8 rounded border border-gray-300 bg-white px-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.05] dark:text-white/90"
+                        />
+                        <span className="text-xs text-gray-400">to</span>
+                        <input
+                          type="time"
+                          value={tier.end_time}
+                          disabled={!canEditTiers}
+                          onChange={(e) =>
+                            onUpdateTier(idx, { end_time: e.target.value })
+                          }
+                          className="h-8 rounded border border-gray-300 bg-white px-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.05] dark:text-white/90"
+                        />
+                        <span className="text-xs font-medium text-gray-500">
+                          Block-out
+                        </span>
+                      </div>
+                      {canEditTiers && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteTier(idx)}
+                          className="shrink-0 rounded p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={idx}
@@ -1828,40 +2066,57 @@ function RateTierEditor({
         </div>
       )}
 
-      {/* New tier creation form */}
+      {/* New tier/block-out creation form */}
       {isCreating && (
         <div className="space-y-3">
-          {/* Option cards */}
+          {/* Option cards — clickable to switch mode */}
           <div className="flex gap-2">
-            <div className="flex-1 rounded-lg border-2 border-blue-500 bg-blue-50 p-3 dark:border-blue-400 dark:bg-blue-950/20">
+            <button
+              type="button"
+              onClick={() => onSetTierCreateMode("rate")}
+              className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${
+                tierCreateMode === "rate"
+                  ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/20"
+                  : "border-gray-200 bg-white hover:border-gray-300 dark:border-white/[0.06] dark:bg-white/[0.02]"
+              }`}
+            >
               <div className="flex items-center gap-2">
-                <DollarSign className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                <span className="text-sm font-medium text-blue-700 dark:text-blue-400">
-                  Create Rate Tier
+                <DollarSign className={`h-4 w-4 ${tierCreateMode === "rate" ? "text-blue-600 dark:text-blue-400" : "text-gray-400"}`} />
+                <span className={`text-sm font-medium ${tierCreateMode === "rate" ? "text-blue-700 dark:text-blue-400" : "text-gray-500"}`}>
+                  Rate Tier
                 </span>
               </div>
-              <p className="mt-0.5 text-[10px] text-blue-600/70 dark:text-blue-400/60">
-                Set custom pricing for this time range
+              <p className={`mt-0.5 text-[10px] ${tierCreateMode === "rate" ? "text-blue-600/70 dark:text-blue-400/60" : "text-gray-400"}`}>
+                Custom pricing for this time range
               </p>
-            </div>
-            <div className="flex-1 rounded-lg border border-gray-200 bg-gray-50 p-3 opacity-50 dark:border-white/[0.06] dark:bg-white/[0.02]">
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetTierCreateMode("blockout")}
+              className={`flex-1 rounded-lg border-2 p-3 text-left transition-colors ${
+                tierCreateMode === "blockout"
+                  ? "border-gray-500 bg-gray-50 dark:border-gray-400 dark:bg-gray-900/30"
+                  : "border-gray-200 bg-white hover:border-gray-300 dark:border-white/[0.06] dark:bg-white/[0.02]"
+              }`}
+            >
               <div className="flex items-center gap-2">
-                <Ban className="h-4 w-4 text-gray-400" />
-                <span className="text-sm font-medium text-gray-400">
-                  Create Block-out
-                </span>
-                <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[9px] font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-                  Soon
+                <Ban className={`h-4 w-4 ${tierCreateMode === "blockout" ? "text-gray-600 dark:text-gray-400" : "text-gray-400"}`} />
+                <span className={`text-sm font-medium ${tierCreateMode === "blockout" ? "text-gray-700 dark:text-gray-300" : "text-gray-500"}`}>
+                  Block-out
                 </span>
               </div>
-              <p className="mt-0.5 text-[10px] text-gray-400">
+              <p className={`mt-0.5 text-[10px] ${tierCreateMode === "blockout" ? "text-gray-500 dark:text-gray-400" : "text-gray-400"}`}>
                 Block this time range from booking
               </p>
-            </div>
+            </button>
           </div>
 
-          {/* Rate tier form */}
-          <div className="rounded-lg border border-blue-200 bg-white p-4 dark:border-blue-800/50 dark:bg-white/[0.03]">
+          {/* Creation form */}
+          <div className={`rounded-lg border bg-white p-4 dark:bg-white/[0.03] ${
+            tierCreateMode === "blockout"
+              ? "border-gray-300 dark:border-gray-700"
+              : "border-blue-200 dark:border-blue-800/50"
+          }`}>
             <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <div className="flex-1 space-y-1">
@@ -1891,36 +2146,64 @@ function RateTierEditor({
                   />
                 </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Hourly Rate
-                </label>
-                <PriceInput
-                  value={newTierRate}
-                  onChange={setNewTierRate}
-                  defaultRate={defaultRate}
-                />
-              </div>
+              {tierCreateMode === "rate" && (
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Hourly Rate
+                  </label>
+                  <PriceInput
+                    value={newTierRate}
+                    onChange={setNewTierRate}
+                    defaultRate={defaultRate}
+                  />
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <Button
                   size="sm"
-                  className="gap-1.5"
+                  className={`gap-1.5 ${
+                    tierCreateMode === "blockout"
+                      ? "bg-gray-600 hover:bg-gray-700 dark:bg-gray-500 dark:hover:bg-gray-600"
+                      : ""
+                  }`}
                   onClick={() => {
                     if (!tierSelection?.startTime || !tierSelection?.endTime) return;
-                    onApplyTier({
-                      start_time: tierSelection.startTime,
-                      end_time: tierSelection.endTime,
-                      hourly_rate_cents: newTierRate,
-                    });
+                    if (tierCreateMode === "blockout") {
+                      onApplyTier({
+                        type: "blockout",
+                        start_time: tierSelection.startTime,
+                        end_time: tierSelection.endTime,
+                        hourly_rate_cents: 0,
+                      });
+                    } else {
+                      onApplyTier({
+                        type: "rate",
+                        start_time: tierSelection.startTime,
+                        end_time: tierSelection.endTime,
+                        hourly_rate_cents: newTierRate,
+                      });
+                    }
                   }}
                 >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Apply Rate Tier
+                  {tierCreateMode === "blockout" ? (
+                    <>
+                      <Ban className="h-3.5 w-3.5" />
+                      Apply Block-out
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Apply Rate Tier
+                    </>
+                  )}
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => onSetTierSelection(null)}
+                  onClick={() => {
+                    onSetTierSelection(null);
+                    onSetTierCreateMode("rate");
+                  }}
                 >
                   Cancel
                 </Button>
