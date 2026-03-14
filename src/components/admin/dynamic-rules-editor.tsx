@@ -735,7 +735,8 @@ function WeeklyTimeline({
       <div ref={containerRef} className="min-w-[500px]">
         {/* Time axis header */}
         <div className="flex">
-          <div className="w-14 shrink-0 sm:w-16" />
+          {/* Spacer for checkbox + day label columns */}
+          <div className="w-[68px] shrink-0 sm:w-[76px]" />
           <div className="relative h-6 flex-1">
             {hours.map((m) => (
               <div
@@ -904,11 +905,24 @@ function DayRow({
           : "hover:bg-gray-50/50 dark:hover:bg-white/[0.02]"
       }`}
     >
+      {/* Checkbox */}
+      <div className="flex w-7 shrink-0 items-center justify-center">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={(e) => {
+            // Simulate click with shift key support
+            onClick(e as unknown as ReactMouseEvent);
+          }}
+          className="h-3.5 w-3.5 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
+        />
+      </div>
+
       {/* Day label */}
       <button
         type="button"
         onClick={onClick}
-        className={`w-14 shrink-0 py-3 text-left text-xs font-semibold sm:w-16 sm:text-sm ${
+        className={`w-10 shrink-0 py-3 text-left text-xs font-semibold sm:w-12 sm:text-sm ${
           isEnabled
             ? isSelected
               ? "text-blue-700 dark:text-blue-400"
@@ -1271,6 +1285,67 @@ function SidebarEditor({
       </div>
 
       <div className="space-y-5 overflow-y-auto p-4">
+        {/* Copy Day From */}
+        {(() => {
+          // Days that have rules configured (and are NOT in the current selection)
+          const copyableDays = DAYS_OF_WEEK.filter(
+            (d) => bayRulesMap.has(d.value) && !selectedDays.has(d.value)
+          );
+          if (copyableDays.length === 0) return null;
+          return (
+            <div>
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                Copy Day From
+              </label>
+              <select
+                value=""
+                onChange={(e) => {
+                  const sourceDayOfWeek = parseInt(e.target.value);
+                  if (isNaN(sourceDayOfWeek)) return;
+                  const sourceRule = bayRulesMap.get(sourceDayOfWeek);
+                  if (!sourceRule) return;
+                  // Set all local fields from the source day
+                  setLocalBuffer(String(sourceRule.buffer_minutes));
+                  setLocalGranularity(String(sourceRule.start_time_granularity));
+                  setLocalDurations([...sourceRule.available_durations]);
+                  setLocalTiers(
+                    sourceRule.rate_tiers
+                      ? sourceRule.rate_tiers.map((t) => ({ ...t }))
+                      : []
+                  );
+                  setHasLocalChanges(true);
+                  // Also update open/close times for all selected days
+                  for (const dayOfWeek of selectedDays) {
+                    onUpdateRule(dayOfWeek, {
+                      open_time: sourceRule.open_time,
+                      close_time: sourceRule.close_time,
+                    });
+                  }
+                }}
+                className="mt-1 flex h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.05] dark:text-white/90"
+              >
+                <option value="" disabled>
+                  Select a day to copy from...
+                </option>
+                {copyableDays.map((d) => {
+                  const r = bayRulesMap.get(d.value);
+                  const timeInfo = r
+                    ? ` (${formatTimeShort(r.open_time)}–${formatTimeShort(r.close_time)})`
+                    : "";
+                  return (
+                    <option key={d.value} value={d.value}>
+                      {d.label}{timeInfo}
+                    </option>
+                  );
+                })}
+              </select>
+              <p className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">
+                Copies hours, durations, buffer, interval &amp; rate tiers
+              </p>
+            </div>
+          );
+        })()}
+
         {/* Default price (read-only) */}
         {selectedBay && (
           <div>
