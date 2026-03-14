@@ -1341,12 +1341,12 @@ function DayRow({
               const isEditing = editingTierIndex === idx;
 
               // Shade by price: ratio relative to default rate
-              // > 1 = premium (darker), < 1 = discount (lighter), = 1 = same
+              // < 1 = discount (lighter blue), > 1 = premium (darker blue)
               const ratio = defaultRate > 0 ? tier.hourly_rate_cents / defaultRate : 1;
-              // Map ratio to opacity: 0.5x → 15% overlay, 1x → 30%, 2x → 55%
-              const overlayOpacity = isEditing
+              // Map ratio to lightness: 0.5x → light (65%), 1x → medium (48%), 2x → dark (28%)
+              const lightness = isEditing
                 ? undefined
-                : Math.min(0.6, Math.max(0.1, 0.15 + (ratio - 0.5) * 0.3));
+                : Math.max(25, Math.min(70, 65 - (ratio - 0.5) * 25));
 
               return (
                 <div
@@ -1359,7 +1359,7 @@ function DayRow({
                   style={{
                     left: `${leftPct}%`,
                     width: `${widthPct}%`,
-                    ...(!isEditing ? { backgroundColor: `rgba(30, 58, 138, ${overlayOpacity})` } : {}),
+                    ...(!isEditing ? { backgroundColor: `hsl(220, 70%, ${lightness}%)` } : {}),
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
