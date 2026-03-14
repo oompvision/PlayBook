@@ -22,6 +22,7 @@ import {
   GripVertical,
   DollarSign,
   AlertTriangle,
+  Ban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -89,6 +90,11 @@ type DbRule = Rule & {
   updated_at: string;
 };
 
+type TierSelection = {
+  startTime: string;
+  endTime: string;
+} | null;
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function timeToMinutes(time: string): number {
@@ -154,6 +160,11 @@ export function DynamicRulesEditor({
   const [showCopyDropdown, setShowCopyDropdown] = useState(false);
   // Mobile sidebar
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+  // Rate tier drag-to-create
+  const [tierSelection, setTierSelection] = useState<TierSelection>(null);
+  const [editingTierIndex, setEditingTierIndex] = useState<number | null>(null);
+  const [tierToast, setTierToast] = useState<string | null>(null);
+  const tierSectionRef = useRef<HTMLDivElement>(null);
 
   const selectedBay = bays.find((b) => b.id === selectedBayId);
 
@@ -309,6 +320,130 @@ export function DynamicRulesEditor({
     },
     [rules, selectedBayId]
   );
+
+  // ── Rate tier handlers ──────────────────────────────────────────────
+  function handleTierDragComplete(startMins: number, endMins: number) {
+    const startTime = minutesToTime(Math.min(startMins, endMins));
+    const endTime = minutesToTime(Math.max(startMins, endMins));
+    setTierSelection({ startTime, endTime });
+    setEditingTierIndex(null);
+    // Scroll to tier section
+    setTimeout(() => {
+      tierSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 100);
+  }
+
+  function handleTierClick(tierIndex: number) {
+    setEditingTierIndex(tierIndex);
+    setTierSelection(null);
+    setTimeout(() => {
+      tierSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 100);
+  }
+
+  function handleApplyTier(tier: RateTier) {
+    // Check for overlaps on all selected days
+    for (const dayOfWeek of selectedDays) {
+      const rule = bayRulesMap.get(dayOfWeek);
+      if (!rule) continue;
+      const existingTiers = rule.rate_tiers || [];
+      const newStart = timeToMinutes(tier.start_time);
+      const newEnd = timeToMinutes(tier.end_time);
+      for (const existing of existingTiers) {
+        const exStart = timeToMinutes(existing.start_time);
+        const exEnd = timeToMinutes(existing.end_time);
+        if (newStart < exEnd && newEnd > exStart) {
+          setTierToast("Rate tiers cannot overlap");
+          setTimeout(() => setTierToast(null), 3000);
+          return;
+        }
+      }
+    }
+
+    const dayLabels: string[] = [];
+    for (const dayOfWeek of selectedDays) {
+      const rule = bayRulesMap.get(dayOfWeek);
+      if (!rule) continue;
+      const existingTiers = rule.rate_tiers || [];
+      const newTiers = [...existingTiers, { ...tier }].sort(
+        (a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time)
+      );
+      updateRule(dayOfWeek, { rate_tiers: newTiers });
+      dayLabels.push(DAYS_OF_WEEK.find((d) => d.value === dayOfWeek)?.short || "");
+    }
+
+    setTierSelection(null);
+    if (selectedDays.size > 1) {
+      setTierToast(`Rate tier applied to ${dayLabels.join(", ")}`);
+      setTimeout(() => setTierToast(null), 4000);
+    }
+  }
+
+  function handleUpdateTier(tierIndex: number, updates: Partial<RateTier>) {
+    // Only works on single day or identical days
+    for (const dayOfWeek of selectedDays) {
+      const rule = bayRulesMap.get(dayOfWeek);
+      if (!rule || !rule.rate_tiers) continue;
+      const tiers = rule.rate_tiers.map((t, i) =>
+        i === tierIndex ? { ...t, ...updates } : t
+      );
+      // Check overlaps
+      const updated = tiers[tierIndex];
+      const updatedStart = timeToMinutes(updated.start_time);
+      const updatedEnd = timeToMinutes(updated.end_time);
+      let overlap = false;
+      for (let i = 0; i < tiers.length; i++) {
+        if (i === tierIndex) continue;
+        const s = timeToMinutes(tiers[i].start_time);
+        const e = timeToMinutes(tiers[i].end_time);
+        if (updatedStart < e && updatedEnd > s) {
+          overlap = true;
+          break;
+        }
+      }
+      if (overlap) {
+        setTierToast("Rate tiers cannot overlap");
+        setTimeout(() => setTierToast(null), 3000);
+        return;
+      }
+      updateRule(dayOfWeek, { rate_tiers: tiers });
+    }
+  }
+
+  function handleDeleteTier(tierIndex: number) {
+    const dayLabels: string[] = [];
+    for (const dayOfWeek of selectedDays) {
+      const rule = bayRulesMap.get(dayOfWeek);
+      if (!rule || !rule.rate_tiers) continue;
+      const tiers = rule.rate_tiers.filter((_, i) => i !== tierIndex);
+      updateRule(dayOfWeek, { rate_tiers: tiers.length > 0 ? tiers : null });
+      dayLabels.push(DAYS_OF_WEEK.find((d) => d.value === dayOfWeek)?.short || "");
+    }
+    setEditingTierIndex(null);
+    if (selectedDays.size > 1) {
+      setTierToast(`Rate tier removed from ${dayLabels.join(", ")}`);
+      setTimeout(() => setTierToast(null), 4000);
+    }
+  }
+
+  // Check if selected days have identical tier configs (for edit/delete to work)
+  const selectedTiersIdentical = useMemo(() => {
+    const selected = Array.from(selectedDays)
+      .map((d) => bayRulesMap.get(d))
+      .filter(Boolean) as Rule[];
+    if (selected.length <= 1) return true;
+    const first = selected[0].rate_tiers || [];
+    return selected.every((r) => {
+      const tiers = r.rate_tiers || [];
+      if (tiers.length !== first.length) return false;
+      return tiers.every(
+        (t, i) =>
+          t.start_time === first[i].start_time &&
+          t.end_time === first[i].end_time &&
+          t.hourly_rate_cents === first[i].hourly_rate_cents
+      );
+    });
+  }, [selectedDays, bayRulesMap]);
 
   // ── Bay switch with unsaved warning ──────────────────────────────────
   function handleBaySwitch(bayId: string) {
@@ -576,15 +711,29 @@ export function DynamicRulesEditor({
             onDayClick={handleDayClick}
             onDisableDay={disableDay}
             onUpdateRule={updateRule}
+            onTierDragComplete={handleTierDragComplete}
+            onTierClick={handleTierClick}
+            editingTierIndex={editingTierIndex}
           />
 
-          {/* ─── Pricing Timeline (below schedule) ──────────────── */}
+          {/* ─── Rate Tier Editor (below schedule) ──────────────── */}
           {selectedDays.size > 0 && (
-            <PricingTimeline
-              bayRulesMap={bayRulesMap}
-              selectedDays={selectedDays}
-              defaultRate={selectedBay?.hourly_rate_cents || 0}
-            />
+            <div ref={tierSectionRef}>
+              <RateTierEditor
+                bayRulesMap={bayRulesMap}
+                selectedDays={selectedDays}
+                defaultRate={selectedBay?.hourly_rate_cents || 0}
+                tierSelection={tierSelection}
+                editingTierIndex={editingTierIndex}
+                tierToast={tierToast}
+                tiersIdentical={selectedTiersIdentical}
+                onSetTierSelection={setTierSelection}
+                onSetEditingTierIndex={setEditingTierIndex}
+                onApplyTier={handleApplyTier}
+                onUpdateTier={handleUpdateTier}
+                onDeleteTier={handleDeleteTier}
+              />
+            </div>
           )}
         </div>
 
@@ -697,6 +846,9 @@ function WeeklyTimeline({
   onDayClick,
   onDisableDay,
   onUpdateRule,
+  onTierDragComplete,
+  onTierClick,
+  editingTierIndex,
 }: {
   bayRulesMap: Map<number, Rule>;
   selectedDays: Set<number>;
@@ -704,6 +856,9 @@ function WeeklyTimeline({
   onDayClick: (day: number, shiftKey: boolean) => void;
   onDisableDay: (day: number) => void;
   onUpdateRule: (day: number, updates: Partial<Rule>) => void;
+  onTierDragComplete: (startMins: number, endMins: number) => void;
+  onTierClick: (tierIndex: number) => void;
+  editingTierIndex: number | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { start: rangeStart, end: rangeEnd } = timelineRange;
@@ -773,6 +928,9 @@ function WeeklyTimeline({
               containerRef={containerRef}
               onClick={(e) => onDayClick(day.value, e.shiftKey)}
               onDisable={() => onDisableDay(day.value)}
+              onTierDragComplete={onTierDragComplete}
+              onTierClick={onTierClick}
+              editingTierIndex={editingTierIndex}
               onUpdateTimes={(open, close) =>
                 onUpdateRule(day.value, {
                   open_time: minutesToTime(open),
@@ -803,6 +961,9 @@ function DayRow({
   onClick,
   onDisable,
   onUpdateTimes,
+  onTierDragComplete,
+  onTierClick,
+  editingTierIndex,
 }: {
   day: { value: number; label: string; short: string };
   rule: Rule | null;
@@ -817,34 +978,78 @@ function DayRow({
   onClick: (e: ReactMouseEvent) => void;
   onDisable: () => void;
   onUpdateTimes: (openMins: number, closeMins: number) => void;
+  onTierDragComplete: (startMins: number, endMins: number) => void;
+  onTierClick: (tierIndex: number) => void;
+  editingTierIndex: number | null;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<"left" | "right" | null>(null);
   const [dragOpen, setDragOpen] = useState(0);
   const [dragClose, setDragClose] = useState(0);
+  // Interior drag for tier selection
+  const [tierDrag, setTierDrag] = useState<{
+    startMins: number;
+    endMins: number;
+  } | null>(null);
+  // Edge click popover
+  const [edgePopover, setEdgePopover] = useState<{
+    edge: "left" | "right";
+  } | null>(null);
 
   const openMins = rule ? timeToMinutes(rule.open_time) : 0;
   const closeMins = rule ? timeToMinutes(rule.close_time) : 0;
+  const rateTiers = rule?.rate_tiers || [];
 
   const displayOpen = dragging ? dragOpen : openMins;
   const displayClose = dragging ? dragClose : closeMins;
 
-  // ── Drag handlers ────────────────────────────────────────────────
-  function startDrag(
-    edge: "left" | "right",
-    e: ReactMouseEvent
-  ) {
+  // Convert mouse position to snapped minutes within the bar
+  function mouseToMinutes(clientX: number): number {
+    const track = trackRef.current;
+    if (!track) return 0;
+    const rect = track.getBoundingClientRect();
+    const pct = Math.max(
+      0,
+      Math.min(100, ((clientX - rect.left) / rect.width) * 100)
+    );
+    const rawMins = percentToMinutes(pct);
+    return snapToGrid(Math.max(openMins, Math.min(closeMins, rawMins)));
+  }
+
+  // Percent within the bar (not the track) for tier visualization
+  function minsToBarPercent(mins: number): number {
+    const barRange = displayClose - displayOpen;
+    if (barRange <= 0) return 0;
+    return ((mins - displayOpen) / barRange) * 100;
+  }
+
+  // ── Edge drag handlers ────────────────────────────────────────────
+  function startEdgeDrag(edge: "left" | "right", e: ReactMouseEvent) {
     e.stopPropagation();
     e.preventDefault();
-    setDragging(edge);
-    setDragOpen(openMins);
-    setDragClose(closeMins);
+    setEdgePopover(null);
+
+    const startX = e.clientX;
+    let moved = false;
+    let dragStarted = false;
 
     const track = trackRef.current;
     if (!track) return;
 
     function handleMouseMove(ev: globalThis.MouseEvent) {
-      if (!track) return;
+      const dist = Math.abs(ev.clientX - startX);
+      if (dist > 5) moved = true;
+
+      if (!moved || !track) return;
+
+      if (!dragStarted) {
+        dragStarted = true;
+        setDragging(edge);
+        setDragOpen(openMins);
+        setDragClose(closeMins);
+      }
+
       const rect = track.getBoundingClientRect();
       const pct = Math.max(
         0,
@@ -854,21 +1059,13 @@ function DayRow({
       const snapped = snapToGrid(rawMins);
 
       if (edge === "left") {
-        setDragOpen((prev) => {
-          const currentClose =
-            dragging === "left" ? dragClose : closeMins;
-          return snapped < currentClose - SNAP_MINUTES
-            ? snapped
-            : prev;
-        });
+        setDragOpen((prev) =>
+          snapped < closeMins - SNAP_MINUTES ? snapped : prev
+        );
       } else {
-        setDragClose((prev) => {
-          const currentOpen =
-            dragging === "right" ? dragOpen : openMins;
-          return snapped > currentOpen + SNAP_MINUTES
-            ? snapped
-            : prev;
-        });
+        setDragClose((prev) =>
+          snapped > openMins + SNAP_MINUTES ? snapped : prev
+        );
       }
     }
 
@@ -876,8 +1073,12 @@ function DayRow({
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
 
-      // Read the latest values from the DOM-managed state
-      // We need to use a callback to get the final values
+      if (!moved) {
+        // Click without drag — show popover
+        setEdgePopover({ edge });
+        return;
+      }
+
       if (edge === "left") {
         setDragOpen((finalOpen) => {
           setDragging(null);
@@ -897,6 +1098,58 @@ function DayRow({
     document.addEventListener("mouseup", handleMouseUp);
   }
 
+  // ── Interior drag for tier selection ──────────────────────────────
+  function startTierDrag(e: ReactMouseEvent) {
+    // Don't interfere with edge handles or tier clicks
+    e.stopPropagation();
+    setEdgePopover(null);
+
+    const startMins = mouseToMinutes(e.clientX);
+    let moved = false;
+
+    function handleMouseMove(ev: globalThis.MouseEvent) {
+      moved = true;
+      const currentMins = mouseToMinutes(ev.clientX);
+      setTierDrag({
+        startMins: Math.min(startMins, currentMins),
+        endMins: Math.max(startMins, currentMins),
+      });
+    }
+
+    function handleMouseUp(ev: globalThis.MouseEvent) {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+
+      if (!moved) {
+        setTierDrag(null);
+        return;
+      }
+
+      const endMins = mouseToMinutes(ev.clientX);
+      const finalStart = Math.min(startMins, endMins);
+      const finalEnd = Math.max(startMins, endMins);
+
+      setTierDrag(null);
+
+      if (finalEnd - finalStart >= SNAP_MINUTES) {
+        onTierDragComplete(finalStart, finalEnd);
+      }
+    }
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }
+
+  // Close popover on outside click
+  useEffect(() => {
+    if (!edgePopover) return;
+    function handleClick() {
+      setEdgePopover(null);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [edgePopover]);
+
   return (
     <div
       className={`group flex items-center transition-colors ${
@@ -911,7 +1164,6 @@ function DayRow({
           type="checkbox"
           checked={isSelected}
           onChange={(e) => {
-            // Simulate click with shift key support
             onClick(e as unknown as ReactMouseEvent);
           }}
           className="h-3.5 w-3.5 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
@@ -952,6 +1204,7 @@ function DayRow({
         {isEnabled ? (
           /* Active bar */
           <div
+            ref={barRef}
             className={`absolute top-1.5 h-7 rounded-md transition-colors ${
               isSelected
                 ? "bg-blue-500 dark:bg-blue-600"
@@ -961,17 +1214,80 @@ function DayRow({
               left: `${minutesToPercent(displayOpen)}%`,
               width: `${minutesToPercent(displayClose) - minutesToPercent(displayOpen)}%`,
             }}
+            onClick={(e) => e.stopPropagation()}
           >
+            {/* Rate tier segments */}
+            {rateTiers.map((tier, idx) => {
+              const tierStart = timeToMinutes(tier.start_time);
+              const tierEnd = timeToMinutes(tier.end_time);
+              const leftPct = minsToBarPercent(tierStart);
+              const widthPct = minsToBarPercent(tierEnd) - leftPct;
+              const isEditing = editingTierIndex === idx;
+
+              return (
+                <div
+                  key={idx}
+                  className={`absolute top-0 h-full cursor-pointer transition-colors ${
+                    isEditing
+                      ? "bg-amber-400/80 dark:bg-amber-500/70"
+                      : "bg-blue-700/40 dark:bg-blue-300/30"
+                  }`}
+                  style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTierClick(idx);
+                  }}
+                  title={`$${(tier.hourly_rate_cents / 100).toFixed(2)}/hr`}
+                >
+                  {/* Rate label */}
+                  {widthPct > 12 && (
+                    <div className="flex h-full items-center justify-center select-none">
+                      <span className="text-[9px] font-bold text-white drop-shadow-sm">
+                        ${(tier.hourly_rate_cents / 100).toFixed(0)}/hr
+                      </span>
+                    </div>
+                  )}
+                  {/* Left/right borders for tier segment */}
+                  <div className="absolute left-0 top-1 bottom-1 w-px bg-white/50" />
+                  <div className="absolute right-0 top-1 bottom-1 w-px bg-white/50" />
+                </div>
+              );
+            })}
+
+            {/* Interior drag area (for tier creation) */}
+            <div
+              className="absolute inset-0 z-10 cursor-crosshair"
+              onMouseDown={startTierDrag}
+            />
+
+            {/* Tier drag selection overlay */}
+            {tierDrag && (
+              <div
+                className="pointer-events-none absolute top-0 z-20 h-full rounded bg-amber-400/50 dark:bg-amber-300/40"
+                style={{
+                  left: `${minsToBarPercent(tierDrag.startMins)}%`,
+                  width: `${minsToBarPercent(tierDrag.endMins) - minsToBarPercent(tierDrag.startMins)}%`,
+                }}
+              >
+                <div className="flex h-full items-center justify-center">
+                  <span className="text-[9px] font-medium text-white drop-shadow">
+                    {formatTimeShort(minutesToTime(tierDrag.startMins))} –{" "}
+                    {formatTimeShort(minutesToTime(tierDrag.endMins))}
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Left drag handle */}
             <div
-              className="absolute -left-1 top-0 flex h-full w-3 cursor-col-resize items-center justify-center"
-              onMouseDown={(e) => startDrag("left", e)}
+              className="absolute -left-1 top-0 z-30 flex h-full w-3 cursor-col-resize items-center justify-center"
+              onMouseDown={(e) => startEdgeDrag("left", e)}
             >
               <div className="h-4 w-1 rounded-full bg-white/60" />
             </div>
 
             {/* Time labels inside bar */}
-            <div className="flex h-full items-center justify-between px-3 select-none">
+            <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-between px-3 select-none">
               <span className="text-[10px] font-medium text-white/90">
                 {formatTimeShort(minutesToTime(displayOpen))}
               </span>
@@ -982,11 +1298,52 @@ function DayRow({
 
             {/* Right drag handle */}
             <div
-              className="absolute -right-1 top-0 flex h-full w-3 cursor-col-resize items-center justify-center"
-              onMouseDown={(e) => startDrag("right", e)}
+              className="absolute -right-1 top-0 z-30 flex h-full w-3 cursor-col-resize items-center justify-center"
+              onMouseDown={(e) => startEdgeDrag("right", e)}
             >
               <div className="h-4 w-1 rounded-full bg-white/60" />
             </div>
+
+            {/* Edge click popover */}
+            {edgePopover && (
+              <div
+                className={`absolute top-full z-40 mt-1 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-white/10 dark:bg-gray-900 ${
+                  edgePopover.edge === "left" ? "left-0" : "right-0"
+                }`}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-white/[0.05]"
+                  onClick={() => {
+                    setEdgePopover(null);
+                    // Just dismiss — user drags edge next time
+                  }}
+                >
+                  Drag to adjust hours
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                  onClick={() => {
+                    setEdgePopover(null);
+                    const edgeTime =
+                      edgePopover.edge === "left" ? openMins : closeMins;
+                    // Create a 1-hour default tier from edge
+                    const otherEnd =
+                      edgePopover.edge === "left"
+                        ? Math.min(openMins + 60, closeMins)
+                        : Math.max(closeMins - 60, openMins);
+                    onTierDragComplete(
+                      Math.min(edgeTime, otherEnd),
+                      Math.max(edgeTime, otherEnd)
+                    );
+                  }}
+                >
+                  Create Rate Tier
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           /* Closed / greyed out row */
@@ -1018,72 +1375,348 @@ function DayRow({
   );
 }
 
-// ─── Pricing Timeline Component ─────────────────────────────────────────────
+// ─── Price Input Component ───────────────────────────────────────────────────
 
-function PricingTimeline({
+function PriceInput({
+  value,
+  onChange,
+  defaultRate,
+}: {
+  value: number; // cents
+  onChange: (cents: number) => void;
+  defaultRate: number; // cents
+}) {
+  const [focused, setFocused] = useState(false);
+  const [rawValue, setRawValue] = useState("");
+
+  const displayValue = focused
+    ? rawValue
+    : (value / 100).toFixed(2);
+
+  return (
+    <div className="relative">
+      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+        $
+      </span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={displayValue}
+        placeholder={(defaultRate / 100).toFixed(2)}
+        onFocus={() => {
+          setFocused(true);
+          setRawValue("");
+        }}
+        onBlur={() => {
+          setFocused(false);
+          if (rawValue !== "") {
+            const parsed = parseFloat(rawValue);
+            if (!isNaN(parsed) && parsed >= 0) {
+              onChange(Math.round(parsed * 100));
+            }
+          }
+        }}
+        onChange={(e) => {
+          const v = e.target.value.replace(/[^0-9.]/g, "");
+          setRawValue(v);
+          const parsed = parseFloat(v);
+          if (!isNaN(parsed) && parsed >= 0) {
+            onChange(Math.round(parsed * 100));
+          }
+        }}
+        className="h-9 w-full rounded-lg border border-gray-300 bg-white pl-6 pr-8 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.05] dark:text-white/90 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+      />
+      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">
+        /hr
+      </span>
+    </div>
+  );
+}
+
+// ─── Rate Tier Editor Component (below timeline) ────────────────────────────
+
+function RateTierEditor({
   bayRulesMap,
   selectedDays,
   defaultRate,
+  tierSelection,
+  editingTierIndex,
+  tierToast,
+  tiersIdentical,
+  onSetTierSelection,
+  onSetEditingTierIndex,
+  onApplyTier,
+  onUpdateTier,
+  onDeleteTier,
 }: {
   bayRulesMap: Map<number, Rule>;
   selectedDays: Set<number>;
   defaultRate: number;
+  tierSelection: TierSelection;
+  editingTierIndex: number | null;
+  tierToast: string | null;
+  tiersIdentical: boolean;
+  onSetTierSelection: (s: TierSelection) => void;
+  onSetEditingTierIndex: (i: number | null) => void;
+  onApplyTier: (tier: RateTier) => void;
+  onUpdateTier: (index: number, updates: Partial<RateTier>) => void;
+  onDeleteTier: (index: number) => void;
 }) {
-  // Get rate tiers from selected days
   const selectedRules = Array.from(selectedDays)
     .map((d) => bayRulesMap.get(d))
     .filter(Boolean) as Rule[];
 
-  if (selectedRules.length === 0) return null;
+  // New tier form state
+  const [newTierStart, setNewTierStart] = useState(
+    tierSelection?.startTime || ""
+  );
+  const [newTierEnd, setNewTierEnd] = useState(tierSelection?.endTime || "");
+  const [newTierRate, setNewTierRate] = useState(defaultRate);
 
-  // Check if all selected have same rate tiers
-  const firstTiers = selectedRules[0]?.rate_tiers || [];
-  const allSame = selectedRules.every((r) => {
-    const tiers = r.rate_tiers || [];
-    if (tiers.length !== firstTiers.length) return false;
-    return tiers.every(
-      (t, i) =>
-        t.start_time === firstTiers[i].start_time &&
-        t.end_time === firstTiers[i].end_time &&
-        t.hourly_rate_cents === firstTiers[i].hourly_rate_cents
-    );
-  });
+  // Sync from tierSelection when it changes
+  const prevSelectionRef = useRef(tierSelection);
+  useEffect(() => {
+    if (tierSelection && tierSelection !== prevSelectionRef.current) {
+      setNewTierStart(tierSelection.startTime);
+      setNewTierEnd(tierSelection.endTime);
+      setNewTierRate(defaultRate);
+    }
+    prevSelectionRef.current = tierSelection;
+  }, [tierSelection, defaultRate]);
 
-  const displayTiers = allSame ? firstTiers : null;
+  // Get tiers for display (from first selected day, since we only show when identical)
+  const displayTiers =
+    tiersIdentical && selectedRules.length > 0
+      ? selectedRules[0].rate_tiers || []
+      : null;
+
+  const isCreating = tierSelection !== null;
+  const canEditTiers = selectedDays.size === 1 || tiersIdentical;
 
   return (
-    <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50/50 p-4 dark:border-white/[0.04] dark:bg-white/[0.02]">
-      <div className="mb-2 flex items-center gap-1.5">
-        <DollarSign className="h-3.5 w-3.5 text-gray-400" />
-        <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
-          Pricing
-        </span>
-      </div>
-      {displayTiers === null ? (
-        <p className="text-xs text-gray-400 italic dark:text-gray-500">
-          Mixed pricing across selected days — edit in sidebar
-        </p>
-      ) : displayTiers.length === 0 ? (
-        <p className="text-xs text-gray-400 dark:text-gray-500">
-          Default rate: ${(defaultRate / 100).toFixed(2)}/hr — add tiers in
-          sidebar to override
-        </p>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          {displayTiers.map((tier, i) => (
-            <div
-              key={i}
-              className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs dark:border-white/[0.06] dark:bg-white/[0.04]"
-            >
-              <span className="text-gray-500 dark:text-gray-400">
-                {formatTimeShort(tier.start_time)} –{" "}
-                {formatTimeShort(tier.end_time)}
-              </span>
-              <span className="font-semibold text-gray-800 dark:text-white/90">
-                ${(tier.hourly_rate_cents / 100).toFixed(2)}/hr
-              </span>
+    <div className="mt-4 space-y-3">
+      {/* Inline toast */}
+      {tierToast && (
+        <div
+          className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm ${
+            tierToast.includes("cannot")
+              ? "border border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400"
+              : "border border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400"
+          }`}
+        >
+          {tierToast.includes("cannot") ? (
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+          ) : (
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+          )}
+          {tierToast}
+        </div>
+      )}
+
+      {/* Existing tiers */}
+      {displayTiers !== null && displayTiers.length > 0 && (
+        <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-4 dark:border-white/[0.04] dark:bg-white/[0.02]">
+          <div className="mb-2 flex items-center gap-1.5">
+            <DollarSign className="h-3.5 w-3.5 text-gray-400" />
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+              Rate Tiers
+            </span>
+          </div>
+          <div className="space-y-2">
+            {displayTiers.map((tier, idx) => {
+              const isEditing = editingTierIndex === idx;
+              return (
+                <div
+                  key={idx}
+                  className={`rounded-lg border p-3 transition-colors ${
+                    isEditing
+                      ? "border-amber-300 bg-amber-50/50 dark:border-amber-700 dark:bg-amber-950/20"
+                      : "border-gray-200 bg-white dark:border-white/[0.06] dark:bg-white/[0.04]"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="flex flex-1 items-center gap-2">
+                      <input
+                        type="time"
+                        value={tier.start_time}
+                        disabled={!canEditTiers}
+                        onChange={(e) =>
+                          onUpdateTier(idx, { start_time: e.target.value })
+                        }
+                        className="h-8 rounded border border-gray-300 bg-white px-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.05] dark:text-white/90"
+                      />
+                      <span className="text-xs text-gray-400">to</span>
+                      <input
+                        type="time"
+                        value={tier.end_time}
+                        disabled={!canEditTiers}
+                        onChange={(e) =>
+                          onUpdateTier(idx, { end_time: e.target.value })
+                        }
+                        className="h-8 rounded border border-gray-300 bg-white px-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.05] dark:text-white/90"
+                      />
+                      <span className="text-xs text-gray-400">@</span>
+                      <div className="w-28">
+                        {canEditTiers ? (
+                          <PriceInput
+                            value={tier.hourly_rate_cents}
+                            onChange={(cents) =>
+                              onUpdateTier(idx, {
+                                hourly_rate_cents: cents,
+                              })
+                            }
+                            defaultRate={defaultRate}
+                          />
+                        ) : (
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            ${(tier.hourly_rate_cents / 100).toFixed(2)}/hr
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {canEditTiers && (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteTier(idx)}
+                        className="shrink-0 rounded p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  {isEditing && (
+                    <p className="mt-1.5 text-[10px] text-amber-600 dark:text-amber-400">
+                      Editing — click on bar or change values above
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Non-identical multi-select warning */}
+      {!tiersIdentical && selectedDays.size > 1 && (
+        <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-4 dark:border-white/[0.04] dark:bg-white/[0.02]">
+          <p className="text-xs text-gray-400 italic dark:text-gray-500">
+            Selected days have different rate tiers. Select a single day to
+            edit, or drag on a bar to add a new tier to all selected days.
+          </p>
+        </div>
+      )}
+
+      {/* No tiers yet */}
+      {displayTiers !== null && displayTiers.length === 0 && !isCreating && (
+        <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-4 dark:border-white/[0.04] dark:bg-white/[0.02]">
+          <div className="mb-1 flex items-center gap-1.5">
+            <DollarSign className="h-3.5 w-3.5 text-gray-400" />
+            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+              Pricing
+            </span>
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            Default rate: ${(defaultRate / 100).toFixed(2)}/hr — drag on a bar
+            to create a rate tier
+          </p>
+        </div>
+      )}
+
+      {/* New tier creation form */}
+      {isCreating && (
+        <div className="space-y-3">
+          {/* Option cards */}
+          <div className="flex gap-2">
+            <div className="flex-1 rounded-lg border-2 border-blue-500 bg-blue-50 p-3 dark:border-blue-400 dark:bg-blue-950/20">
+              <div className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                <span className="text-sm font-medium text-blue-700 dark:text-blue-400">
+                  Create Rate Tier
+                </span>
+              </div>
+              <p className="mt-0.5 text-[10px] text-blue-600/70 dark:text-blue-400/60">
+                Set custom pricing for this time range
+              </p>
             </div>
-          ))}
+            <div className="flex-1 rounded-lg border border-gray-200 bg-gray-50 p-3 opacity-50 dark:border-white/[0.06] dark:bg-white/[0.02]">
+              <div className="flex items-center gap-2">
+                <Ban className="h-4 w-4 text-gray-400" />
+                <span className="text-sm font-medium text-gray-400">
+                  Create Block-out
+                </span>
+                <span className="rounded bg-gray-200 px-1.5 py-0.5 text-[9px] font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                  Soon
+                </span>
+              </div>
+              <p className="mt-0.5 text-[10px] text-gray-400">
+                Block this time range from booking
+              </p>
+            </div>
+          </div>
+
+          {/* Rate tier form */}
+          <div className="rounded-lg border border-blue-200 bg-white p-4 dark:border-blue-800/50 dark:bg-white/[0.03]">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    Start Time
+                  </label>
+                  <input
+                    type="time"
+                    value={newTierStart}
+                    onChange={(e) => setNewTierStart(e.target.value)}
+                    className="flex h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.05] dark:text-white/90"
+                  />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    End Time
+                  </label>
+                  <input
+                    type="time"
+                    value={newTierEnd}
+                    onChange={(e) => setNewTierEnd(e.target.value)}
+                    className="flex h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.05] dark:text-white/90"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  Hourly Rate
+                </label>
+                <PriceInput
+                  value={newTierRate}
+                  onChange={setNewTierRate}
+                  defaultRate={defaultRate}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => {
+                    if (!newTierStart || !newTierEnd) return;
+                    onApplyTier({
+                      start_time: newTierStart,
+                      end_time: newTierEnd,
+                      hourly_rate_cents: newTierRate,
+                    });
+                  }}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Apply Rate Tier
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onSetTierSelection(null)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1137,26 +1770,11 @@ function SidebarEditor({
     (a, b) => a.length === b.length && a.every((v, i) => v === b[i])
   );
 
-  // For rate tiers
-  const sharedTiers = getSharedValue(
-    (r) => r.rate_tiers || [],
-    (a, b) => {
-      if (a.length !== b.length) return false;
-      return a.every(
-        (t, i) =>
-          t.start_time === b[i].start_time &&
-          t.end_time === b[i].end_time &&
-          t.hourly_rate_cents === b[i].hourly_rate_cents
-      );
-    }
-  );
-
   // ── Local form state for pending changes ─────────────────────────
   // Track which fields user has explicitly modified
   const [localBuffer, setLocalBuffer] = useState<string>("");
   const [localGranularity, setLocalGranularity] = useState<string>("");
   const [localDurations, setLocalDurations] = useState<number[] | null>(null);
-  const [localTiers, setLocalTiers] = useState<RateTier[] | null>(null);
   const [hasLocalChanges, setHasLocalChanges] = useState(false);
 
   // Reset local state when selection changes
@@ -1168,7 +1786,6 @@ function SidebarEditor({
       setLocalBuffer("");
       setLocalGranularity("");
       setLocalDurations(null);
-      setLocalTiers(null);
       setHasLocalChanges(false);
     }
   }, [selectionKey]);
@@ -1177,7 +1794,6 @@ function SidebarEditor({
   const displayBuffer = localBuffer !== "" ? localBuffer : sharedBuffer.mixed ? "" : String(sharedBuffer.value);
   const displayGranularity = localGranularity !== "" ? localGranularity : sharedGranularity.mixed ? "" : String(sharedGranularity.value);
   const displayDurations = localDurations !== null ? localDurations : sharedDurations.mixed ? null : (sharedDurations.value as number[]);
-  const displayTiers = localTiers !== null ? localTiers : sharedTiers.mixed ? null : (sharedTiers.value as RateTier[]);
 
   // ── Apply changes ────────────────────────────────────────────────
   function applyChanges() {
@@ -1193,12 +1809,6 @@ function SidebarEditor({
       if (localDurations !== null) {
         updates.available_durations = [...localDurations];
       }
-      if (localTiers !== null) {
-        updates.rate_tiers =
-          localTiers.length > 0
-            ? localTiers.map((t) => ({ ...t }))
-            : null;
-      }
 
       if (Object.keys(updates).length > 0) {
         onUpdateRule(dayOfWeek, updates);
@@ -1209,42 +1819,7 @@ function SidebarEditor({
     setLocalBuffer("");
     setLocalGranularity("");
     setLocalDurations(null);
-    setLocalTiers(null);
     setHasLocalChanges(false);
-  }
-
-  // ── Rate tier helpers ────────────────────────────────────────────
-  function addTier() {
-    const current = displayTiers || [];
-    const rule = selectedRules[0];
-    const lastEnd =
-      current.length > 0
-        ? current[current.length - 1].end_time
-        : rule?.open_time || "09:00";
-    const newTier: RateTier = {
-      start_time: lastEnd,
-      end_time: rule?.close_time || "21:00",
-      hourly_rate_cents: selectedBay?.hourly_rate_cents || 0,
-    };
-    const updated = [...current, newTier];
-    setLocalTiers(updated);
-    setHasLocalChanges(true);
-  }
-
-  function updateTier(index: number, updates: Partial<RateTier>) {
-    const current = displayTiers || [];
-    const updated = current.map((t, i) =>
-      i === index ? { ...t, ...updates } : t
-    );
-    setLocalTiers(updated);
-    setHasLocalChanges(true);
-  }
-
-  function removeTier(index: number) {
-    const current = displayTiers || [];
-    const updated = current.filter((_, i) => i !== index);
-    setLocalTiers(updated);
-    setHasLocalChanges(true);
   }
 
   // ── No selection state ───────────────────────────────────────────
@@ -1308,17 +1883,15 @@ function SidebarEditor({
                   setLocalBuffer(String(sourceRule.buffer_minutes));
                   setLocalGranularity(String(sourceRule.start_time_granularity));
                   setLocalDurations([...sourceRule.available_durations]);
-                  setLocalTiers(
-                    sourceRule.rate_tiers
-                      ? sourceRule.rate_tiers.map((t) => ({ ...t }))
-                      : []
-                  );
                   setHasLocalChanges(true);
-                  // Also update open/close times for all selected days
+                  // Also update open/close times and rate tiers for all selected days
                   for (const dayOfWeek of selectedDays) {
                     onUpdateRule(dayOfWeek, {
                       open_time: sourceRule.open_time,
                       close_time: sourceRule.close_time,
+                      rate_tiers: sourceRule.rate_tiers
+                        ? sourceRule.rate_tiers.map((t) => ({ ...t }))
+                        : null,
                     });
                   }
                 }}
@@ -1442,90 +2015,6 @@ function SidebarEditor({
           </div>
         </div>
 
-        {/* Rate tiers */}
-        <div>
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-              Rate Tiers
-            </label>
-            <button
-              type="button"
-              onClick={addTier}
-              className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
-            >
-              <Plus className="h-3 w-3" />
-              Add
-            </button>
-          </div>
-
-          {displayTiers === null ? (
-            <p className="mt-1 text-xs text-gray-400 italic dark:text-gray-500">
-              Mixed tiers across selected days
-            </p>
-          ) : displayTiers.length === 0 ? (
-            <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-              Using default rate for all hours
-            </p>
-          ) : (
-            <div className="mt-2 space-y-2">
-              {displayTiers.map((tier, idx) => (
-                <div
-                  key={idx}
-                  className="space-y-1.5 rounded-lg border border-gray-200 bg-gray-50/50 p-2.5 dark:border-white/[0.06] dark:bg-white/[0.02]"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="time"
-                      value={tier.start_time}
-                      onChange={(e) =>
-                        updateTier(idx, { start_time: e.target.value })
-                      }
-                      className="h-7 w-full rounded border border-gray-300 bg-white px-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.05] dark:text-white/90"
-                    />
-                    <span className="shrink-0 text-xs text-gray-400">to</span>
-                    <input
-                      type="time"
-                      value={tier.end_time}
-                      onChange={(e) =>
-                        updateTier(idx, { end_time: e.target.value })
-                      }
-                      className="h-7 w-full rounded border border-gray-300 bg-white px-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.05] dark:text-white/90"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeTier(idx)}
-                      className="shrink-0 rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">
-                      $
-                    </span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={(tier.hourly_rate_cents / 100).toFixed(2)}
-                      onChange={(e) =>
-                        updateTier(idx, {
-                          hourly_rate_cents: Math.round(
-                            parseFloat(e.target.value || "0") * 100
-                          ),
-                        })
-                      }
-                      className="h-7 w-full rounded border border-gray-300 bg-white pl-5 pr-8 text-xs text-gray-800 focus:border-blue-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.05] dark:text-white/90"
-                    />
-                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">
-                      /hr
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Apply button */}
