@@ -234,11 +234,13 @@ export function DynamicRulesEditor({
 
   function updateRule(dayOfWeek: number, updates: Partial<Rule>) {
     const key = `${selectedBayId}:${dayOfWeek}`;
-    const existing = rules.get(key);
-    if (!existing) return;
-    const newRules = new Map(rules);
-    newRules.set(key, { ...existing, ...updates });
-    setRules(newRules);
+    setRules((prev) => {
+      const existing = prev.get(key);
+      if (!existing) return prev;
+      const next = new Map(prev);
+      next.set(key, { ...existing, ...updates });
+      return next;
+    });
     setIsDirty(true);
     setSaved(false);
   }
@@ -1197,14 +1199,24 @@ function DayRow({
     document.addEventListener("mouseup", handleMouseUp);
   }
 
-  // Close popover on outside click
+  // Close popover on outside click (use 'click' not 'mousedown' so
+  // buttons inside the popover can fire their onClick before it closes)
   useEffect(() => {
     if (!edgePopover) return;
-    function handleClick() {
+    function handleClick(ev: globalThis.MouseEvent) {
+      // Let clicks inside the popover through
+      const target = ev.target as HTMLElement;
+      if (target.closest("[data-edge-popover]")) return;
       setEdgePopover(null);
     }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    // Delay listener to avoid the same click that opened the popover
+    const id = requestAnimationFrame(() => {
+      document.addEventListener("click", handleClick);
+    });
+    return () => {
+      cancelAnimationFrame(id);
+      document.removeEventListener("click", handleClick);
+    };
   }, [edgePopover]);
 
   return (
@@ -1492,6 +1504,7 @@ function DayRow({
             {/* Edge click popover */}
             {edgePopover && (
               <div
+                data-edge-popover
                 className={`absolute top-full z-40 mt-1 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-white/10 dark:bg-gray-900 ${
                   edgePopover.edge === "left" ? "left-0" : "right-0"
                 }`}
