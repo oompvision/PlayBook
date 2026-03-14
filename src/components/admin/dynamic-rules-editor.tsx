@@ -1430,7 +1430,8 @@ function DayRow({
         ))}
 
         {isEnabled ? (
-          /* Active bar */
+          <>
+          {/* Active bar */}
           <div
             ref={barRef}
             className={`absolute top-1.5 h-7 rounded-md transition-colors ${
@@ -1680,16 +1681,6 @@ function DayRow({
               <div className="h-4 w-1 rounded-full bg-white/60" />
             </div>
 
-            {/* Time labels inside bar */}
-            <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-between px-3 select-none">
-              <span className="text-[10px] font-medium text-white/90">
-                {formatTimeShort(minutesToTime(displayOpen))}
-              </span>
-              <span className="text-[10px] font-medium text-white/90">
-                {formatTimeShort(minutesToTime(displayClose))}
-              </span>
-            </div>
-
             {/* Right drag handle */}
             <div
               className="absolute -right-1 top-0 z-30 flex h-full w-3 cursor-col-resize items-center justify-center"
@@ -1739,6 +1730,24 @@ function DayRow({
               </div>
             )}
           </div>
+          {/* Start/end time labels — outside the bar */}
+          <div
+            className="pointer-events-none absolute top-1.5 z-[1] flex h-7 items-center justify-end select-none"
+            style={{ left: 0, width: `${minutesToPercent(displayOpen)}%` }}
+          >
+            <span className="pr-1 text-[10px] font-medium text-gray-500 dark:text-gray-400">
+              {formatTimeShort(minutesToTime(displayOpen))}
+            </span>
+          </div>
+          <div
+            className="pointer-events-none absolute top-1.5 z-[1] flex h-7 items-center select-none"
+            style={{ left: `${minutesToPercent(displayClose)}%` }}
+          >
+            <span className="pl-1 text-[10px] font-medium text-gray-500 dark:text-gray-400">
+              {formatTimeShort(minutesToTime(displayClose))}
+            </span>
+          </div>
+          </>
         ) : (
           /* Closed / greyed out row */
           <div className="absolute inset-x-0 top-1.5 flex h-7 items-center justify-center rounded-md border border-dashed border-gray-200 bg-gray-50/50 dark:border-white/[0.06] dark:bg-white/[0.02]">
