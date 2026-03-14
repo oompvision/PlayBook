@@ -33,6 +33,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { SchedulePreview } from "./schedule-preview";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -171,6 +172,7 @@ export function DynamicRulesEditor({
     consumed: RateTier[];
   } | null>(null);
   const tierSectionRef = useRef<HTMLDivElement>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   const selectedBay = bays.find((b) => b.id === selectedBayId);
 
@@ -804,12 +806,17 @@ export function DynamicRulesEditor({
           </div>
         )}
 
-        {/* Preview Booking (placeholder) */}
+        {/* Preview Booking */}
         <button
           type="button"
-          disabled
-          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-400 shadow-sm dark:border-white/10 dark:bg-white/[0.05] dark:text-gray-500"
-          title="Coming soon"
+          disabled={selectedDays.size === 0}
+          onClick={() => setShowPreview(true)}
+          className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium shadow-sm transition-colors ${
+            selectedDays.size > 0
+              ? "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.05] dark:text-gray-300 dark:hover:bg-white/[0.08]"
+              : "border-gray-200 bg-white text-gray-400 dark:border-white/10 dark:bg-white/[0.05] dark:text-gray-500"
+          }`}
+          title={selectedDays.size === 0 ? "Select a day to preview" : "Preview customer view"}
         >
           <Eye className="h-3.5 w-3.5" />
           Preview Booking
@@ -1033,6 +1040,23 @@ export function DynamicRulesEditor({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ─── Schedule Preview Modal ──────────────────────────────── */}
+      {showPreview && selectedDays.size > 0 && (() => {
+        const previewDay = Array.from(selectedDays)[0];
+        const previewRule = bayRulesMap.get(previewDay);
+        const dayInfo = DAYS_OF_WEEK.find((d) => d.value === previewDay);
+        if (!previewRule || !selectedBay) return null;
+        return (
+          <SchedulePreview
+            rule={previewRule}
+            bayName={selectedBay.name}
+            defaultRateCents={selectedBay.hourly_rate_cents}
+            dayLabel={dayInfo?.label || ""}
+            onClose={() => setShowPreview(false)}
+          />
+        );
+      })()}
     </div>
   );
 }
