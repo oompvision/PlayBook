@@ -147,12 +147,14 @@ export function SchedulePreview({
   bayName,
   defaultRateCents,
   dayLabel,
+  hasUnsavedChanges = false,
   onClose,
 }: {
   rule: Rule;
   bayName: string;
   defaultRateCents: number;
   dayLabel: string;
+  hasUnsavedChanges?: boolean;
   onClose: () => void;
 }) {
   const [deviceMode, setDeviceMode] = useState<"desktop" | "mobile">("desktop");
@@ -230,11 +232,19 @@ export function SchedulePreview({
         {/* Preview content */}
         <div className="flex-1 overflow-y-auto bg-muted/30">
           {/* Info banner */}
-          <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 dark:border-amber-900/30 dark:bg-amber-950/20">
-            <p className="text-xs text-amber-700 dark:text-amber-400">
-              Preview based on your current (unsaved) rules. This is how customers will see the booking page.
-            </p>
-          </div>
+          {hasUnsavedChanges ? (
+            <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 dark:border-amber-900/30 dark:bg-amber-950/20">
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Preview includes unsaved changes. Save your rules to apply them.
+              </p>
+            </div>
+          ) : (
+            <div className="border-b border-emerald-200 bg-emerald-50 px-5 py-2 dark:border-emerald-900/30 dark:bg-emerald-950/20">
+              <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                Preview of your saved rules. This is how customers see the booking page.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-3 p-4">
             {/* Duration picker — matches dynamic-availability-widget */}

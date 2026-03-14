@@ -1057,6 +1057,7 @@ export function DynamicRulesEditor({
             bayName={selectedBay.name}
             defaultRateCents={selectedBay.hourly_rate_cents}
             dayLabel={dayInfo?.label || ""}
+            hasUnsavedChanges={isDirty}
             onClose={() => setShowPreview(false)}
           />
         );
