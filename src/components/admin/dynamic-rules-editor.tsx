@@ -806,20 +806,20 @@ export function DynamicRulesEditor({
           </div>
         )}
 
-        {/* Preview Booking */}
+        {/* Preview Customer Booking */}
         <button
           type="button"
-          disabled={selectedDays.size === 0}
+          disabled={bayRulesMap.size === 0}
           onClick={() => setShowPreview(true)}
           className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium shadow-sm transition-colors ${
-            selectedDays.size > 0
+            bayRulesMap.size > 0
               ? "border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:bg-white/[0.05] dark:text-gray-300 dark:hover:bg-white/[0.08]"
               : "border-gray-200 bg-white text-gray-400 dark:border-white/10 dark:bg-white/[0.05] dark:text-gray-500"
           }`}
-          title={selectedDays.size === 0 ? "Select a day to preview" : "Preview customer view"}
+          title={bayRulesMap.size === 0 ? "Configure at least one day to preview" : "Preview customer view"}
         >
           <Eye className="h-3.5 w-3.5" />
-          Preview Booking
+          Preview Customer Booking
         </button>
 
         {/* Spacer */}
@@ -1042,8 +1042,12 @@ export function DynamicRulesEditor({
       </Dialog>
 
       {/* ─── Schedule Preview Modal ──────────────────────────────── */}
-      {showPreview && selectedDays.size > 0 && (() => {
-        const previewDay = Array.from(selectedDays)[0];
+      {showPreview && (() => {
+        // Use first selected day, or fall back to first day with a rule
+        const previewDay = selectedDays.size > 0
+          ? Array.from(selectedDays)[0]
+          : Array.from(bayRulesMap.keys())[0];
+        if (previewDay === undefined) return null;
         const previewRule = bayRulesMap.get(previewDay);
         const dayInfo = DAYS_OF_WEEK.find((d) => d.value === previewDay);
         if (!previewRule || !selectedBay) return null;
