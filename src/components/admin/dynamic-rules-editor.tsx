@@ -345,7 +345,17 @@ export function DynamicRulesEditor({
   );
 
   // ── Rate tier handlers ──────────────────────────────────────────────
-  function handleTierDragComplete(startMins: number, endMins: number) {
+  function handleTierDragComplete(dayOfWeek: number, startMins: number, endMins: number) {
+    // Day selection logic
+    if (!selectedDays.has(dayOfWeek)) {
+      // Dragging on unselected day → switch to that day
+      setSelectedDays(new Set([dayOfWeek]));
+    } else if (selectedDays.size > 1 && !selectedTiersIdentical) {
+      // Multi-select with non-identical configs → switch to just this day
+      setSelectedDays(new Set([dayOfWeek]));
+    }
+    // else: single day or identical multi-select → keep selection
+
     const startTime = minutesToTime(Math.min(startMins, endMins));
     const endTime = minutesToTime(Math.max(startMins, endMins));
     setTierSelection({ startTime, endTime });
@@ -739,6 +749,8 @@ export function DynamicRulesEditor({
             onTierDragComplete={handleTierDragComplete}
             onTierClick={handleTierClick}
             editingTierIndex={editingTierIndex}
+            tierSelection={tierSelection}
+            onSetTierSelection={setTierSelection}
           />
 
           {/* ─── Rate Tier Editor (below schedule) ──────────────── */}
@@ -876,6 +888,8 @@ function WeeklyTimeline({
   onTierDragComplete,
   onTierClick,
   editingTierIndex,
+  tierSelection,
+  onSetTierSelection,
 }: {
   bayRulesMap: Map<number, Rule>;
   selectedDays: Set<number>;
@@ -885,9 +899,11 @@ function WeeklyTimeline({
   onCheckboxToggle: (day: number) => void;
   onDisableDay: (day: number) => void;
   onUpdateRule: (day: number, updates: Partial<Rule>) => void;
-  onTierDragComplete: (startMins: number, endMins: number) => void;
+  onTierDragComplete: (dayOfWeek: number, startMins: number, endMins: number) => void;
   onTierClick: (tierIndex: number) => void;
   editingTierIndex: number | null;
+  tierSelection: TierSelection;
+  onSetTierSelection: (s: TierSelection) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { start: rangeStart, end: rangeEnd } = timelineRange;
@@ -959,9 +975,11 @@ function WeeklyTimeline({
               onCheckboxToggle={() => onCheckboxToggle(day.value)}
               onDisable={() => onDisableDay(day.value)}
               defaultRate={defaultRate}
-              onTierDragComplete={onTierDragComplete}
+              onTierDragComplete={(start, end) => onTierDragComplete(day.value, start, end)}
               onTierClick={onTierClick}
               editingTierIndex={editingTierIndex}
+              tierSelection={tierSelection}
+              onSetTierSelection={onSetTierSelection}
               onUpdateTimes={(open, close) =>
                 onUpdateRule(day.value, {
                   open_time: minutesToTime(open),
@@ -997,6 +1015,8 @@ function DayRow({
   onTierDragComplete,
   onTierClick,
   editingTierIndex,
+  tierSelection,
+  onSetTierSelection,
 }: {
   day: { value: number; label: string; short: string };
   rule: Rule | null;
@@ -1016,6 +1036,8 @@ function DayRow({
   onTierDragComplete: (startMins: number, endMins: number) => void;
   onTierClick: (tierIndex: number) => void;
   editingTierIndex: number | null;
+  tierSelection: TierSelection;
+  onSetTierSelection: (s: TierSelection) => void;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -1346,7 +1368,7 @@ function DayRow({
               onMouseDown={startTierDrag}
             />
 
-            {/* Tier drag selection overlay */}
+            {/* Tier drag-in-progress overlay */}
             {tierDrag && (
               <div
                 className="pointer-events-none absolute top-0 z-20 h-full rounded bg-amber-400/50 dark:bg-amber-300/40"
@@ -1363,6 +1385,83 @@ function DayRow({
                 </div>
               </div>
             )}
+
+            {/* Persistent yellow tier selection overlay (when form is open) */}
+            {tierSelection && isSelected && !tierDrag && (() => {
+              const selStartMins = timeToMinutes(tierSelection.startTime);
+              const selEndMins = timeToMinutes(tierSelection.endTime);
+              // Clamp to bar range
+              const clampedStart = Math.max(displayOpen, Math.min(displayClose, selStartMins));
+              const clampedEnd = Math.max(displayOpen, Math.min(displayClose, selEndMins));
+              if (clampedEnd <= clampedStart) return null;
+              const leftPct = minsToBarPercent(clampedStart);
+              const widthPct = minsToBarPercent(clampedEnd) - leftPct;
+
+              return (
+                <div
+                  className="absolute top-0 z-20 h-full rounded bg-amber-400/60 dark:bg-amber-300/50"
+                  style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                >
+                  <div className="pointer-events-none flex h-full items-center justify-center select-none">
+                    <span className="text-[9px] font-bold text-white drop-shadow-sm">
+                      {formatTimeShort(tierSelection.startTime)} – {formatTimeShort(tierSelection.endTime)}
+                    </span>
+                  </div>
+                  {/* Left drag handle for tier selection */}
+                  <div
+                    className="absolute -left-1 top-0 z-30 flex h-full w-3 cursor-col-resize items-center justify-center"
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      const track = trackRef.current;
+                      if (!track) return;
+                      function handleMove(ev: globalThis.MouseEvent) {
+                        if (!track) return;
+                        const rect = track.getBoundingClientRect();
+                        const pct = Math.max(0, Math.min(100, ((ev.clientX - rect.left) / rect.width) * 100));
+                        const snapped = snapToGrid(percentToMinutes(pct));
+                        const clamped = Math.max(openMins, Math.min(selEndMins - SNAP_MINUTES, snapped));
+                        if (tierSelection) onSetTierSelection({ startTime: minutesToTime(clamped), endTime: tierSelection.endTime });
+                      }
+                      function handleUp() {
+                        document.removeEventListener("mousemove", handleMove);
+                        document.removeEventListener("mouseup", handleUp);
+                      }
+                      document.addEventListener("mousemove", handleMove);
+                      document.addEventListener("mouseup", handleUp);
+                    }}
+                  >
+                    <div className="h-4 w-1 rounded-full bg-white/80" />
+                  </div>
+                  {/* Right drag handle for tier selection */}
+                  <div
+                    className="absolute -right-1 top-0 z-30 flex h-full w-3 cursor-col-resize items-center justify-center"
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      const track = trackRef.current;
+                      if (!track) return;
+                      function handleMove(ev: globalThis.MouseEvent) {
+                        if (!track) return;
+                        const rect = track.getBoundingClientRect();
+                        const pct = Math.max(0, Math.min(100, ((ev.clientX - rect.left) / rect.width) * 100));
+                        const snapped = snapToGrid(percentToMinutes(pct));
+                        const clamped = Math.min(closeMins, Math.max(selStartMins + SNAP_MINUTES, snapped));
+                        if (tierSelection) onSetTierSelection({ startTime: tierSelection.startTime, endTime: minutesToTime(clamped) });
+                      }
+                      function handleUp() {
+                        document.removeEventListener("mousemove", handleMove);
+                        document.removeEventListener("mouseup", handleUp);
+                      }
+                      document.addEventListener("mousemove", handleMove);
+                      document.addEventListener("mouseup", handleUp);
+                    }}
+                  >
+                    <div className="h-4 w-1 rounded-full bg-white/80" />
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Left drag handle */}
             <div
@@ -1413,17 +1512,16 @@ function DayRow({
                   className="flex w-full items-center gap-2 whitespace-nowrap px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
                   onClick={() => {
                     setEdgePopover(null);
-                    const edgeTime =
-                      edgePopover.edge === "left" ? openMins : closeMins;
-                    // Create a 1-hour default tier from edge
-                    const otherEnd =
+                    // 2hr default tier from edge, capped at available space
+                    const tierStart =
                       edgePopover.edge === "left"
-                        ? Math.min(openMins + 60, closeMins)
-                        : Math.max(closeMins - 60, openMins);
-                    onTierDragComplete(
-                      Math.min(edgeTime, otherEnd),
-                      Math.max(edgeTime, otherEnd)
-                    );
+                        ? openMins
+                        : Math.max(openMins, closeMins - 120);
+                    const tierEnd =
+                      edgePopover.edge === "left"
+                        ? Math.min(closeMins, openMins + 120)
+                        : closeMins;
+                    onTierDragComplete(tierStart, tierEnd);
                   }}
                 >
                   Create Rate Tier
@@ -1552,19 +1650,13 @@ function RateTierEditor({
     .map((d) => bayRulesMap.get(d))
     .filter(Boolean) as Rule[];
 
-  // New tier form state
-  const [newTierStart, setNewTierStart] = useState(
-    tierSelection?.startTime || ""
-  );
-  const [newTierEnd, setNewTierEnd] = useState(tierSelection?.endTime || "");
+  // New tier form state — start/end read from tierSelection (two-way sync)
   const [newTierRate, setNewTierRate] = useState(defaultRate);
 
-  // Sync from tierSelection when it changes
+  // Reset rate when a new tierSelection appears
   const prevSelectionRef = useRef(tierSelection);
   useEffect(() => {
-    if (tierSelection && tierSelection !== prevSelectionRef.current) {
-      setNewTierStart(tierSelection.startTime);
-      setNewTierEnd(tierSelection.endTime);
+    if (tierSelection && !prevSelectionRef.current) {
       setNewTierRate(defaultRate);
     }
     prevSelectionRef.current = tierSelection;
@@ -1750,8 +1842,10 @@ function RateTierEditor({
                   </label>
                   <input
                     type="time"
-                    value={newTierStart}
-                    onChange={(e) => setNewTierStart(e.target.value)}
+                    value={tierSelection?.startTime || ""}
+                    onChange={(e) =>
+                      tierSelection && onSetTierSelection({ ...tierSelection, startTime: e.target.value })
+                    }
                     className="flex h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.05] dark:text-white/90"
                   />
                 </div>
@@ -1761,8 +1855,10 @@ function RateTierEditor({
                   </label>
                   <input
                     type="time"
-                    value={newTierEnd}
-                    onChange={(e) => setNewTierEnd(e.target.value)}
+                    value={tierSelection?.endTime || ""}
+                    onChange={(e) =>
+                      tierSelection && onSetTierSelection({ ...tierSelection, endTime: e.target.value })
+                    }
                     className="flex h-9 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none dark:border-white/10 dark:bg-white/[0.05] dark:text-white/90"
                   />
                 </div>
@@ -1782,10 +1878,10 @@ function RateTierEditor({
                   size="sm"
                   className="gap-1.5"
                   onClick={() => {
-                    if (!newTierStart || !newTierEnd) return;
+                    if (!tierSelection?.startTime || !tierSelection?.endTime) return;
                     onApplyTier({
-                      start_time: newTierStart,
-                      end_time: newTierEnd,
+                      start_time: tierSelection.startTime,
+                      end_time: tierSelection.endTime,
                       hourly_rate_cents: newTierRate,
                     });
                   }}
