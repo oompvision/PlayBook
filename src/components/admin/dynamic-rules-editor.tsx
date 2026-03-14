@@ -377,6 +377,13 @@ export function DynamicRulesEditor({
   }
 
   function handleApplyTier(tier: RateTier) {
+    // Check rate differs from default
+    if (tier.hourly_rate_cents === (selectedBay?.hourly_rate_cents || 0)) {
+      setTierToast("Rate tier must be a different rate from the default rate");
+      setTimeout(() => setTierToast(null), 4000);
+      return;
+    }
+
     // Check for overlaps on all selected days
     for (const dayOfWeek of selectedDays) {
       const rule = bayRulesMap.get(dayOfWeek);
@@ -856,7 +863,8 @@ export function DynamicRulesEditor({
               Cancel
             </Button>
             <Button
-              variant="destructive"
+              variant="outline"
+              className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30"
               onClick={confirmBaySwitch}
             >
               Discard & Switch
@@ -1309,7 +1317,7 @@ function DayRow({
               return gaps.map((gap, i) => {
                 const leftPct = minsToBarPercent(gap.start);
                 const widthPct = minsToBarPercent(gap.end) - leftPct;
-                if (widthPct < 8) return null;
+                if (widthPct < 6) return null;
                 return (
                   <div
                     key={`gap-${i}`}
@@ -1360,10 +1368,17 @@ function DayRow({
                   title={`$${(tier.hourly_rate_cents / 100).toFixed(2)}/hr`}
                 >
                   {/* Rate label */}
-                  {widthPct > 12 && (
+                  {widthPct > 6 && (
                     <div className="flex h-full items-center justify-center select-none">
                       <span className="text-[9px] font-bold text-white drop-shadow-sm">
                         ${(tier.hourly_rate_cents / 100).toFixed(0)}/hr
+                      </span>
+                    </div>
+                  )}
+                  {widthPct <= 6 && (
+                    <div className="flex h-full items-center justify-center select-none">
+                      <span className="text-[8px] font-bold text-white drop-shadow-sm">
+                        ${(tier.hourly_rate_cents / 100).toFixed(0)}
                       </span>
                     </div>
                   )}
