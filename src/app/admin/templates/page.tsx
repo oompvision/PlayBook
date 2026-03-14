@@ -6,9 +6,9 @@ import {
   LayoutTemplate,
   Plus,
   Trash2,
-  CheckCircle2,
   Zap,
 } from "lucide-react";
+import { SavedToast } from "@/components/admin/saved-toast";
 import { TemplateSlotEditor } from "@/components/admin/template-slot-editor";
 import { resolveLocationId } from "@/lib/location";
 
@@ -39,7 +39,7 @@ export default async function TemplatesPage({
 
   if (org.scheduling_type === "dynamic") {
     return (
-      <div className="space-y-6">
+      <div className="mx-auto max-w-[1100px] space-y-6">
         <div>
           <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
             Templates
@@ -223,7 +223,7 @@ export default async function TemplatesPage({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-[1100px] space-y-6">
       {/* Page Header */}
       <div>
         <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
@@ -241,12 +241,8 @@ export default async function TemplatesPage({
           {params.error}
         </div>
       )}
-      {params.saved && (
-        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          Changes saved successfully.
-        </div>
-      )}
+
+      <SavedToast message="Template saved successfully." />
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Template List Sidebar */}

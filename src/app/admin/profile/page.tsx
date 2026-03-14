@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { User, Lock, Loader2 } from "lucide-react";
+import { Toast } from "@/components/ui/toast";
 
 type ProfileData = {
   id: string;
@@ -26,14 +27,10 @@ type ProfileData = {
 export default function AdminProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [profileMsg, setProfileMsg] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
-  const [passwordMsg, setPasswordMsg] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [showProfileToast, setShowProfileToast] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [showPasswordToast, setShowPasswordToast] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
 
   const [profile, setProfile] = useState<ProfileData>({
@@ -79,20 +76,20 @@ export default function AdminProfilePage() {
 
   async function handleProfileSave(e: React.FormEvent) {
     e.preventDefault();
-    setProfileMsg(null);
+    setProfileError(null);
     setSaving(true);
 
     try {
       const supabase = createClient();
 
       // Update profiles table (full_name)
-      const { error: profileError } = await supabase
+      const { error: profError } = await supabase
         .from("profiles")
         .update({ full_name: profile.fullName })
         .eq("id", profile.id);
 
-      if (profileError) {
-        setProfileMsg({ type: "error", text: profileError.message });
+      if (profError) {
+        setProfileError(profError.message);
         setSaving(false);
         return;
       }
@@ -104,17 +101,14 @@ export default function AdminProfilePage() {
         .eq("id", profile.id);
 
       if (adminError) {
-        setProfileMsg({ type: "error", text: adminError.message });
+        setProfileError(adminError.message);
         setSaving(false);
         return;
       }
 
-      setProfileMsg({ type: "success", text: "Profile updated successfully." });
+      setShowProfileToast(true);
     } catch {
-      setProfileMsg({
-        type: "error",
-        text: "Something went wrong. Please try again.",
-      });
+      setProfileError("Something went wrong. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -122,18 +116,15 @@ export default function AdminProfilePage() {
 
   async function handlePasswordChange(e: React.FormEvent) {
     e.preventDefault();
-    setPasswordMsg(null);
+    setPasswordError(null);
 
     if (newPassword.length < 6) {
-      setPasswordMsg({
-        type: "error",
-        text: "New password must be at least 6 characters.",
-      });
+      setPasswordError("New password must be at least 6 characters.");
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      setPasswordMsg({ type: "error", text: "Passwords do not match." });
+      setPasswordError("Passwords do not match.");
       return;
     }
 
@@ -147,20 +138,17 @@ export default function AdminProfilePage() {
       });
 
       if (error) {
-        setPasswordMsg({ type: "error", text: error.message });
+        setPasswordError(error.message);
         setSavingPassword(false);
         return;
       }
 
-      setPasswordMsg({ type: "success", text: "Password updated successfully." });
+      setShowPasswordToast(true);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
     } catch {
-      setPasswordMsg({
-        type: "error",
-        text: "Something went wrong. Please try again.",
-      });
+      setPasswordError("Something went wrong. Please try again.");
     } finally {
       setSavingPassword(false);
     }
@@ -196,15 +184,9 @@ export default function AdminProfilePage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {profileMsg && (
-              <div
-                className={`rounded-md p-3 text-sm ${
-                  profileMsg.type === "success"
-                    ? "bg-green-50 text-green-700"
-                    : "bg-destructive/10 text-destructive"
-                }`}
-              >
-                {profileMsg.text}
+            {profileError && (
+              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                {profileError}
               </div>
             )}
             <div className="space-y-2">
@@ -267,6 +249,14 @@ export default function AdminProfilePage() {
         </form>
       </Card>
 
+      {showProfileToast && (
+        <Toast
+          message="Profile updated successfully."
+          duration={5000}
+          onClose={() => setShowProfileToast(false)}
+        />
+      )}
+
       {/* Change Password Card */}
       <Card>
         <form onSubmit={handlePasswordChange}>
@@ -280,15 +270,9 @@ export default function AdminProfilePage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {passwordMsg && (
-              <div
-                className={`rounded-md p-3 text-sm ${
-                  passwordMsg.type === "success"
-                    ? "bg-green-50 text-green-700"
-                    : "bg-destructive/10 text-destructive"
-                }`}
-              >
-                {passwordMsg.text}
+            {passwordError && (
+              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                {passwordError}
               </div>
             )}
             <div className="space-y-2">
@@ -324,6 +308,14 @@ export default function AdminProfilePage() {
           </CardFooter>
         </form>
       </Card>
+
+      {showPasswordToast && (
+        <Toast
+          message="Password updated successfully."
+          duration={5000}
+          onClose={() => setShowPasswordToast(false)}
+        />
+      )}
     </div>
   );
 }

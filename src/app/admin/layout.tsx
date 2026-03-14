@@ -60,7 +60,7 @@ export default async function AdminLayout({
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen bg-gray-50">
+      <div className="admin-ui min-h-screen">
         <AdminSidebar slug={slug} schedulingType={org.scheduling_type} membershipEnabled={org.membership_tiers_enabled} eventsEnabled={org.events_enabled ?? true} />
         <AdminBackdrop />
         <div className="lg:ml-[280px]">
@@ -74,7 +74,7 @@ export default async function AdminLayout({
           {org.locations_enabled && activeLocationId && (
             <LocationUrlSync activeLocationId={activeLocationId} />
           )}
-          <main className="p-4 md:p-6">{children}</main>
+          <main className="px-4 py-6 md:px-6 md:py-8">{children}</main>
         </div>
       </div>
     </SidebarProvider>

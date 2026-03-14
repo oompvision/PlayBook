@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { redirect } from "next/navigation";
 import { EmailSettingsToggles } from "@/components/admin/email-settings-toggles";
+import { SettingsAccordion } from "@/components/admin/settings-accordion";
 import { Mail } from "lucide-react";
 
 async function getOrg() {
@@ -42,31 +43,21 @@ export default async function NotificationsSettingsPage() {
       </div>
 
       {/* Email Notifications */}
-      <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-        <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
-          <div className="flex items-center gap-2">
-            <Mail className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-            <h2 className="font-semibold text-gray-800 dark:text-white/90">
-              Notification Settings
-            </h2>
-          </div>
-          <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-            Control which email notifications are sent to customers and admins.
-            Sign-up confirmation emails are always sent by the auth system and
-            cannot be disabled here.
+      <SettingsAccordion
+        icon={<Mail className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
+        title="Email Notifications"
+        description="Control which email notifications are sent to customers and admins. Sign-up confirmation emails are always sent by the auth system and cannot be disabled here."
+        defaultOpen
+      >
+        {emailSettings && emailSettings.length > 0 ? (
+          <EmailSettingsToggles settings={emailSettings} />
+        ) : (
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            No notification settings configured yet. They will appear here
+            once email notifications are set up for your organization.
           </p>
-        </div>
-        <div className="p-6">
-          {emailSettings && emailSettings.length > 0 ? (
-            <EmailSettingsToggles settings={emailSettings} />
-          ) : (
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              No notification settings configured yet. They will appear here
-              once email notifications are set up for your organization.
-            </p>
-          )}
-        </div>
-      </div>
+        )}
+      </SettingsAccordion>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toTimestamp, formatTimeInZone, getTodayInTimezone } from "@/lib/utils";
 import { resolveLocationId } from "@/lib/location";
+import { SavedToast } from "@/components/admin/saved-toast";
 import {
   ChevronLeft,
   ChevronRight,
@@ -358,12 +359,7 @@ export default async function DayEditorPage({
           {params.error}
         </div>
       )}
-      {params.saved && (
-        <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
-          Changes saved.
-        </div>
-      )}
+      <SavedToast message="Changes saved." />
 
       {/* Metric cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-5">

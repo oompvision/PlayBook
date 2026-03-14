@@ -3,12 +3,13 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
-  CreditCard,
   ExternalLink,
   CheckCircle2,
   AlertCircle,
   Loader2,
 } from "lucide-react";
+import { StickyFooter } from "@/components/admin/sticky-footer";
+import { Toast } from "@/components/ui/toast";
 
 type PaymentSettingsData = {
   stripe_account_id: string | null;
@@ -61,15 +62,19 @@ export function PaymentSettings({
   const searchParams = useSearchParams();
   const router = useRouter();
   const [settings, setSettings] = useState(initialSettings);
+  const [selectedMode, setSelectedMode] = useState(initialSettings.payment_mode);
   const [connectStatus, setConnectStatus] = useState<ConnectStatus | null>(
     null
   );
   const [connecting, setConnecting] = useState(false);
-  const [savingMode, setSavingMode] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [showToast, setShowToast] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
+
+  const isDirty = selectedMode !== settings.payment_mode;
 
   const checkConnectStatus = useCallback(async () => {
     try {
@@ -135,22 +140,19 @@ export function PaymentSettings({
     }
   }
 
-  async function handlePaymentModeChange(mode: string) {
-    setSavingMode(true);
+  async function handleSave() {
+    setSaving(true);
     setStatusMessage(null);
     try {
       const res = await fetch("/api/org/payment-settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payment_mode: mode }),
+        body: JSON.stringify({ payment_mode: selectedMode }),
       });
       const data = await res.json();
       if (res.ok) {
         setSettings((s) => ({ ...s, payment_mode: data.payment_mode }));
-        setStatusMessage({
-          type: "success",
-          text: "Payment mode updated.",
-        });
+        setShowToast(true);
       } else {
         setStatusMessage({
           type: "error",
@@ -163,7 +165,7 @@ export function PaymentSettings({
         text: "Network error. Please try again.",
       });
     } finally {
-      setSavingMode(false);
+      setSaving(false);
     }
   }
 
@@ -176,32 +178,8 @@ export function PaymentSettings({
     connectStatus?.status !== "not_started";
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-      <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
-        <div className="flex items-center gap-2">
-          <CreditCard className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-          <h2 className="font-semibold text-gray-800 dark:text-white/90">
-            Payment Processing
-          </h2>
-          {isConnected && (
-            <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950/30 dark:text-green-400">
-              <CheckCircle2 className="h-3 w-3" />
-              Connected
-            </span>
-          )}
-          {isIncomplete && (
-            <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
-              <AlertCircle className="h-3 w-3" />
-              Incomplete
-            </span>
-          )}
-        </div>
-        <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-          Connect your Stripe account to collect payments from customers.
-        </p>
-      </div>
-
-      <div className="p-6 space-y-6">
+    <>
+      <div className="space-y-6">
         {/* Status Message */}
         {statusMessage && (
           <div
@@ -330,18 +308,17 @@ export function PaymentSettings({
                   <label
                     key={mode.value}
                     className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
-                      settings.payment_mode === mode.value
+                      selectedMode === mode.value
                         ? "border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-950/20"
                         : "border-gray-200 hover:bg-gray-50 dark:border-white/[0.05] dark:hover:bg-white/[0.02]"
-                    } ${savingMode ? "pointer-events-none opacity-60" : ""}`}
+                    }`}
                   >
                     <input
                       type="radio"
                       name="payment_mode"
                       value={mode.value}
-                      checked={settings.payment_mode === mode.value}
-                      onChange={() => handlePaymentModeChange(mode.value)}
-                      disabled={savingMode}
+                      checked={selectedMode === mode.value}
+                      onChange={() => setSelectedMode(mode.value)}
                       className="mt-0.5 h-4 w-4 accent-blue-600"
                     />
                     <div>
@@ -359,6 +336,24 @@ export function PaymentSettings({
           </>
         )}
       </div>
-    </div>
+
+      {/* Sticky footer for payment mode save */}
+      {isConnected && (
+        <StickyFooter
+          isDirty={isDirty}
+          saving={saving}
+          onSave={handleSave}
+          submitLabel="Save Changes"
+        />
+      )}
+
+      {showToast && (
+        <Toast
+          message="Payment mode updated."
+          duration={5000}
+          onClose={() => setShowToast(false)}
+        />
+      )}
+    </>
   );
 }

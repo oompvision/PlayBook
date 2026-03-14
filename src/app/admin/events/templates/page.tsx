@@ -8,9 +8,9 @@ import {
   Plus,
   Pencil,
   Trash2,
-  CheckCircle2,
   ArrowLeft,
 } from "lucide-react";
+import { SavedToast } from "@/components/admin/saved-toast";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -141,7 +141,7 @@ export default async function EventTemplatesPage({
   const labelClass = "text-xs font-medium text-gray-500 dark:text-gray-400";
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-[1100px] space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -168,12 +168,7 @@ export default async function EventTemplatesPage({
           {params.error}
         </div>
       )}
-      {params.saved && (
-        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          Template saved.
-        </div>
-      )}
+      <SavedToast message="Template saved." />
 
       {/* Edit form */}
       {editingTemplate && (

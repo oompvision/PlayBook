@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { redirect } from "next/navigation";
 import { MembershipTierSettings } from "../membership-tier-settings";
+import { SettingsAccordion } from "@/components/admin/settings-accordion";
+import { Crown } from "lucide-react";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -69,32 +71,39 @@ export default async function MembershipManagementPage() {
       </div>
 
       {/* Membership Management */}
-      <MembershipTierSettings
-        orgId={org.id}
-        initialEnabled={orgData?.membership_tiers_enabled ?? false}
-        initialBookableWindowDays={orgData?.bookable_window_days ?? 30}
-        initialGuestBookableWindowDays={orgData?.guest_booking_window_days ?? null}
-        initialMemberBookableWindowDays={orgData?.member_booking_window_days ?? null}
-        initialTier={
-          tier
-            ? {
-                name: tier.name,
-                benefit_description: tier.benefit_description,
-                discount_type: tier.discount_type as "flat" | "percent",
-                discount_value: Number(tier.discount_value),
-                event_discount_type: (tier.event_discount_type as "flat" | "percent") ?? "percent",
-                event_discount_value: Number(tier.event_discount_value ?? 0),
-                price_monthly_cents: tier.price_monthly_cents,
-                price_yearly_cents: tier.price_yearly_cents,
-              }
-            : null
-        }
-        stripeConnected={
-          !!paymentSettings?.stripe_account_id &&
-          !!paymentSettings?.stripe_onboarding_complete
-        }
-        activeStripeSubscriberCount={count ?? 0}
-      />
+      <SettingsAccordion
+        icon={<Crown className="h-[18px] w-[18px] text-gray-500 dark:text-gray-400" />}
+        title="Membership Management"
+        description="Offer paid memberships with extended booking windows and discounts."
+        defaultOpen
+      >
+        <MembershipTierSettings
+          orgId={org.id}
+          initialEnabled={orgData?.membership_tiers_enabled ?? false}
+          initialBookableWindowDays={orgData?.bookable_window_days ?? 30}
+          initialGuestBookableWindowDays={orgData?.guest_booking_window_days ?? null}
+          initialMemberBookableWindowDays={orgData?.member_booking_window_days ?? null}
+          initialTier={
+            tier
+              ? {
+                  name: tier.name,
+                  benefit_description: tier.benefit_description,
+                  discount_type: tier.discount_type as "flat" | "percent",
+                  discount_value: Number(tier.discount_value),
+                  event_discount_type: (tier.event_discount_type as "flat" | "percent") ?? "percent",
+                  event_discount_value: Number(tier.event_discount_value ?? 0),
+                  price_monthly_cents: tier.price_monthly_cents,
+                  price_yearly_cents: tier.price_yearly_cents,
+                }
+              : null
+          }
+          stripeConnected={
+            !!paymentSettings?.stripe_account_id &&
+            !!paymentSettings?.stripe_onboarding_complete
+          }
+          activeStripeSubscriberCount={count ?? 0}
+        />
+      </SettingsAccordion>
     </div>
   );
 }

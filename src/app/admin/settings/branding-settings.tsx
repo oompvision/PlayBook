@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { updateOrgImage } from "./actions";
 import Image from "next/image";
-import { Upload, X, ImageIcon, Palette } from "lucide-react";
+import { Upload, X, ImageIcon } from "lucide-react";
 
 function ImageUploader({
   label,
@@ -180,36 +180,23 @@ export function BrandingSettings({
   coverPhotoUrl: string | null;
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-      <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
-        <div className="flex items-center gap-2">
-          <Palette className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-          <h2 className="font-semibold text-gray-800 dark:text-white/90">
-            Branding
-          </h2>
-        </div>
-        <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-          Customize how your facility appears to customers.
-        </p>
-      </div>
-      <div className="space-y-6 p-6">
-        <ImageUploader
-          label="Logo"
-          description="Displayed on booking pages as your facility's profile picture. Square images work best."
-          currentUrl={logoUrl}
-          orgId={orgId}
-          field="logo_url"
-          aspect="square"
-        />
-        <ImageUploader
-          label="Cover Photo"
-          description="Displayed as a hero image on your facility's homepage. Use a wide landscape image (recommended 1200x400+)."
-          currentUrl={coverPhotoUrl}
-          orgId={orgId}
-          field="cover_photo_url"
-          aspect="wide"
-        />
-      </div>
+    <div className="space-y-6">
+      <ImageUploader
+        label="Logo"
+        description="Displayed on booking pages as your facility's profile picture. Square images work best."
+        currentUrl={logoUrl}
+        orgId={orgId}
+        field="logo_url"
+        aspect="square"
+      />
+      <ImageUploader
+        label="Cover Photo"
+        description="Displayed as a hero image on your facility's homepage. Use a wide landscape image (recommended 1200x400+)."
+        currentUrl={coverPhotoUrl}
+        orgId={orgId}
+        field="cover_photo_url"
+        aspect="wide"
+      />
     </div>
   );
 }

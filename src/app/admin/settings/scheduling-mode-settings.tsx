@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarCog, AlertTriangle } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
+import { StickyFooter } from "@/components/admin/sticky-footer";
+import { Toast } from "@/components/ui/toast";
 
 type SchedulingMode = "slot_based" | "dynamic";
 
@@ -19,7 +21,7 @@ export function SchedulingModeSettings({
   const [saving, setSaving] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingMode, setPendingMode] = useState<SchedulingMode | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [showToast, setShowToast] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const hasChanges = mode !== initialMode;
@@ -37,7 +39,7 @@ export function SchedulingModeSettings({
     }
     setShowConfirm(false);
     setPendingMode(null);
-    setSaved(false);
+    setShowToast(false);
   }
 
   function cancelModeChange() {
@@ -48,7 +50,7 @@ export function SchedulingModeSettings({
   async function handleSave() {
     setSaving(true);
     setError(null);
-    setSaved(false);
+    setShowToast(false);
 
     try {
       const res = await fetch("/api/admin/scheduling-mode", {
@@ -65,7 +67,7 @@ export function SchedulingModeSettings({
         throw new Error(data.error || "Failed to save");
       }
 
-      setSaved(true);
+      setShowToast(true);
       // Reload to reflect changes across the admin UI (nav links, etc.)
       window.location.reload();
     } catch (err) {
@@ -76,19 +78,8 @@ export function SchedulingModeSettings({
   }
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-      <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
-        <div className="flex items-center gap-2">
-          <CalendarCog className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-          <h2 className="font-semibold text-gray-800 dark:text-white/90">
-            Scheduling Mode
-          </h2>
-        </div>
-        <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-          Choose how customers book time at your facility.
-        </p>
-      </div>
-      <div className="p-6 space-y-6">
+    <>
+      <div className="space-y-6">
         {/* Mode Selection */}
         <div className="grid gap-3 sm:grid-cols-2">
           <button
@@ -128,35 +119,32 @@ export function SchedulingModeSettings({
           </button>
         </div>
 
-        {/* Save Button */}
-        {hasChanges && (
-          <div className="flex items-center gap-3 border-t border-gray-200 pt-6 dark:border-white/[0.05]">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
-            >
-              {saving ? "Saving..." : "Save Scheduling Mode"}
-            </button>
-            {saved && (
-              <span className="text-sm text-green-600 dark:text-green-400">
-                Saved!
-              </span>
-            )}
-            {error && (
-              <span className="text-sm text-red-600 dark:text-red-400">
-                {error}
-              </span>
-            )}
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+            {error}
           </div>
         )}
       </div>
 
+      <StickyFooter
+        isDirty={hasChanges}
+        saving={saving}
+        onSave={handleSave}
+        submitLabel="Save Scheduling Mode"
+      />
+
+      {showToast && (
+        <Toast
+          message="Scheduling mode saved."
+          duration={5000}
+          onClose={() => setShowToast(false)}
+        />
+      )}
+
       {/* Confirmation Dialog */}
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="mx-4 w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900">
+          <div className="surface-2 mx-4 w-full max-w-md p-6 dark:bg-gray-900">
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
                 <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
@@ -195,6 +183,6 @@ export function SchedulingModeSettings({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

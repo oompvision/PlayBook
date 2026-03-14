@@ -5,9 +5,10 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
-  Loader2,
   RotateCcw,
 } from "lucide-react";
+import { StickyFooter } from "@/components/admin/sticky-footer";
+import { Toast } from "@/components/ui/toast";
 
 type CancellationPolicyData = {
   payment_mode: string;
@@ -45,10 +46,8 @@ export function CancellationPolicySettings({
       )
   );
   const [saving, setSaving] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const [showToast, setShowToast] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const hasChanges =
     windowHours !== settings.cancellation_window_hours ||
@@ -60,7 +59,7 @@ export function CancellationPolicySettings({
 
   async function handleSave() {
     setSaving(true);
-    setStatusMessage(null);
+    setError(null);
     try {
       const defaultText = generateDefaultPolicyText(windowHours, settings.payment_mode);
       // If the text matches the auto-generated default, store null so it stays dynamic
@@ -81,54 +80,24 @@ export function CancellationPolicySettings({
           cancellation_window_hours: data.cancellation_window_hours,
           cancellation_policy_text: data.cancellation_policy_text,
         }));
-        setStatusMessage({ type: "success", text: "Cancellation policy saved." });
+        setShowToast(true);
       } else {
-        setStatusMessage({
-          type: "error",
-          text: data.error || "Failed to save cancellation policy",
-        });
+        setError(data.error || "Failed to save cancellation policy");
       }
     } catch {
-      setStatusMessage({
-        type: "error",
-        text: "Network error. Please try again.",
-      });
+      setError("Network error. Please try again.");
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-      <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-          <h2 className="font-semibold text-gray-800 dark:text-white/90">
-            Cancellation Policy
-          </h2>
-        </div>
-        <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-          Configure your cancellation window and refund policy. This policy is shown to
-          customers during checkout and when they cancel a booking.
-        </p>
-      </div>
-
-      <div className="p-6 space-y-6">
-        {/* Status Message */}
-        {statusMessage && (
-          <div
-            className={`flex items-center gap-2 rounded-lg border px-4 py-3 text-sm ${
-              statusMessage.type === "success"
-                ? "border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400"
-                : "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400"
-            }`}
-          >
-            {statusMessage.type === "success" ? (
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-            ) : (
-              <AlertCircle className="h-4 w-4 shrink-0" />
-            )}
-            {statusMessage.text}
+    <>
+      <div className="space-y-6">
+        {error && (
+          <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-400">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {error}
           </div>
         )}
 
@@ -225,29 +194,22 @@ export function CancellationPolicySettings({
           </div>
         </div>
 
-        {/* Save Button */}
-        <div className="flex items-center gap-3 border-t border-gray-200 pt-4 dark:border-white/[0.05]">
-          <button
-            onClick={handleSave}
-            disabled={saving || !hasChanges}
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              "Save Policy"
-            )}
-          </button>
-          {!hasChanges && !statusMessage && (
-            <span className="text-xs text-gray-400 dark:text-gray-500">
-              No unsaved changes
-            </span>
-          )}
-        </div>
       </div>
-    </div>
+
+      <StickyFooter
+        isDirty={hasChanges}
+        saving={saving}
+        onSave={handleSave}
+        submitLabel="Save Policy"
+      />
+
+      {showToast && (
+        <Toast
+          message="Cancellation policy saved."
+          duration={5000}
+          onClose={() => setShowToast(false)}
+        />
+      )}
+    </>
   );
 }
