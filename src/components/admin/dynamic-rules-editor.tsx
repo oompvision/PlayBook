@@ -1119,8 +1119,7 @@ function WeeklyTimeline({
     <div className="space-y-1">
       {/* Hint text */}
       <p className="mb-3 text-xs text-gray-400 dark:text-gray-500">
-        Click a day to select it. Shift-click for multi-select. Drag bar edges
-        to adjust hours.
+        Click a day to create or edit a schedule. Multiple days with identical or blank schedules can be edited in bulk.
       </p>
 
       {/* Timeline container */}

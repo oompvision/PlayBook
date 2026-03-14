@@ -54,8 +54,7 @@ export default async function DynamicScheduleRulesPage({
           Schedule Rules
         </h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Configure operating hours, booking durations, and pricing for each
-          facility.
+          Configure daily schedule, rate tiers, and block-outs for each facility and day of the week.
         </p>
       </div>
 
