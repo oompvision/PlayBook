@@ -23,8 +23,15 @@ import {
   DollarSign,
   AlertTriangle,
   Ban,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -2452,8 +2459,18 @@ function SidebarEditor({
         {/* Default price (read-only) */}
         {selectedBay && (
           <div>
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+            <label className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400">
               Default Rate
+              <TooltipProvider delayDuration={500}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Info className="h-3.5 w-3.5 cursor-help text-gray-400 dark:text-gray-500" />
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    This is the default rate for the facility that is set on the Facilities admin page.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </label>
             <div className="mt-1 flex h-9 items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-600 dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-gray-400">
               ${(selectedBay.hourly_rate_cents / 100).toFixed(2)}/hr
@@ -2486,8 +2503,18 @@ function SidebarEditor({
 
         {/* Slot interval / granularity */}
         <div>
-          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+          <label className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400">
             Slot Interval
+            <TooltipProvider delayDuration={500}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="h-3.5 w-3.5 cursor-help text-gray-400 dark:text-gray-500" />
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  This determines what starting times customers can book with. e.g. If set to 30m, customers can book at 9:00am, 9:30am, 10:00am, etc. between opening and closing.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </label>
           <select
             value={displayGranularity}
@@ -2508,8 +2535,18 @@ function SidebarEditor({
 
         {/* Booking durations */}
         <div>
-          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+          <label className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400">
             Booking Durations
+            <TooltipProvider delayDuration={500}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className="h-3.5 w-3.5 cursor-help text-gray-400 dark:text-gray-500" />
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  This determines how long a customer can reserve your facility for with one booking.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </label>
           {displayDurations === null ? (
             <p className="mt-1 text-xs text-gray-400 italic dark:text-gray-500">
