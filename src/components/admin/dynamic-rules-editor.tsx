@@ -292,6 +292,29 @@ export function DynamicRulesEditor({
     }
   }
 
+  // ── Checkbox toggle (independent multi-select) ─────────────────────
+  function handleCheckboxToggle(dayOfWeek: number) {
+    const rule = bayRulesMap.get(dayOfWeek);
+    if (!rule) {
+      enableDay(dayOfWeek);
+      setSelectedDays((prev) => {
+        const next = new Set(prev);
+        next.add(dayOfWeek);
+        return next;
+      });
+      return;
+    }
+    setSelectedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(dayOfWeek)) {
+        next.delete(dayOfWeek);
+      } else {
+        next.add(dayOfWeek);
+      }
+      return next;
+    });
+  }
+
   // ── Copy from bay ────────────────────────────────────────────────────
   const copyFromBay = useCallback(
     (sourceBayId: string) => {
@@ -708,7 +731,9 @@ export function DynamicRulesEditor({
             bayRulesMap={bayRulesMap}
             selectedDays={selectedDays}
             timelineRange={timelineRange}
+            defaultRate={selectedBay?.hourly_rate_cents || 0}
             onDayClick={handleDayClick}
+            onCheckboxToggle={handleCheckboxToggle}
             onDisableDay={disableDay}
             onUpdateRule={updateRule}
             onTierDragComplete={handleTierDragComplete}
@@ -843,7 +868,9 @@ function WeeklyTimeline({
   bayRulesMap,
   selectedDays,
   timelineRange,
+  defaultRate,
   onDayClick,
+  onCheckboxToggle,
   onDisableDay,
   onUpdateRule,
   onTierDragComplete,
@@ -853,7 +880,9 @@ function WeeklyTimeline({
   bayRulesMap: Map<number, Rule>;
   selectedDays: Set<number>;
   timelineRange: { start: number; end: number; hasRules: boolean };
+  defaultRate: number;
   onDayClick: (day: number, shiftKey: boolean) => void;
+  onCheckboxToggle: (day: number) => void;
   onDisableDay: (day: number) => void;
   onUpdateRule: (day: number, updates: Partial<Rule>) => void;
   onTierDragComplete: (startMins: number, endMins: number) => void;
@@ -927,7 +956,9 @@ function WeeklyTimeline({
               percentToMinutes={percentToMinutes}
               containerRef={containerRef}
               onClick={(e) => onDayClick(day.value, e.shiftKey)}
+              onCheckboxToggle={() => onCheckboxToggle(day.value)}
               onDisable={() => onDisableDay(day.value)}
+              defaultRate={defaultRate}
               onTierDragComplete={onTierDragComplete}
               onTierClick={onTierClick}
               editingTierIndex={editingTierIndex}
@@ -959,8 +990,10 @@ function DayRow({
   percentToMinutes,
   containerRef,
   onClick,
+  onCheckboxToggle,
   onDisable,
   onUpdateTimes,
+  defaultRate,
   onTierDragComplete,
   onTierClick,
   editingTierIndex,
@@ -976,8 +1009,10 @@ function DayRow({
   percentToMinutes: (p: number) => number;
   containerRef: React.RefObject<HTMLDivElement | null>;
   onClick: (e: ReactMouseEvent) => void;
+  onCheckboxToggle: () => void;
   onDisable: () => void;
   onUpdateTimes: (openMins: number, closeMins: number) => void;
+  defaultRate: number;
   onTierDragComplete: (startMins: number, endMins: number) => void;
   onTierClick: (tierIndex: number) => void;
   editingTierIndex: number | null;
@@ -1163,9 +1198,7 @@ function DayRow({
         <input
           type="checkbox"
           checked={isSelected}
-          onChange={(e) => {
-            onClick(e as unknown as ReactMouseEvent);
-          }}
+          onChange={() => onCheckboxToggle()}
           className="h-3.5 w-3.5 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600"
         />
       </div>
@@ -1216,7 +1249,48 @@ function DayRow({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Rate tier segments */}
+            {/* Default rate labels in gaps between tiers */}
+            {(() => {
+              if (rateTiers.length === 0) {
+                // No tiers — show default rate centered
+                return (
+                  <div className="pointer-events-none absolute inset-0 z-[3] flex items-center justify-center select-none">
+                    <span className="text-[9px] font-medium text-white/70">
+                      ${(defaultRate / 100).toFixed(0)}/hr
+                    </span>
+                  </div>
+                );
+              }
+              // Build gap segments
+              const sorted = [...rateTiers]
+                .map((t) => ({ start: timeToMinutes(t.start_time), end: timeToMinutes(t.end_time) }))
+                .sort((a, b) => a.start - b.start);
+              const gaps: { start: number; end: number }[] = [];
+              let cursor = displayOpen;
+              for (const t of sorted) {
+                if (t.start > cursor) gaps.push({ start: cursor, end: t.start });
+                cursor = Math.max(cursor, t.end);
+              }
+              if (cursor < displayClose) gaps.push({ start: cursor, end: displayClose });
+              return gaps.map((gap, i) => {
+                const leftPct = minsToBarPercent(gap.start);
+                const widthPct = minsToBarPercent(gap.end) - leftPct;
+                if (widthPct < 8) return null;
+                return (
+                  <div
+                    key={`gap-${i}`}
+                    className="pointer-events-none absolute top-0 z-[3] flex h-full items-center justify-center select-none"
+                    style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                  >
+                    <span className="text-[9px] font-medium text-white/70">
+                      ${(defaultRate / 100).toFixed(0)}/hr
+                    </span>
+                  </div>
+                );
+              });
+            })()}
+
+            {/* Rate tier segments — shaded by price level */}
             {rateTiers.map((tier, idx) => {
               const tierStart = timeToMinutes(tier.start_time);
               const tierEnd = timeToMinutes(tier.end_time);
@@ -1224,15 +1298,27 @@ function DayRow({
               const widthPct = minsToBarPercent(tierEnd) - leftPct;
               const isEditing = editingTierIndex === idx;
 
+              // Shade by price: ratio relative to default rate
+              // > 1 = premium (darker), < 1 = discount (lighter), = 1 = same
+              const ratio = defaultRate > 0 ? tier.hourly_rate_cents / defaultRate : 1;
+              // Map ratio to opacity: 0.5x → 15% overlay, 1x → 30%, 2x → 55%
+              const overlayOpacity = isEditing
+                ? undefined
+                : Math.min(0.6, Math.max(0.1, 0.15 + (ratio - 0.5) * 0.3));
+
               return (
                 <div
                   key={idx}
                   className={`absolute top-0 h-full cursor-pointer transition-colors ${
                     isEditing
                       ? "bg-amber-400/80 dark:bg-amber-500/70"
-                      : "bg-blue-700/40 dark:bg-blue-300/30"
+                      : ""
                   }`}
-                  style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                  style={{
+                    left: `${leftPct}%`,
+                    width: `${widthPct}%`,
+                    ...(!isEditing ? { backgroundColor: `rgba(30, 58, 138, ${overlayOpacity})` } : {}),
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
                     onTierClick(idx);
@@ -1923,7 +2009,7 @@ function SidebarEditor({
         {selectedBay && (
           <div>
             <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
-              Default Price
+              Default Rate
             </label>
             <div className="mt-1 flex h-9 items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-600 dark:border-white/[0.06] dark:bg-white/[0.03] dark:text-gray-400">
               ${(selectedBay.hourly_rate_cents / 100).toFixed(2)}/hr
