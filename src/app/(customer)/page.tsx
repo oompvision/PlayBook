@@ -11,7 +11,95 @@ import { SignOutButton } from "@/components/sign-out-button";
 import { AvailabilityWidget } from "@/components/availability-widget";
 import { DynamicAvailabilityWidget } from "@/components/dynamic-availability-widget";
 import { AdminLoginForm } from "@/components/admin-login-form";
-import { MarketingHomepage } from "@/components/marketing/marketing-homepage";
+import { MarketingHomepage, type DemoOrgData } from "@/components/marketing/marketing-homepage";
+
+const DEMO_ORG_SLUG = "demo";
+
+async function fetchDemoOrgData(): Promise<DemoOrgData | null> {
+  try {
+    const supabase = await createClient();
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("id, name, slug, timezone, min_booking_lead_minutes, bookable_window_days")
+      .eq("slug", DEMO_ORG_SLUG)
+      .single();
+
+    if (!org) return null;
+
+    const [{ data: bays }, { data: baysWithRates }] = await Promise.all([
+      supabase
+        .from("bays")
+        .select("id, name, resource_type")
+        .eq("org_id", org.id)
+        .eq("is_active", true)
+        .order("sort_order")
+        .order("created_at"),
+      supabase
+        .from("bays")
+        .select("id, name, resource_type, hourly_rate_cents")
+        .eq("org_id", org.id)
+        .eq("is_active", true)
+        .order("sort_order")
+        .order("created_at"),
+    ]);
+
+    if (!bays || bays.length === 0) return null;
+
+    // Fetch facility groups, group members, and rules
+    const [{ data: groups }, { data: members }, { data: rules }] = await Promise.all([
+      supabase
+        .from("facility_groups")
+        .select("id, name, description")
+        .eq("org_id", org.id),
+      supabase
+        .from("facility_group_members")
+        .select("group_id, bay_id")
+        .in("bay_id", bays.map((b) => b.id)),
+      supabase
+        .from("dynamic_schedule_rules")
+        .select("*")
+        .eq("org_id", org.id),
+    ]);
+
+    // Build facility groups with their bays
+    const bayGroupMap = new Map<string, string>();
+    for (const m of (members || [])) {
+      bayGroupMap.set(m.bay_id, m.group_id);
+    }
+
+    const facilityGroups = (groups || [])
+      .map((g) => ({
+        ...g,
+        bays: bays.filter((b) => bayGroupMap.get(b.id) === g.id),
+      }))
+      .filter((g) => g.bays.length > 0);
+
+    const standaloneBays = bays.filter((b) => !bayGroupMap.has(b.id));
+
+    // Get default durations from first rule
+    let defaultDurations = [60];
+    if (rules?.[0]?.available_durations) {
+      defaultDurations = rules[0].available_durations;
+    }
+
+    return {
+      orgId: org.id,
+      orgName: org.name,
+      timezone: org.timezone,
+      todayStr: getTodayInTimezone(org.timezone),
+      bays,
+      baysWithRates: baysWithRates || [],
+      facilityGroups,
+      standaloneBays,
+      defaultDurations,
+      existingRules: rules || [],
+      bookableWindowDays: org.bookable_window_days ?? 30,
+      minBookingLeadMinutes: org.min_booking_lead_minutes ?? 15,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export default async function FacilityHomePage({
   searchParams: searchParamsPromise,
@@ -27,7 +115,10 @@ export default async function FacilityHomePage({
       ? { role: auth.profile.role, orgId: auth.profile.org_id }
       : null;
 
-    return <MarketingHomepage authInfo={authInfo} />;
+    // Fetch demo org data for interactive demos on marketing page
+    const demoData = await fetchDemoOrgData();
+
+    return <MarketingHomepage authInfo={authInfo} demoData={demoData} />;
   }
 
   const searchParams = searchParamsPromise ? await searchParamsPromise : {};
