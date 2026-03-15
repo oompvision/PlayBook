@@ -57,6 +57,7 @@ interface InteractiveDemoProps {
   existingRules: DbRule[];
   bookableWindowDays: number;
   minBookingLeadMinutes: number;
+  paymentMode: string;
 }
 
 const tabs = [
@@ -87,6 +88,7 @@ export function InteractiveDemo({
   existingRules,
   bookableWindowDays,
   minBookingLeadMinutes,
+  paymentMode,
 }: InteractiveDemoProps) {
   const [activeTab, setActiveTab] = useState<"player" | "admin">("player");
 
@@ -166,8 +168,8 @@ export function InteractiveDemo({
                   todayStr={todayStr}
                   minBookingLeadMinutes={minBookingLeadMinutes}
                   bookableWindowDays={bookableWindowDays}
-                  isAuthenticated={false}
-                  paymentMode="none"
+                  paymentMode={paymentMode}
+                  demoMode
                 />
               </div>
             ) : (
