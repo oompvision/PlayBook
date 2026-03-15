@@ -3,10 +3,9 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CalendarCheck, ArrowUpRight, Loader2, Crown } from "lucide-react";
+import { Calendar, ArrowRight, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Toast } from "@/components/ui/toast";
 import {
@@ -17,7 +16,6 @@ import {
   EventDetailsModal,
   type EventDetailData,
 } from "@/components/event-details-modal";
-import { formatPrice } from "@/lib/utils";
 
 type Booking = {
   id: string;
@@ -80,7 +78,7 @@ type EventReg = {
   };
 };
 
-type SidebarItem =
+type FeedItem =
   | { kind: "booking"; sortDate: string; booking: Booking }
   | { kind: "event"; sortDate: string; reg: EventReg };
 
@@ -92,14 +90,90 @@ function formatTime(timestamp: string, timezone: string) {
   });
 }
 
-function formatBookingDate(dateStr: string): string {
-  const d = new Date(dateStr + "T12:00:00");
+function formatItemDate(dateStr: string, timezone: string, isTimestamp: boolean): string {
+  const d = isTimestamp ? new Date(dateStr) : new Date(dateStr + "T12:00:00");
   return d.toLocaleDateString("en-US", {
+    timeZone: isTimestamp ? timezone : undefined,
     weekday: "short",
     month: "short",
     day: "numeric",
   });
 }
+
+// ─── Booking Card ──────────────────────────────────────────────────────────
+
+function BookingCard({
+  booking,
+  bays,
+  timezone,
+  onClick,
+}: {
+  booking: Booking;
+  bays: Bay[];
+  timezone: string;
+  onClick: () => void;
+}) {
+  const bayName = bays.find((b) => b.id === booking.bay_id)?.name ?? "Unknown";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-lg px-4 py-3 text-left transition-colors hover:bg-muted/50"
+    >
+      <p className="text-sm font-semibold">
+        {formatItemDate(booking.date, timezone, false)}
+      </p>
+      <p className="mt-0.5 text-sm font-medium">
+        {formatTime(booking.start_time, timezone)}&ndash;{formatTime(booking.end_time, timezone)}
+      </p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{bayName}</p>
+    </button>
+  );
+}
+
+// ─── Event Card ────────────────────────────────────────────────────────────
+
+function EventCard({
+  reg,
+  timezone,
+  onClick,
+}: {
+  reg: EventReg;
+  timezone: string;
+  onClick: () => void;
+}) {
+  const evt = reg.event;
+  const bayNames =
+    evt.event_bays
+      ?.map((eb) => eb.bays?.name)
+      .filter(Boolean)
+      .join(", ") || "TBD";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-lg px-4 py-3 text-left transition-colors hover:bg-muted/50"
+    >
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold">{evt.name}</p>
+        <span className="inline-flex items-center rounded-full bg-gray-900 px-2 py-0.5 text-[10px] font-medium text-white dark:bg-gray-100 dark:text-gray-900">
+          Event
+        </span>
+      </div>
+      <p className="mt-0.5 text-sm">
+        {formatItemDate(evt.start_time, timezone, true)}
+      </p>
+      <p className="mt-0.5 text-sm font-medium">
+        {formatTime(evt.start_time, timezone)}&ndash;{formatTime(evt.end_time, timezone)}
+      </p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{bayNames}</p>
+    </button>
+  );
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────
 
 export function MyBookingsDropdown({ orgId }: { orgId: string }) {
   const [open, setOpen] = useState(false);
@@ -204,15 +278,18 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
     if (open) fetchData();
   }, [open, fetchData]);
 
-  // Build sorted sidebar items
-  const sidebarItems: SidebarItem[] = [];
+  // Build sorted feed items (chronological, max 3: 1 next + 2 upcoming)
+  const allItems: FeedItem[] = [];
   for (const booking of bookings) {
-    sidebarItems.push({ kind: "booking", sortDate: booking.start_time, booking });
+    allItems.push({ kind: "booking", sortDate: booking.start_time, booking });
   }
   for (const reg of eventRegs) {
-    sidebarItems.push({ kind: "event", sortDate: reg.event.start_time, reg });
+    allItems.push({ kind: "event", sortDate: reg.event.start_time, reg });
   }
-  sidebarItems.sort((a, b) => a.sortDate.localeCompare(b.sortDate));
+  allItems.sort((a, b) => a.sortDate.localeCompare(b.sortDate));
+
+  const nextItem = allItems[0] ?? null;
+  const upcomingItems = allItems.slice(1, 3);
 
   function openBookingDetail(booking: Booking) {
     const bayName = bays.find((b) => b.id === booking.bay_id)?.name ?? "Unknown Bay";
@@ -261,13 +338,16 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
     setOpen(false);
   }
 
+  function handleItemClick(item: FeedItem) {
+    if (item.kind === "booking") openBookingDetail(item.booking);
+    else openEventDetail(item.reg);
+  }
+
   async function handleCancelBooking(formData: FormData) {
     const bookingId = formData.get("bookingId") as string;
     if (!bookingId) return;
     const supabase = createClient();
     await supabase.rpc("cancel_booking", { p_booking_id: bookingId });
-    // Don't close the modal here — the BookingDetailsModal handles
-    // showing a success message and auto-closing after a brief delay
     fetchData();
     router.refresh();
   }
@@ -279,152 +359,108 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
       .from("event_registrations")
       .update({ status: "cancelled" })
       .eq("id", selectedEvent.registrationId);
-    // Don't close the modal here — the EventDetailsModal handles
-    // showing a success message and auto-closing after a brief delay
     fetchData();
     router.refresh();
   }
 
-  const count = sidebarItems.length;
+  function renderItem(item: FeedItem) {
+    if (item.kind === "booking") {
+      return (
+        <BookingCard
+          key={`b-${item.booking.id}`}
+          booking={item.booking}
+          bays={bays}
+          timezone={timezone}
+          onClick={() => handleItemClick(item)}
+        />
+      );
+    }
+    return (
+      <EventCard
+        key={`e-${item.reg.id}`}
+        reg={item.reg}
+        timezone={timezone}
+        onClick={() => handleItemClick(item)}
+      />
+    );
+  }
 
   return (
     <>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="sm" className="relative">
-            My Bookings
-            {count > 0 && !open && (
-              <span className="ml-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
-                {count > 99 ? "99+" : count}
-              </span>
-            )}
-          </Button>
+          <button
+            type="button"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+            aria-label="Upcoming bookings"
+          >
+            <Calendar className="h-5 w-5" />
+          </button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-80 p-0">
           <div className="flex max-h-[min(28rem,var(--radix-popover-content-available-height,28rem))] flex-col">
-            {/* Header */}
-            <div className="shrink-0 border-b px-4 py-3">
-              <Link
-                href="/my-bookings"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-1 text-sm font-semibold hover:text-primary"
-              >
-                View All Bookings
-                <ArrowUpRight className="h-3.5 w-3.5" />
-              </Link>
-              <p className="mt-1 text-xs text-muted-foreground">Upcoming</p>
-            </div>
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : allItems.length === 0 ? (
+              /* ── Empty state ─────────────────────────────── */
+              <div className="flex flex-col items-center px-4 py-8 text-center">
+                <Calendar className="mb-3 h-8 w-8 text-muted-foreground/30" />
+                <p className="text-sm font-medium text-muted-foreground">
+                  No upcoming bookings
+                </p>
+                <Link
+                  href="/"
+                  onClick={() => setOpen(false)}
+                  className="mt-3"
+                >
+                  <Button size="sm">Book Now</Button>
+                </Link>
+                <Link
+                  href="/my-bookings"
+                  onClick={() => setOpen(false)}
+                  className="mt-2 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                >
+                  View Past Bookings
+                </Link>
+              </div>
+            ) : (
+              /* ── Feed ────────────────────────────────────── */
+              <div>
+                {/* Next Booking */}
+                {nextItem && (
+                  <div className="border-b">
+                    <p className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Next Booking
+                    </p>
+                    {renderItem(nextItem)}
+                  </div>
+                )}
 
-            {/* List */}
-            <ScrollArea className="min-h-0 flex-1">
-              {loading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                {/* Upcoming */}
+                {upcomingItems.length > 0 && (
+                  <div className="border-b">
+                    <p className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Upcoming
+                    </p>
+                    {upcomingItems.map(renderItem)}
+                  </div>
+                )}
+
+                {/* Footer link */}
+                <div className="px-4 py-3">
+                  <Link
+                    href="/my-bookings"
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-1 text-sm font-medium hover:text-primary"
+                  >
+                    View All Bookings
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
                 </div>
-              ) : sidebarItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <CalendarCheck className="mb-2 h-8 w-8 text-muted-foreground/20" />
-                  <p className="text-sm text-muted-foreground">No upcoming bookings</p>
-                </div>
-              ) : (
-                <div className="divide-y">
-                  {sidebarItems.map((item) => {
-                    if (item.kind === "booking") {
-                      const booking = item.booking;
-                      const bayName = bays.find((b) => b.id === booking.bay_id)?.name ?? "Unknown Bay";
-                      const discount = booking.discount_cents || 0;
-                      const total = booking.total_price_cents - discount;
-                      const showPaid = paymentMode === "charge_upfront" && booking.status === "confirmed";
-
-                      return (
-                        <button
-                          type="button"
-                          key={`b-${booking.id}`}
-                          onClick={() => openBookingDetail(booking)}
-                          className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between">
-                              <p className="text-sm font-medium">
-                                {formatBookingDate(booking.date)} &middot;{" "}
-                                {formatTime(booking.start_time, timezone)} &ndash;{" "}
-                                {formatTime(booking.end_time, timezone)}
-                              </p>
-                              <ArrowUpRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-                            </div>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              {bayName}
-                              {booking.locationName ? ` · ${booking.locationName}` : ""}
-                            </p>
-                            {discount > 0 ? (
-                              <p className="mt-0.5 text-xs">
-                                <span className="text-muted-foreground line-through">{formatPrice(booking.total_price_cents)}</span>
-                                <span className="ml-1 font-semibold text-teal-600 dark:text-teal-400">
-                                  <Crown className="mr-0.5 inline h-3 w-3" /> {formatPrice(total)}
-                                </span>
-                              </p>
-                            ) : (
-                              <p className="mt-0.5 text-xs font-semibold">{formatPrice(total)}</p>
-                            )}
-                            <div className="mt-0.5 flex items-center gap-1.5">
-                              <span className="font-mono text-[11px] text-muted-foreground">
-                                {booking.confirmation_code}
-                              </span>
-                              <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                Confirmed
-                              </span>
-                              {showPaid && (
-                                <span className="inline-flex items-center rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                                  Paid
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    }
-
-                    // Event registration
-                    const reg = item.reg;
-                    const evt = reg.event;
-                    const eventDateStr = new Date(evt.start_time).toLocaleDateString("en-US", {
-                      timeZone: timezone,
-                      month: "short",
-                      day: "numeric",
-                    });
-
-                    return (
-                      <button
-                        type="button"
-                        key={`e-${reg.id}`}
-                        onClick={() => openEventDetail(reg)}
-                        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between">
-                            <span className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                              Event
-                            </span>
-                            <ArrowUpRight className="h-3 w-3 text-muted-foreground" />
-                          </div>
-                          <p className="mt-1 text-sm font-medium">{evt.name}</p>
-                          <div className="mt-1 flex items-center justify-between">
-                            <p className="text-xs text-muted-foreground">
-                              {eventDateStr} &middot;{" "}
-                              {formatTime(evt.start_time, timezone)} &ndash;{" "}
-                              {formatTime(evt.end_time, timezone)}
-                            </p>
-                            <span className="text-xs font-semibold">
-                              {evt.price_cents > 0 ? formatPrice(evt.price_cents) : "Free"}
-                            </span>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </ScrollArea>
+              </div>
+            )}
           </div>
         </PopoverContent>
       </Popover>

@@ -81,7 +81,14 @@ export default async function CustomerLayout({
                 >
                   <ClipboardList className="h-5 w-5" />
                 </Link>
-                {/* Desktop: popover dropdown */}
+                {/* Desktop: My Bookings link + calendar dropdown */}
+                <div className="hidden items-center gap-1 sm:flex">
+                  <Link href="/my-bookings">
+                    <Button variant="ghost" size="sm">
+                      My Bookings
+                    </Button>
+                  </Link>
+                </div>
                 <div className="hidden sm:block">
                   <MyBookingsDropdown orgId={org.id} />
                 </div>
