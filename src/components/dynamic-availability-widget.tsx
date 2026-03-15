@@ -1784,37 +1784,58 @@ export function DynamicAvailabilityWidget(
                 // Step 2: Payment form visible — validate card + confirm booking in one click
                 if (paymentStepActive) {
                   return (
-                    <Button
-                      className="w-full bg-green-600 hover:bg-green-700 text-white"
-                      disabled={bookingLoading}
-                      onClick={async () => {
-                        if (!checkoutFormRef.current) return;
-                        setBookingLoading(true);
-                        try {
-                          const result = await checkoutFormRef.current.confirmAndGetCardInfo();
-                          if (result.success) {
-                            setCardBrand(result.cardBrand ?? null);
-                            setCardLast4(result.cardLast4 ?? null);
-                            setConfirmedPaymentMethodId(result.paymentMethodId ?? null);
-                            setPaymentValidated(true);
-                            // Directly confirm booking after card validation
-                            await handleConfirmBooking(result.paymentMethodId ?? null);
-                          } else {
+                    <div className="space-y-4">
+                      {/* In demo mode, render the checkout form inline since the mobile portal is suppressed */}
+                      {demoMode && (
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2">
+                            <CreditCard className="h-4 w-4 text-muted-foreground" />
+                            <p className="text-sm font-medium">
+                              {paymentMode === "charge_upfront" ? "Payment Details" : "Card on File"}
+                            </p>
+                          </div>
+                          {checkoutLoading ? (
+                            <div className="flex items-center justify-center rounded-lg border border-dashed py-8">
+                              <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground">Preparing payment...</span>
+                            </div>
+                          ) : checkoutIntent ? (
+                            <DemoCheckoutForm ref={checkoutFormRef} />
+                          ) : null}
+                        </div>
+                      )}
+                      <Button
+                        className="w-full bg-green-600 hover:bg-green-700 text-white"
+                        disabled={bookingLoading || (demoMode && !checkoutIntent)}
+                        onClick={async () => {
+                          if (!checkoutFormRef.current) return;
+                          setBookingLoading(true);
+                          try {
+                            const result = await checkoutFormRef.current.confirmAndGetCardInfo();
+                            if (result.success) {
+                              setCardBrand(result.cardBrand ?? null);
+                              setCardLast4(result.cardLast4 ?? null);
+                              setConfirmedPaymentMethodId(result.paymentMethodId ?? null);
+                              setPaymentValidated(true);
+                              // Directly confirm booking after card validation
+                              await handleConfirmBooking(result.paymentMethodId ?? null);
+                            } else {
+                              setPaymentValidationError("Payment validation failed. Please try again.");
+                              setBookingLoading(false);
+                            }
+                          } catch {
                             setPaymentValidationError("Payment validation failed. Please try again.");
                             setBookingLoading(false);
                           }
-                        } catch {
-                          setPaymentValidationError("Payment validation failed. Please try again.");
-                          setBookingLoading(false);
-                        }
-                      }}
-                    >
-                      {bookingLoading ? (
-                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
-                      ) : (
-                        `Confirm & Pay $${(finalCents / 100).toFixed(2)}`
-                      )}
-                    </Button>
+                        }}
+                      >
+                        {bookingLoading ? (
+                          <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
+                        ) : (
+                          `Confirm & Pay $${(finalCents / 100).toFixed(2)}`
+                        )}
+                      </Button>
+                    </div>
                   );
                 }
 
@@ -1877,8 +1898,10 @@ export function DynamicAvailabilityWidget(
       </div>{/* end flex wrapper */}
 
       {/* ===== Booking bar / slide-up panel — MOBILE ONLY (portalled to body) ===== */}
+      {/* Suppress portal in demo mode — it creates a full-screen overlay that escapes the demo container */}
       {selectedSlot &&
         mounted &&
+        !demoMode &&
         createPortal(
           <div className="lg:hidden">
             {/* Backdrop overlay when panel is open */}
