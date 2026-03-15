@@ -143,11 +143,13 @@ export function DynamicRulesEditor({
   locationId,
   bays,
   existingRules,
+  readOnly = false,
 }: {
   orgId: string;
   locationId: string | null;
   bays: Bay[];
   existingRules: DbRule[];
+  readOnly?: boolean;
 }) {
   // ── State ───────────────────────────────────────────────────────────────
   const [selectedBayId, setSelectedBayId] = useState(bays[0]?.id || "");
@@ -614,7 +616,7 @@ export function DynamicRulesEditor({
       setShowBayDropdown(false);
       return;
     }
-    if (isDirty) {
+    if (isDirty && !readOnly) {
       setPendingBaySwitch(bayId);
       setShowUnsavedDialog(true);
       setShowBayDropdown(false);
@@ -785,7 +787,7 @@ export function DynamicRulesEditor({
         </div>
 
         {/* Copy From dropdown */}
-        {otherBaysWithRules.length > 0 && (
+        {!readOnly && otherBaysWithRules.length > 0 && (
           <div className="relative" ref={copyDropdownRef}>
             <button
               type="button"
@@ -833,26 +835,27 @@ export function DynamicRulesEditor({
         <div className="flex-1" />
 
         {/* Dirty indicator */}
-        {isDirty && (
+        {!readOnly && isDirty && (
           <span className="hidden text-xs text-amber-600 dark:text-amber-400 sm:block">
             Unsaved changes
           </span>
         )}
 
         {/* Save status */}
-        {saved && (
+        {!readOnly && saved && (
           <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
             <CheckCircle2 className="h-3.5 w-3.5" />
             Saved
           </span>
         )}
-        {error && (
+        {!readOnly && error && (
           <span className="max-w-[200px] truncate text-xs text-red-600 dark:text-red-400">
             {error}
           </span>
         )}
 
         {/* Save Changes button */}
+        {!readOnly && (
         <Button
           onClick={handleSave}
           disabled={saving || !isDirty}
@@ -866,6 +869,7 @@ export function DynamicRulesEditor({
           )}
           {saving ? "Saving..." : "Save Changes"}
         </Button>
+        )}
       </div>
 
       {/* ─── Main Content: Timeline + Sidebar ─────────────────────── */}
