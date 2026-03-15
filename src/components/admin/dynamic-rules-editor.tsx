@@ -60,7 +60,7 @@ const GRANULARITY_OPTIONS = [
   { value: 60, label: "60 min" },
 ];
 
-const COMMON_DURATIONS = [30, 60, 90, 120, 150, 180];
+const COMMON_DURATIONS = [30, 60, 90, 120, 150, 180, 210, 240, 270, 300];
 
 const SNAP_MINUTES = 15;
 
@@ -131,9 +131,10 @@ function snapToGrid(minutes: number): number {
 }
 
 function formatDuration(dur: number): string {
-  if (dur < 60) return `${dur}m`;
-  if (dur % 60 === 0) return `${dur / 60}h`;
-  return `${Math.floor(dur / 60)}h ${dur % 60}m`;
+  if (dur < 60) return `${dur} min`;
+  const hrs = dur / 60;
+  if (dur % 60 === 0) return `${hrs} hr`;
+  return `${hrs % 1 === 0.5 ? hrs : hrs.toFixed(1)} hr`;
 }
 
 // ─── Main Component ─────────────────────────────────────────────────────────

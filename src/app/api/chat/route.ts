@@ -1487,8 +1487,9 @@ export async function POST(request: Request) {
 
     durationInfo = `Available booking durations: ${durations.map((d: number) => {
       if (d < 60) return `${d} min`;
-      if (d % 60 === 0) return `${d / 60} hour${d > 60 ? "s" : ""}`;
-      return `${Math.floor(d / 60)}h ${d % 60}m`;
+      const hrs = d / 60;
+      if (d % 60 === 0) return `${hrs} hour${hrs > 1 ? "s" : ""}`;
+      return `${hrs % 1 === 0.5 ? hrs : hrs.toFixed(1)} hours`;
     }).join(", ")}`;
   }
 

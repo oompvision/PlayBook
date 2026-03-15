@@ -56,9 +56,10 @@ function formatTime12h(time: string): string {
 }
 
 function formatDuration(minutes: number): string {
-  if (minutes < 60) return `${minutes}m`;
-  if (minutes % 60 === 0) return `${minutes / 60}h`;
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  if (minutes < 60) return `${minutes} min`;
+  const hrs = minutes / 60;
+  if (minutes % 60 === 0) return `${hrs} hr`;
+  return `${hrs % 1 === 0.5 ? hrs : hrs.toFixed(1)} hr`;
 }
 
 function getTimePeriod(time: string): TimePeriod {
