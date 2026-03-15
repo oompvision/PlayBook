@@ -82,6 +82,23 @@ async function fetchDemoOrgData(): Promise<DemoOrgData | null> {
       defaultDurations = rules[0].available_durations;
     }
 
+    // Fetch payment mode for demo org (use service client to bypass RLS)
+    let paymentMode = "none";
+    const serviceClient = createServiceClient();
+    const { data: paymentSettings } = await serviceClient
+      .from("org_payment_settings")
+      .select("payment_mode, stripe_onboarding_complete")
+      .eq("org_id", org.id)
+      .single();
+
+    if (
+      paymentSettings?.payment_mode &&
+      paymentSettings.payment_mode !== "none" &&
+      paymentSettings.stripe_onboarding_complete
+    ) {
+      paymentMode = paymentSettings.payment_mode;
+    }
+
     return {
       orgId: org.id,
       orgName: org.name,
@@ -95,6 +112,7 @@ async function fetchDemoOrgData(): Promise<DemoOrgData | null> {
       existingRules: rules || [],
       bookableWindowDays: org.bookable_window_days ?? 30,
       minBookingLeadMinutes: org.min_booking_lead_minutes ?? 15,
+      paymentMode,
     };
   } catch {
     return null;

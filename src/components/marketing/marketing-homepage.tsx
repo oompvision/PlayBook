@@ -49,6 +49,7 @@ export type DemoOrgData = {
   }>;
   bookableWindowDays: number;
   minBookingLeadMinutes: number;
+  paymentMode: string;
 };
 
 interface MarketingHomepageProps {
