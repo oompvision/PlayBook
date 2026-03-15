@@ -6,6 +6,7 @@ import {
   ScrollView,
   Alert,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { useAuth } from '../lib/auth-context';
 import { useFacility } from '../lib/facility-context';
@@ -20,7 +21,7 @@ import type { Location } from '../types';
 
 export function AccountScreen() {
   const { user, profile, signOut, refreshProfile } = useAuth();
-  const { organization, selectedLocation, locations, hasMultipleLocations, selectLocation } = useFacility();
+  const { organization, selectedLocation, locations, hasMultipleLocations, selectLocation, isSwitchingLocation } = useFacility();
   const { isMember, tier, membershipEnabled, bookableWindowDays } = useMembership();
   const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || '');
@@ -51,6 +52,7 @@ export function AccountScreen() {
   };
 
   const handleSelectLocation = (loc: Location) => {
+    if (isSwitchingLocation || loc.id === selectedLocation?.id) return;
     selectLocation(loc);
   };
 
@@ -130,11 +132,13 @@ export function AccountScreen() {
           <Text style={styles.sectionTitle}>Location</Text>
           {locations.map((loc) => {
             const isSelected = selectedLocation?.id === loc.id;
+            const isSwitchingTo = isSwitchingLocation && isSelected;
             return (
               <TouchableOpacity
                 key={loc.id}
                 onPress={() => handleSelectLocation(loc)}
                 activeOpacity={0.7}
+                disabled={isSwitchingLocation}
               >
                 <Card style={[styles.locationCard, isSelected && styles.locationCardSelected]}>
                   <View style={styles.locationRow}>
@@ -144,7 +148,11 @@ export function AccountScreen() {
                         <Text style={styles.locationAddress}>{loc.address}</Text>
                       )}
                     </View>
-                    {isSelected && <Text style={styles.checkmark}>✓</Text>}
+                    {isSwitchingTo ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : isSelected ? (
+                      <Text style={styles.checkmark}>✓</Text>
+                    ) : null}
                   </View>
                 </Card>
               </TouchableOpacity>

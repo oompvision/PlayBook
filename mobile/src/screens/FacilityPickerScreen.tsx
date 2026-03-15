@@ -17,7 +17,7 @@ import type { Location } from '../types';
  * hasn't selected one yet. Lists locations within their org.
  */
 export function FacilityPickerScreen() {
-  const { organization, locations, selectLocation, isLoading } = useFacility();
+  const { organization, locations, selectLocation, selectedLocation, isSwitchingLocation, isLoading } = useFacility();
 
   if (isLoading) {
     return (
@@ -27,14 +27,28 @@ export function FacilityPickerScreen() {
     );
   }
 
-  const renderItem = ({ item }: { item: Location }) => (
-    <TouchableOpacity onPress={() => selectLocation(item)} activeOpacity={0.7}>
-      <Card style={styles.facilityCard}>
-        <Text style={styles.facilityName}>{item.name}</Text>
-        {item.address && <Text style={styles.facilityAddress}>{item.address}</Text>}
-      </Card>
-    </TouchableOpacity>
-  );
+  const renderItem = ({ item }: { item: Location }) => {
+    const isSwitchingTo = isSwitchingLocation && selectedLocation?.id === item.id;
+    return (
+      <TouchableOpacity
+        onPress={() => selectLocation(item)}
+        activeOpacity={0.7}
+        disabled={isSwitchingLocation}
+      >
+        <Card style={styles.facilityCard}>
+          <View style={styles.facilityRow}>
+            <View style={styles.facilityInfo}>
+              <Text style={styles.facilityName}>{item.name}</Text>
+              {item.address && <Text style={styles.facilityAddress}>{item.address}</Text>}
+            </View>
+            {isSwitchingTo && (
+              <ActivityIndicator size="small" color={colors.primary} />
+            )}
+          </View>
+        </Card>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -84,6 +98,14 @@ const styles = StyleSheet.create({
   },
   facilityCard: {
     marginBottom: spacing.md,
+  },
+  facilityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  facilityInfo: {
+    flex: 1,
   },
   facilityName: {
     ...typography.h3,
