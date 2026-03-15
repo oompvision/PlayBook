@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { cn } from "@/lib/utils";
-import { CalendarCheck, Settings } from "lucide-react";
+import { CalendarCheck, Settings, Loader2 } from "lucide-react";
 import { DynamicAvailabilityWidget } from "@/components/dynamic-availability-widget";
 import { DynamicRulesEditor } from "@/components/admin/dynamic-rules-editor";
 
@@ -157,20 +157,28 @@ export function InteractiveDemo({
           )}>
             {activeTab === "player" ? (
               <div className="p-4 md:p-6">
-                <DynamicAvailabilityWidget
-                  orgId={orgId}
-                  orgName={orgName}
-                  timezone={timezone}
-                  bays={bays}
-                  facilityGroups={facilityGroups}
-                  standaloneBays={standaloneBays}
-                  defaultDurations={defaultDurations}
-                  todayStr={todayStr}
-                  minBookingLeadMinutes={minBookingLeadMinutes}
-                  bookableWindowDays={bookableWindowDays}
-                  paymentMode={paymentMode}
-                  demoMode
-                />
+                <Suspense
+                  fallback={
+                    <div className="flex items-center justify-center py-24">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  }
+                >
+                  <DynamicAvailabilityWidget
+                    orgId={orgId}
+                    orgName={orgName}
+                    timezone={timezone}
+                    bays={bays}
+                    facilityGroups={facilityGroups}
+                    standaloneBays={standaloneBays}
+                    defaultDurations={defaultDurations}
+                    todayStr={todayStr}
+                    minBookingLeadMinutes={minBookingLeadMinutes}
+                    bookableWindowDays={bookableWindowDays}
+                    paymentMode={paymentMode}
+                    demoMode
+                  />
+                </Suspense>
               </div>
             ) : (
               <div className="p-4 md:p-6">
