@@ -53,7 +53,6 @@ type RawEventReg = {
     end_time: string;
     price_cents: number;
     capacity: number;
-    registered_count: number;
     event_bays: { bay_id: string; bays: { name: string } | null }[];
   } | null;
 };
@@ -73,7 +72,6 @@ type EventReg = {
     end_time: string;
     price_cents: number;
     capacity: number;
-    registered_count: number;
     event_bays: { bay_id: string; bays: { name: string } | null }[];
   };
 };
@@ -225,7 +223,6 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
           id, event_id, status, waitlist_position, registered_at, discount_cents, discount_description,
           events:event_id (
             name, description, start_time, end_time, price_cents, capacity,
-            registered_count,
             event_bays (bay_id, bays:bay_id (name))
           )
         `)
@@ -328,7 +325,7 @@ export function MyBookingsDropdown({ orgId }: { orgId: string }) {
       discountCents: reg.discount_cents || 0,
       discountDescription: reg.discount_description || null,
       capacity: reg.event.capacity,
-      registeredCount: reg.event.registered_count ?? 0,
+      registeredCount: 0,
       bayNames,
       registrationStatus: reg.status,
       waitlistPosition: reg.waitlist_position,
