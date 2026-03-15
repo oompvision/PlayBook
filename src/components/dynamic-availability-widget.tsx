@@ -26,7 +26,6 @@ import {
   BookingDetailsModal,
   type BookingDetailData,
 } from "@/components/booking-details-modal";
-import { DemoCheckoutForm } from "@/components/demo-checkout-form";
 import { formatPrice } from "@/lib/utils";
 import { LocationSwitcher } from "@/components/location-switcher";
 import { EventRegistrationPanel, type EventForPanel } from "@/components/events/event-registration-panel";
@@ -1739,16 +1738,39 @@ export function DynamicAvailabilityWidget(
                     Edit booking
                   </button>
                 </div>
-                <StripeCheckoutWrapper
-                  stripeAccountId={checkoutIntent.stripe_account_id}
-                  clientSecret={checkoutIntent.client_secret}
-                  customerSessionClientSecret={checkoutIntent.customer_session_client_secret}
-                >
-                  <CheckoutForm
-                    ref={checkoutFormRef}
-                    intentType={checkoutIntent.intent_type}
-                  />
-                </StripeCheckoutWrapper>
+                {demoMode ? (
+                  /* Demo: show simulated card form inline */
+                  <div className="space-y-2">
+                    <div className="rounded-md border bg-white px-3 py-2.5 text-sm shadow-sm">
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-mono text-gray-900">4242 4242 4242 4242</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-md border bg-white px-3 py-2.5 text-sm shadow-sm">
+                        <span className="font-mono text-gray-900">12 / 28</span>
+                      </div>
+                      <div className="rounded-md border bg-white px-3 py-2.5 text-sm shadow-sm">
+                        <span className="font-mono text-gray-900">123</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Demo mode — no real payment will be processed
+                    </p>
+                  </div>
+                ) : (
+                  <StripeCheckoutWrapper
+                    stripeAccountId={checkoutIntent.stripe_account_id}
+                    clientSecret={checkoutIntent.client_secret}
+                    customerSessionClientSecret={checkoutIntent.customer_session_client_secret}
+                  >
+                    <CheckoutForm
+                      ref={checkoutFormRef}
+                      intentType={checkoutIntent.intent_type}
+                    />
+                  </StripeCheckoutWrapper>
+                )}
               </div>
             )}
 
@@ -1783,10 +1805,10 @@ export function DynamicAvailabilityWidget(
 
                 // Step 2: Payment form visible — validate card + confirm booking in one click
                 if (paymentStepActive) {
-                  return (
-                    <div className="space-y-4">
-                      {/* In demo mode, render the checkout form inline since the mobile portal is suppressed */}
-                      {demoMode && (
+                  // Demo mode: show inline card visual and simulate payment
+                  if (demoMode) {
+                    return (
+                      <div className="space-y-4">
                         <div className="space-y-3">
                           <div className="flex items-center gap-2">
                             <CreditCard className="h-4 w-4 text-muted-foreground" />
@@ -1799,43 +1821,83 @@ export function DynamicAvailabilityWidget(
                               <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
                               <span className="text-sm text-muted-foreground">Preparing payment...</span>
                             </div>
-                          ) : checkoutIntent ? (
-                            <DemoCheckoutForm ref={checkoutFormRef} />
-                          ) : null}
+                          ) : (
+                            <div className="space-y-2">
+                              <div className="rounded-md border bg-white px-3 py-2.5 text-sm shadow-sm">
+                                <div className="flex items-center gap-2">
+                                  <CreditCard className="h-4 w-4 text-muted-foreground" />
+                                  <span className="font-mono text-gray-900">4242 4242 4242 4242</span>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="rounded-md border bg-white px-3 py-2.5 text-sm shadow-sm">
+                                  <span className="font-mono text-gray-900">12 / 28</span>
+                                </div>
+                                <div className="rounded-md border bg-white px-3 py-2.5 text-sm shadow-sm">
+                                  <span className="font-mono text-gray-900">123</span>
+                                </div>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                Demo mode — no real payment will be processed
+                              </p>
+                            </div>
+                          )}
                         </div>
-                      )}
-                      <Button
-                        className="w-full bg-green-600 hover:bg-green-700 text-white"
-                        disabled={bookingLoading || (demoMode && !checkoutIntent)}
-                        onClick={async () => {
-                          if (!checkoutFormRef.current) return;
-                          setBookingLoading(true);
-                          try {
-                            const result = await checkoutFormRef.current.confirmAndGetCardInfo();
-                            if (result.success) {
-                              setCardBrand(result.cardBrand ?? null);
-                              setCardLast4(result.cardLast4 ?? null);
-                              setConfirmedPaymentMethodId(result.paymentMethodId ?? null);
-                              setPaymentValidated(true);
-                              // Directly confirm booking after card validation
-                              await handleConfirmBooking(result.paymentMethodId ?? null);
-                            } else {
-                              setPaymentValidationError("Payment validation failed. Please try again.");
-                              setBookingLoading(false);
-                            }
-                          } catch {
+                        <Button
+                          className="w-full bg-green-600 hover:bg-green-700 text-white"
+                          disabled={bookingLoading || checkoutLoading}
+                          onClick={async () => {
+                            setBookingLoading(true);
+                            setCardBrand("visa");
+                            setCardLast4("4242");
+                            setConfirmedPaymentMethodId("pm_demo_simulated");
+                            setPaymentValidated(true);
+                            await handleConfirmBooking("pm_demo_simulated");
+                          }}
+                        >
+                          {bookingLoading ? (
+                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
+                          ) : (
+                            `Confirm & Pay $${(finalCents / 100).toFixed(2)}`
+                          )}
+                        </Button>
+                      </div>
+                    );
+                  }
+
+                  // Real payment flow: use checkout form ref
+                  return (
+                    <Button
+                      className="w-full bg-green-600 hover:bg-green-700 text-white"
+                      disabled={bookingLoading}
+                      onClick={async () => {
+                        if (!checkoutFormRef.current) return;
+                        setBookingLoading(true);
+                        try {
+                          const result = await checkoutFormRef.current.confirmAndGetCardInfo();
+                          if (result.success) {
+                            setCardBrand(result.cardBrand ?? null);
+                            setCardLast4(result.cardLast4 ?? null);
+                            setConfirmedPaymentMethodId(result.paymentMethodId ?? null);
+                            setPaymentValidated(true);
+                            // Directly confirm booking after card validation
+                            await handleConfirmBooking(result.paymentMethodId ?? null);
+                          } else {
                             setPaymentValidationError("Payment validation failed. Please try again.");
                             setBookingLoading(false);
                           }
-                        }}
-                      >
-                        {bookingLoading ? (
-                          <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
-                        ) : (
-                          `Confirm & Pay $${(finalCents / 100).toFixed(2)}`
-                        )}
-                      </Button>
-                    </div>
+                        } catch {
+                          setPaymentValidationError("Payment validation failed. Please try again.");
+                          setBookingLoading(false);
+                        }
+                      }}
+                    >
+                      {bookingLoading ? (
+                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
+                      ) : (
+                        `Confirm & Pay $${(finalCents / 100).toFixed(2)}`
+                      )}
+                    </Button>
                   );
                 }
 
@@ -2344,20 +2406,17 @@ export function DynamicAvailabilityWidget(
                                 </p>
                               </div>
 
-                              {demoMode ? (
-                                <DemoCheckoutForm ref={checkoutFormRef} />
-                              ) : (
-                                <StripeCheckoutWrapper
-                                  stripeAccountId={checkoutIntent.stripe_account_id}
-                                  clientSecret={checkoutIntent.client_secret}
-                                  customerSessionClientSecret={checkoutIntent.customer_session_client_secret}
-                                >
-                                  <CheckoutForm
-                                    ref={checkoutFormRef}
-                                    intentType={checkoutIntent.intent_type}
-                                  />
+                              {/* Portal is suppressed in demo mode, so this only renders for real checkout */}
+                              <StripeCheckoutWrapper
+                                stripeAccountId={checkoutIntent.stripe_account_id}
+                                clientSecret={checkoutIntent.client_secret}
+                                customerSessionClientSecret={checkoutIntent.customer_session_client_secret}
+                              >
+                                <CheckoutForm
+                                  ref={checkoutFormRef}
+                                  intentType={checkoutIntent.intent_type}
+                                />
                                 </StripeCheckoutWrapper>
-                              )}
 
                               {paymentValidationError && (
                                 <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
