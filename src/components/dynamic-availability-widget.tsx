@@ -174,6 +174,7 @@ type DynamicAvailabilityWidgetProps = {
   mode?: "customer" | "modify";
   originalBooking?: DynamicOriginalBookingInfo;
   modifyRedirectBase?: string;
+  demoMode?: boolean;
 };
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -302,7 +303,14 @@ export function DynamicAvailabilityWidget(
     mode = "customer",
     originalBooking,
     modifyRedirectBase,
+    demoMode = false,
   } = props;
+
+  // In demo mode, override auth state with simulated user
+  const effectiveIsAuthenticated = demoMode ? true : isAuthenticated;
+  const effectiveUserEmail = demoMode ? "demo@ezbooker.app" : userEmail;
+  const effectiveUserFullName = demoMode ? "Demo User" : userFullName;
+  const effectiveUserProfileId = demoMode ? "demo-user-id" : userProfileId;
 
   const isModify = mode === "modify";
 
@@ -531,7 +539,7 @@ export function DynamicAvailabilityWidget(
 
   useEffect(() => {
     if (!mounted) return;
-    if (isAuthenticated) {
+    if (effectiveIsAuthenticated && !demoMode) {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         try {
@@ -551,12 +559,12 @@ export function DynamicAvailabilityWidget(
         // Panel will open after availability loads and slot is re-selected
       }
     }
-  }, [mounted, isAuthenticated, orgId, todayStr]);
+  }, [mounted, effectiveIsAuthenticated, demoMode, orgId, todayStr]);
 
   // ─── Fetch confirmed bookings for sidebar ─────────────
 
   const fetchBookings = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!effectiveIsAuthenticated || demoMode) return;
     setBookingsLoading(true);
     const supabase = createClient();
     const { data } = await supabase
@@ -569,13 +577,13 @@ export function DynamicAvailabilityWidget(
       .order("start_time");
     setBookings(data || []);
     setBookingsLoading(false);
-  }, [isAuthenticated, orgId, todayStr]);
+  }, [effectiveIsAuthenticated, demoMode, orgId, todayStr]);
 
   useEffect(() => {
-    if (mounted && isAuthenticated) {
+    if (mounted && effectiveIsAuthenticated && !demoMode) {
       fetchBookings();
     }
-  }, [mounted, isAuthenticated, fetchBookings]);
+  }, [mounted, effectiveIsAuthenticated, demoMode, fetchBookings]);
 
   // ─── Fetch availability ─────────────────────────────────
 
@@ -753,6 +761,22 @@ export function DynamicAvailabilityWidget(
 
     setCheckoutLoading(true);
     setCheckoutError("");
+
+    // Demo mode: simulate a checkout intent without calling Stripe
+    if (demoMode) {
+      await new Promise((r) => setTimeout(r, 500));
+      setCheckoutIntent({
+        client_secret: "demo_secret",
+        intent_type: paymentMode === "charge_upfront" ? "payment" : "setup",
+        intent_id: "demo_intent_" + Date.now(),
+        stripe_customer_id: "cus_demo",
+        stripe_account_id: "acct_demo",
+        amount_cents: selectedSlot.price_cents,
+        cancellation_policy_text: "This is a demo booking. Free cancellation at any time.",
+      });
+      setCheckoutLoading(false);
+      return;
+    }
 
     try {
       const res = await fetch("/api/stripe/create-checkout-intent-dynamic", {
@@ -979,10 +1003,25 @@ export function DynamicAvailabilityWidget(
   }
 
   async function handleConfirmBooking(overridePaymentMethodId?: string | null) {
-    if (!selectedSlot || !userProfileId) return;
+    if (!selectedSlot || !effectiveUserProfileId) return;
 
     setBookingLoading(true);
     setBookingError("");
+
+    // ─── Demo mode: simulate the entire booking ───
+    if (demoMode) {
+      await new Promise((r) => setTimeout(r, 1200));
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      const code = "PB-" + Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+      handleCancelSelection();
+      setToast({
+        message: "Booking confirmed!",
+        description: `Confirmation code: ${code} — ${selectedSlot.bay_name}`,
+      });
+      fetchAvailability();
+      setBookingLoading(false);
+      return;
+    }
 
     // If payment is required, use the confirmed payment method from step 2
     let paymentMethodId: string | undefined;
@@ -1696,16 +1735,39 @@ export function DynamicAvailabilityWidget(
                     Edit booking
                   </button>
                 </div>
-                <StripeCheckoutWrapper
-                  stripeAccountId={checkoutIntent.stripe_account_id}
-                  clientSecret={checkoutIntent.client_secret}
-                  customerSessionClientSecret={checkoutIntent.customer_session_client_secret}
-                >
-                  <CheckoutForm
-                    ref={checkoutFormRef}
-                    intentType={checkoutIntent.intent_type}
-                  />
-                </StripeCheckoutWrapper>
+                {demoMode ? (
+                  /* Demo: show simulated card form inline */
+                  <div className="space-y-2">
+                    <div className="rounded-md border bg-white px-3 py-2.5 text-sm shadow-sm">
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-mono text-gray-900">4242 4242 4242 4242</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-md border bg-white px-3 py-2.5 text-sm shadow-sm">
+                        <span className="font-mono text-gray-900">12 / 28</span>
+                      </div>
+                      <div className="rounded-md border bg-white px-3 py-2.5 text-sm shadow-sm">
+                        <span className="font-mono text-gray-900">123</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Demo mode — no real payment will be processed
+                    </p>
+                  </div>
+                ) : (
+                  <StripeCheckoutWrapper
+                    stripeAccountId={checkoutIntent.stripe_account_id}
+                    clientSecret={checkoutIntent.client_secret}
+                    customerSessionClientSecret={checkoutIntent.customer_session_client_secret}
+                  >
+                    <CheckoutForm
+                      ref={checkoutFormRef}
+                      intentType={checkoutIntent.intent_type}
+                    />
+                  </StripeCheckoutWrapper>
+                )}
               </div>
             )}
 
@@ -1726,7 +1788,7 @@ export function DynamicAvailabilityWidget(
                 const { finalCents } = selectedSlot ? calcDiscount(selectedSlot.price_cents) : { finalCents: 0 };
                 const paymentStepActive = requiresPayment && bookingStep === 2;
 
-                if (!isAuthenticated && hasSlot) {
+                if (!effectiveIsAuthenticated && hasSlot) {
                   return (
                     <AuthModal
                       trigger={
@@ -1740,6 +1802,67 @@ export function DynamicAvailabilityWidget(
 
                 // Step 2: Payment form visible — validate card + confirm booking in one click
                 if (paymentStepActive) {
+                  // Demo mode: show inline card visual and simulate payment
+                  if (demoMode) {
+                    return (
+                      <div className="space-y-4">
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2">
+                            <CreditCard className="h-4 w-4 text-muted-foreground" />
+                            <p className="text-sm font-medium">
+                              {paymentMode === "charge_upfront" ? "Payment Details" : "Card on File"}
+                            </p>
+                          </div>
+                          {checkoutLoading ? (
+                            <div className="flex items-center justify-center rounded-lg border border-dashed py-8">
+                              <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground">Preparing payment...</span>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <div className="rounded-md border bg-white px-3 py-2.5 text-sm shadow-sm">
+                                <div className="flex items-center gap-2">
+                                  <CreditCard className="h-4 w-4 text-muted-foreground" />
+                                  <span className="font-mono text-gray-900">4242 4242 4242 4242</span>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="rounded-md border bg-white px-3 py-2.5 text-sm shadow-sm">
+                                  <span className="font-mono text-gray-900">12 / 28</span>
+                                </div>
+                                <div className="rounded-md border bg-white px-3 py-2.5 text-sm shadow-sm">
+                                  <span className="font-mono text-gray-900">123</span>
+                                </div>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                Demo mode — no real payment will be processed
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        <Button
+                          className="w-full bg-green-600 hover:bg-green-700 text-white"
+                          disabled={bookingLoading || checkoutLoading}
+                          onClick={async () => {
+                            setBookingLoading(true);
+                            setCardBrand("visa");
+                            setCardLast4("4242");
+                            setConfirmedPaymentMethodId("pm_demo_simulated");
+                            setPaymentValidated(true);
+                            await handleConfirmBooking("pm_demo_simulated");
+                          }}
+                        >
+                          {bookingLoading ? (
+                            <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
+                          ) : (
+                            `Confirm & Pay $${(finalCents / 100).toFixed(2)}`
+                          )}
+                        </Button>
+                      </div>
+                    );
+                  }
+
+                  // Real payment flow: use checkout form ref
                   return (
                     <Button
                       className="w-full bg-green-600 hover:bg-green-700 text-white"
@@ -1776,7 +1899,7 @@ export function DynamicAvailabilityWidget(
                 }
 
                 // No-payment flow: confirm directly
-                if (hasSlot && !requiresPayment && isAuthenticated) {
+                if (hasSlot && !requiresPayment && effectiveIsAuthenticated) {
                   return (
                     <Button
                       className="w-full bg-green-600 hover:bg-green-700 text-white"
@@ -1793,7 +1916,7 @@ export function DynamicAvailabilityWidget(
                 }
 
                 // Step 1: Ready to proceed to payment
-                if (hasSlot && requiresPayment && isAuthenticated && bookingStep === 1) {
+                if (hasSlot && requiresPayment && effectiveIsAuthenticated && bookingStep === 1) {
                   return (
                     <Button
                       className="w-full bg-green-600 hover:bg-green-700 text-white"
@@ -1834,8 +1957,10 @@ export function DynamicAvailabilityWidget(
       </div>{/* end flex wrapper */}
 
       {/* ===== Booking bar / slide-up panel — MOBILE ONLY (portalled to body) ===== */}
+      {/* Suppress portal in demo mode — it creates a full-screen overlay that escapes the demo container */}
       {selectedSlot &&
         mounted &&
+        !demoMode &&
         createPortal(
           <div className="lg:hidden">
             {/* Backdrop overlay when panel is open */}
@@ -1885,7 +2010,7 @@ export function DynamicAvailabilityWidget(
                 /* ---- Expanded booking panel ---- */
                 <div className="mx-auto max-w-lg px-6 py-6">
                   {/* Panel header */}
-                  <div className={isAuthenticated ? "sticky top-0 z-10 -mx-6 bg-background px-6 pb-4 pt-0" : "mb-6"}>
+                  <div className={effectiveIsAuthenticated ? "sticky top-0 z-10 -mx-6 bg-background px-6 pb-4 pt-0" : "mb-6"}>
                     <div className="flex items-center justify-between">
                       <div>
                         <h2 className="text-lg font-bold">Confirm Booking</h2>
@@ -1905,7 +2030,7 @@ export function DynamicAvailabilityWidget(
                     </div>
 
                     {/* Step indicator — only for authenticated users */}
-                    {isAuthenticated && (
+                    {effectiveIsAuthenticated && (
                       <div className="mt-3 flex items-center gap-1">
                         {stepLabels.map((label, i) => {
                           const stepNum = i + 1;
@@ -1959,7 +2084,7 @@ export function DynamicAvailabilityWidget(
                     )}
                   </div>
 
-                  {!isAuthenticated ? (
+                  {!effectiveIsAuthenticated ? (
                     /* ---- Auth form for unauthenticated users ---- */
                     <div>
                       {/* Booking summary preview above auth */}
@@ -2190,11 +2315,11 @@ export function DynamicAvailabilityWidget(
 
                           {/* User info */}
                           <p className="text-sm text-muted-foreground">
-                            Booking as {userFullName || userEmail}
+                            Booking as {effectiveUserFullName || effectiveUserEmail}
                           </p>
 
                           {/* Guest upsell nudge */}
-                          {membership?.membershipEnabled && !membership.isMember && isAuthenticated && (
+                          {membership?.membershipEnabled && !membership.isMember && effectiveIsAuthenticated && (
                             <a
                               href="/membership"
                               className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:hover:bg-amber-950/50"
@@ -2278,6 +2403,7 @@ export function DynamicAvailabilityWidget(
                                 </p>
                               </div>
 
+                              {/* Portal is suppressed in demo mode, so this only renders for real checkout */}
                               <StripeCheckoutWrapper
                                 stripeAccountId={checkoutIntent.stripe_account_id}
                                 clientSecret={checkoutIntent.client_secret}
@@ -2287,7 +2413,7 @@ export function DynamicAvailabilityWidget(
                                   ref={checkoutFormRef}
                                   intentType={checkoutIntent.intent_type}
                                 />
-                              </StripeCheckoutWrapper>
+                                </StripeCheckoutWrapper>
 
                               {paymentValidationError && (
                                 <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
@@ -2590,7 +2716,7 @@ export function DynamicAvailabilityWidget(
         <EventRegistrationPanel
           event={selectedEventForPanel}
           timezone={timezone}
-          isAuthenticated={isAuthenticated}
+          isAuthenticated={effectiveIsAuthenticated}
           isMember={membership?.isMember ?? false}
           eventDiscount={
             membership?.isMember && membership.eventDiscountType && membership.eventDiscountValue > 0
