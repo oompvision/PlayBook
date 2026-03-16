@@ -1,80 +1,4 @@
-"use client";
-
-function PhoneMockup() {
-  const slots = [
-    { time: "9:00 AM", bay: "Court 1", available: true },
-    { time: "10:00 AM", bay: "Court 1", available: true },
-    { time: "10:00 AM", bay: "Court 2", available: true },
-    { time: "11:00 AM", bay: "Sim 1", available: false },
-    { time: "11:00 AM", bay: "Court 3", available: true },
-    { time: "12:00 PM", bay: "Sim 2", available: true },
-  ];
-
-  return (
-    <div className="w-[260px] mx-auto">
-      {/* Phone frame */}
-      <div className="bg-gray-900 rounded-[2.5rem] p-3 shadow-2xl">
-        {/* Notch */}
-        <div className="flex justify-center mb-2">
-          <div className="w-24 h-5 bg-black rounded-full" />
-        </div>
-        {/* Screen */}
-        <div className="bg-white rounded-[1.75rem] overflow-hidden">
-          {/* Status bar */}
-          <div className="flex items-center justify-between px-5 py-2 text-[8px] text-gray-500">
-            <span>9:41</span>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-1.5 bg-gray-400 rounded-sm" />
-              <div className="w-2.5 h-1.5 bg-gray-300 rounded-sm" />
-              <div className="w-4 h-2 border border-gray-400 rounded-sm">
-                <div className="w-2.5 h-full bg-brand rounded-sm" />
-              </div>
-            </div>
-          </div>
-          {/* App header */}
-          <div className="px-4 py-3 border-b border-gray-100">
-            <div className="text-[10px] font-bold text-gray-900">Ace Tennis Club</div>
-            <div className="text-[8px] text-gray-500 mt-0.5">Today &middot; Available Courts</div>
-          </div>
-          {/* Slot list */}
-          <div className="p-3 space-y-2">
-            {slots.map((slot, i) => (
-              <div
-                key={i}
-                className={`flex items-center justify-between p-2.5 rounded-xl border ${
-                  slot.available
-                    ? "border-gray-100 bg-white"
-                    : "border-gray-100 bg-gray-50 opacity-50"
-                }`}
-              >
-                <div>
-                  <div className="text-[9px] font-semibold text-gray-900">{slot.time}</div>
-                  <div className="text-[8px] text-gray-500">{slot.bay}</div>
-                </div>
-                {slot.available ? (
-                  <div className="bg-brand text-white text-[7px] font-bold px-2.5 py-1 rounded-full">
-                    Book
-                  </div>
-                ) : (
-                  <div className="text-[7px] text-gray-400 font-medium">Full</div>
-                )}
-              </div>
-            ))}
-          </div>
-          {/* Bottom nav */}
-          <div className="flex items-center justify-around py-3 border-t border-gray-100 mt-2">
-            {["Home", "Book", "Profile"].map((tab) => (
-              <div key={tab} className="flex flex-col items-center gap-0.5">
-                <div className={`w-4 h-4 rounded-full ${tab === "Book" ? "bg-brand/20" : "bg-gray-100"}`} />
-                <span className={`text-[7px] ${tab === "Book" ? "text-brand font-semibold" : "text-gray-400"}`}>{tab}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+import Image from "next/image";
 
 export function ForPlayersSection() {
   return (
@@ -136,11 +60,34 @@ export function ForPlayersSection() {
           </ol>
         </div>
 
-        {/* Right: Phone Mockup */}
+        {/* Right: iPhone 16 Pro Mockup */}
         <div className="relative justify-self-center group">
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-brand-light/20 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition duration-1000" />
-          <div className="relative">
-            <PhoneMockup />
+
+          <div className="relative w-[280px] sm:w-[300px]">
+            {/* iPhone 16 Pro frame */}
+            <div className="bg-[#1a1a1a] rounded-[3rem] p-[10px] shadow-2xl ring-1 ring-black/10">
+              {/* Side buttons */}
+              <div className="absolute -left-[2px] top-[120px] w-[3px] h-[28px] bg-[#2a2a2a] rounded-l-sm" />
+              <div className="absolute -left-[2px] top-[160px] w-[3px] h-[50px] bg-[#2a2a2a] rounded-l-sm" />
+              <div className="absolute -left-[2px] top-[218px] w-[3px] h-[50px] bg-[#2a2a2a] rounded-l-sm" />
+              <div className="absolute -right-[2px] top-[170px] w-[3px] h-[70px] bg-[#2a2a2a] rounded-r-sm" />
+
+              {/* Screen */}
+              <div className="relative bg-white rounded-[2.4rem] overflow-hidden">
+                {/* Dynamic Island */}
+                <div className="absolute top-[10px] left-1/2 -translate-x-1/2 w-[90px] h-[26px] bg-black rounded-full z-10" />
+
+                {/* Screenshot */}
+                <Image
+                  src="/demo-booking.png"
+                  alt="EZBooker mobile booking experience showing date selection, facility picker, duration options, and available time slots"
+                  width={600}
+                  height={1300}
+                  className="w-full h-auto"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
