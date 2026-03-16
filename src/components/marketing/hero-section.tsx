@@ -1,9 +1,59 @@
 "use client";
 
-import Image from "next/image";
-
 interface HeroSectionProps {
   onOpenDemo: () => void;
+}
+
+function DashboardMockup() {
+  const bays = ["Court 1", "Court 2", "Court 3", "Sim 1", "Sim 2"];
+  const hours = ["9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM"];
+
+  const booked: Record<string, number[]> = {
+    "Court 1": [0, 1, 4, 5],
+    "Court 2": [2, 3, 6],
+    "Court 3": [1, 3, 4, 7],
+    "Sim 1": [0, 2, 5, 6, 7],
+    "Sim 2": [1, 4, 5],
+  };
+
+  return (
+    <div className="p-3 space-y-2">
+      {/* Toolbar mockup */}
+      <div className="flex items-center justify-between px-2 py-1.5">
+        <div className="flex items-center gap-2">
+          <div className="w-20 h-3 bg-gray-200 rounded" />
+          <div className="w-16 h-3 bg-gray-100 rounded" />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-6 h-6 bg-brand/10 rounded" />
+          <div className="w-14 h-6 bg-brand rounded text-[8px] text-white flex items-center justify-center font-medium">Today</div>
+          <div className="w-6 h-6 bg-brand/10 rounded" />
+        </div>
+      </div>
+      {/* Calendar grid */}
+      <div className="overflow-hidden rounded-lg border border-gray-100">
+        <div className="grid gap-px bg-gray-100" style={{ gridTemplateColumns: `64px repeat(${hours.length}, 1fr)` }}>
+          <div className="bg-gray-50 p-1.5" />
+          {hours.map((h) => (
+            <div key={h} className="bg-gray-50 p-1.5 text-[7px] font-medium text-gray-500 text-center">{h}</div>
+          ))}
+        </div>
+        {bays.map((bay) => (
+          <div key={bay} className="grid gap-px bg-gray-100" style={{ gridTemplateColumns: `64px repeat(${hours.length}, 1fr)` }}>
+            <div className="bg-white p-1.5 text-[7px] font-medium text-gray-700 flex items-center">{bay}</div>
+            {hours.map((_, i) => {
+              const isBooked = booked[bay]?.includes(i);
+              return (
+                <div key={i} className={`p-1 ${isBooked ? "bg-brand/15" : "bg-white"}`}>
+                  {isBooked && <div className="w-full h-3 bg-brand/30 rounded-sm" />}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function HeroSection({ onOpenDemo }: HeroSectionProps) {
@@ -48,36 +98,20 @@ export function HeroSection({ onOpenDemo }: HeroSectionProps) {
 
         </div>
 
-        {/* Right Column: iPhone Mockup */}
-        <div className="flex justify-center lg:justify-end">
-          <div className="relative group">
-            {/* Glow effect on hover */}
-            <div className="absolute -inset-4 bg-gradient-to-r from-brand-light to-blue-400 rounded-[3.5rem] blur-2xl opacity-0 group-hover:opacity-20 transition-opacity duration-500" />
+        {/* Right Column: Browser Mockup */}
+        <div className="relative group">
+          <div className="absolute -inset-1 bg-gradient-to-r from-brand-light to-blue-400 rounded-2xl blur-xl opacity-0 group-hover:opacity-30 transition-opacity duration-500" />
 
-            {/* iPhone 16 Pro frame */}
-            <div className="relative w-[280px] sm:w-[300px] bg-[#1a1a1a] rounded-[3rem] p-[10px] shadow-2xl ring-1 ring-black/10">
-              {/* Side button accents */}
-              <div className="absolute -left-[2px] top-[120px] w-[3px] h-[28px] bg-[#2a2a2a] rounded-l-sm" />
-              <div className="absolute -left-[2px] top-[160px] w-[3px] h-[50px] bg-[#2a2a2a] rounded-l-sm" />
-              <div className="absolute -left-[2px] top-[218px] w-[3px] h-[50px] bg-[#2a2a2a] rounded-l-sm" />
-              <div className="absolute -right-[2px] top-[170px] w-[3px] h-[70px] bg-[#2a2a2a] rounded-r-sm" />
-
-              {/* Screen */}
-              <div className="relative bg-white rounded-[2.4rem] overflow-hidden">
-                {/* Dynamic Island */}
-                <div className="absolute top-[10px] left-1/2 -translate-x-1/2 w-[90px] h-[26px] bg-black rounded-full z-10" />
-
-                {/* Screenshot */}
-                <Image
-                  src="/demo-booking.png"
-                  alt="EZBooker mobile booking experience"
-                  width={600}
-                  height={1300}
-                  className="w-full h-auto"
-                  priority
-                />
+          <div className="relative bg-white p-2 rounded-2xl shadow-2xl border border-gray-100">
+            <div className="flex items-center gap-1.5 p-3 border-b border-gray-100">
+              <div className="w-3 h-3 rounded-full bg-red-400" />
+              <div className="w-3 h-3 rounded-full bg-yellow-400" />
+              <div className="w-3 h-3 rounded-full bg-green-400" />
+              <div className="ml-3 flex-1 bg-gray-100 rounded h-5 flex items-center px-2">
+                <span className="text-[9px] text-gray-400">ezbooker.app/admin/schedule</span>
               </div>
             </div>
+            <DashboardMockup />
           </div>
         </div>
       </div>
