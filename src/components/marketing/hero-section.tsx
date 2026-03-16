@@ -62,10 +62,6 @@ export function HeroSection({ onOpenDemo }: HeroSectionProps) {
       <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
         {/* Left Column: Copy & CTA */}
         <div className="space-y-6">
-          <div className="inline-block bg-white text-brand px-4 py-1.5 rounded-full text-sm font-semibold border border-brand-light/30 shadow-sm">
-            #1 Software for Modern Athletic Facilities
-          </div>
-
           <h1 className="text-5xl lg:text-6xl font-extrabold text-gray-950 font-[family-name:var(--font-heading)] leading-tight">
             Run your facility.{" "}
             <span className="text-brand">Maximize your revenue.</span>

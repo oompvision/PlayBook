@@ -65,7 +65,7 @@ const tabs = [
     id: "player" as const,
     label: "The Player Experience",
     icon: CalendarCheck,
-    description: "Browse availability and book a court — just like your customers will.",
+    description: "Browse availability and book a facility — just like your customers will.",
   },
   {
     id: "admin" as const,
@@ -105,7 +105,7 @@ export function InteractiveDemo({
             <span className="text-brand">Right now.</span>
           </h2>
           <p className="text-xl text-gray-600 mt-4 leading-relaxed">
-            No signup required. Experience EZBooker from both sides — as a player booking a court,
+            No signup required. Experience EZBooker from both sides — as a player booking a facility,
             and as an admin managing your facility.
           </p>
         </div>
