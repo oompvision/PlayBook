@@ -96,19 +96,6 @@ export function HeroSection({ onOpenDemo }: HeroSectionProps) {
             </a>
           </div>
 
-          {/* Social Proof */}
-          <div className="pt-10 border-t border-gray-200 mt-10">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-4">
-              Trusted by Leading Facilities
-            </p>
-            <div className="flex items-center gap-8 opacity-50">
-              {["Ace Tennis Club", "Pickleball USA", "Golf Zone"].map((name) => (
-                <span key={name} className="text-sm font-bold text-gray-400 tracking-wide">
-                  {name}
-                </span>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* Right Column: Browser Mockup */}
