@@ -1,7 +1,8 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { MapPin, ChevronDown } from "lucide-react";
+import { MapPin, ChevronDown, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,7 +32,23 @@ export function LocationSwitcher({
   const effectiveLocationId = urlLocationId || activeLocationId;
   const activeLocation = locations.find((l) => l.id === effectiveLocationId);
 
+  const [switchingTo, setSwitchingTo] = useState<string | null>(null);
+
+  // Clear loading state once the URL catches up to what we navigated to
+  useEffect(() => {
+    if (switchingTo && effectiveLocationId === switchingTo) {
+      setSwitchingTo(null);
+    }
+  }, [effectiveLocationId, switchingTo]);
+
+  const isSwitching = switchingTo !== null && switchingTo !== effectiveLocationId;
+  const pendingLocation = isSwitching
+    ? locations.find((l) => l.id === switchingTo)
+    : null;
+
   function handleSwitch(locationId: string) {
+    if (locationId === effectiveLocationId) return;
+    setSwitchingTo(locationId);
     const params = new URLSearchParams(searchParams.toString());
     params.set("location", locationId);
     router.push(`${pathname}?${params.toString()}`);
@@ -42,10 +59,19 @@ export function LocationSwitcher({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-1">
-          <MapPin className="h-3.5 w-3.5 text-gray-500" />
+        <button
+          className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-1 disabled:opacity-70"
+          disabled={isSwitching}
+        >
+          {isSwitching ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-500" />
+          ) : (
+            <MapPin className="h-3.5 w-3.5 text-gray-500" />
+          )}
           <span className="max-w-[150px] truncate">
-            {activeLocation?.name || "Select location"}
+            {isSwitching
+              ? pendingLocation?.name || "Switching…"
+              : activeLocation?.name || "Select location"}
           </span>
           <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
         </button>

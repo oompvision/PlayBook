@@ -20,6 +20,8 @@ interface FacilityState {
   /** Available durations from dynamic schedule rules */
   availableDurations: number[];
   isLoading: boolean;
+  /** True while switching between locations (fetching bays/groups) */
+  isSwitchingLocation: boolean;
   /** Whether the org has multiple locations */
   hasMultipleLocations: boolean;
   /** Whether the org uses dynamic scheduling */
@@ -44,6 +46,7 @@ export function FacilityProvider({ profile, children }: FacilityProviderProps) {
   const [standaloneBays, setStandaloneBays] = useState<Bay[]>([]);
   const [availableDurations, setAvailableDurations] = useState<number[]>([60]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSwitchingLocation, setIsSwitchingLocation] = useState(false);
 
   const orgId = profile?.org_id ?? null;
 
@@ -198,6 +201,7 @@ export function FacilityProvider({ profile, children }: FacilityProviderProps) {
 
   const selectLocation = async (location: Location) => {
     setSelectedLocation(location);
+    setIsSwitchingLocation(true);
     await AsyncStorage.setItem(LOCATION_STORAGE_KEY, location.id);
     if (orgId && organization) {
       await fetchBaysAndGroups(
@@ -206,6 +210,7 @@ export function FacilityProvider({ profile, children }: FacilityProviderProps) {
         organization.scheduling_type ?? 'slot_based'
       );
     }
+    setIsSwitchingLocation(false);
   };
 
   const refreshBays = useCallback(async () => {
@@ -232,6 +237,7 @@ export function FacilityProvider({ profile, children }: FacilityProviderProps) {
         standaloneBays,
         availableDurations,
         isLoading,
+        isSwitchingLocation,
         hasMultipleLocations,
         isDynamic,
         selectLocation,

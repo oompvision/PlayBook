@@ -259,20 +259,17 @@ function addDays(dateStr: string, days: number): string {
 }
 
 function formatDuration(minutes: number): string {
-  if (minutes < 60) return `${minutes}m`;
-  if (minutes % 60 === 0) return `${minutes / 60}h`;
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  if (minutes < 60) return `${minutes} min`;
+  const hrs = minutes / 60;
+  if (minutes % 60 === 0) return `${hrs} hr`;
+  return `${hrs % 1 === 0.5 ? hrs : hrs.toFixed(1)} hr`;
 }
 
 function formatDurationLong(minutes: number): string {
   if (minutes < 60) return `${minutes} min`;
-  if (minutes % 60 === 0) {
-    const hrs = minutes / 60;
-    return `${hrs} hour${hrs > 1 ? "s" : ""}`;
-  }
-  const hrs = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${hrs}h ${mins}m`;
+  const hrs = minutes / 60;
+  if (minutes % 60 === 0) return `${hrs} hour${hrs > 1 ? "s" : ""}`;
+  return `${hrs % 1 === 0.5 ? hrs : hrs.toFixed(1)} hours`;
 }
 
 // ─── Component ──────────────────────────────────────────────

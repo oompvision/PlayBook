@@ -959,11 +959,11 @@ export function BookingScreen({ route, navigation }: Props) {
           {/* Duration Picker */}
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>
-              3. Play for {selectedDuration >= 60
-                ? selectedDuration % 60 === 0
-                  ? `${selectedDuration / 60}h`
-                  : `${Math.floor(selectedDuration / 60)}h ${selectedDuration % 60}m`
-                : `${selectedDuration}m`}
+              3. Play for {selectedDuration < 60
+                ? `${selectedDuration} min`
+                : selectedDuration % 60 === 0
+                  ? `${selectedDuration / 60} hr`
+                  : `${(selectedDuration / 60) % 1 === 0.5 ? selectedDuration / 60 : (selectedDuration / 60).toFixed(1)} hr`}
             </Text>
             {availableDurations.length > 1 && (
               <ScrollView
@@ -974,11 +974,11 @@ export function BookingScreen({ route, navigation }: Props) {
                 {availableDurations.map((dur) => {
                   const isSelected = dur === selectedDuration;
                   const label =
-                    dur >= 60
-                      ? dur % 60 === 0
-                        ? `${dur / 60}h`
-                        : `${Math.floor(dur / 60)}h ${dur % 60}m`
-                      : `${dur}m`;
+                    dur < 60
+                      ? `${dur} min`
+                      : dur % 60 === 0
+                        ? `${dur / 60} hr`
+                        : `${(dur / 60) % 1 === 0.5 ? dur / 60 : (dur / 60).toFixed(1)} hr`;
                   return (
                     <TouchableOpacity
                       key={dur}
