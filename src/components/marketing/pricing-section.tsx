@@ -129,18 +129,16 @@ export function PricingSection({ onOpenDemo }: PricingSectionProps) {
             <Check className="h-6 w-6" />
           </div>
           <h3 className="text-3xl font-extrabold text-gray-950 tracking-tight">
-            The EZBooker Performance Guarantee
+            The EZBooker Guarantee
           </h3>
           <p className="text-lg text-gray-700 max-w-xl">
-            If we cannot prove we can reduce your operational costs or increase
-            your utilization by at least 25%, we will give you{" "}
-            <strong>one year free</strong>. Guaranteed.
+            We&apos;ll cut your booking software costs by 25% or more, guaranteed.
           </p>
           <button
             onClick={onOpenDemo}
             className="bg-brand text-white px-8 py-3 rounded-full text-lg font-bold hover:bg-brand-dark transition-all transform hover:scale-[1.03]"
           >
-            Request an ROI Assessment
+            Book a Demo
           </button>
         </div>
       </div>
