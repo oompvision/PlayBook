@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.lg,
-    paddingBottom: spacing['5xl'],
+    paddingBottom: 120,
   },
   centered: {
     flex: 1,

@@ -9,13 +9,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import Svg, { Path } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useFacility } from '../lib/facility-context';
 import { useAuth } from '../lib/auth-context';
 import { supabase } from '../lib/supabase';
-import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
-import { BookIcon, BookingsIcon } from '../components/TabIcons';
 import { formatTimeInZone, getTodayInTimezone, formatDate } from '../lib/format';
 import { colors, spacing, typography } from '../theme';
 import type { MainTabParamList } from '../navigation/types';
@@ -23,23 +22,10 @@ import type { Booking, Bay } from '../types';
 
 type Props = NativeStackScreenProps<MainTabParamList, 'Home'>;
 
-function ChevronRight({ size, color }: { size: number; color: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M9 18l6-6-6-6"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
 export function HomeScreen({ navigation }: Props) {
   const { organization, selectedLocation, bays, facilityGroups, standaloneBays, isDynamic } = useFacility();
   const { user, profile } = useAuth();
+  const insets = useSafeAreaInsets();
   const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
   const [earliestDates, setEarliestDates] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -122,7 +108,6 @@ export function HomeScreen({ navigation }: Props) {
   const getDynamicDate = (): string => {
     if (!organization) return '';
     const today = getTodayInTimezone(organization.timezone);
-    // Check current hour in facility timezone — if past 10 PM, use tomorrow
     const nowInTz = new Intl.DateTimeFormat('en-US', {
       hour: 'numeric',
       hour12: false,
@@ -150,10 +135,12 @@ export function HomeScreen({ navigation }: Props) {
     );
   }
 
+  const [heroBooking, ...restBookings] = upcomingBookings;
+
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + 10 }]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
       {/* Header */}
@@ -166,73 +153,98 @@ export function HomeScreen({ navigation }: Props) {
             ? `${organization.name} — ${selectedLocation.name}`
             : organization.name}
         </Text>
-        {(selectedLocation?.address || organization.address) && (
-          <Text style={styles.address}>{selectedLocation?.address || organization.address}</Text>
-        )}
       </View>
 
-      {/* Quick Actions */}
-      <View style={styles.quickActions}>
-        <TouchableOpacity
-          style={styles.quickAction}
-          onPress={() => (navigation as any).navigate('Book')}
-        >
-          <BookIcon size={30} color={colors.primary} />
-          <Text style={styles.quickActionLabel}>Book Now</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.quickAction}
-          onPress={() => (navigation as any).navigate('Bookings')}
-        >
-          <BookingsIcon size={30} color={colors.primary} />
-          <Text style={styles.quickActionLabel}>My Bookings</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Upcoming for you */}
-      {upcomingBookings.length > 0 && (
+      {/* Hero: Next Up */}
+      {heroBooking && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Upcoming for you</Text>
-          {upcomingBookings.map((booking) => (
+          <Text style={styles.sectionTitle}>Next Up</Text>
+          <TouchableOpacity
+            style={styles.heroCard}
+            activeOpacity={0.9}
+            onPress={() =>
+              (navigation as any).navigate('Bookings', {
+                expandBookingId: heroBooking.id,
+              })
+            }
+          >
+            <Text style={styles.heroTitle}>
+              {heroBooking.bays?.name ?? 'Booking'}
+            </Text>
+            <Text style={styles.heroTime}>
+              {formatDate(heroBooking.date)} &middot;{' '}
+              {formatTimeInZone(heroBooking.start_time, organization.timezone)} –{' '}
+              {formatTimeInZone(heroBooking.end_time, organization.timezone)}
+            </Text>
+            <View style={styles.heroFooter}>
+              <Text style={styles.heroCode}>{heroBooking.confirmation_code}</Text>
+              <Text style={styles.heroView}>View →</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Remaining upcoming bookings */}
+          {restBookings.map((booking) => (
             <TouchableOpacity
               key={booking.id}
+              style={styles.upcomingCard}
+              activeOpacity={0.85}
               onPress={() =>
                 (navigation as any).navigate('Bookings', {
                   expandBookingId: booking.id,
                 })
               }
             >
-              <Card style={styles.upcomingCard}>
-                <View style={styles.upcomingRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.upcomingBay}>
-                      {booking.bays?.name ?? 'Booking'}
-                    </Text>
-                    <Text style={styles.upcomingDetails}>
-                      {formatDate(booking.date)} &middot;{' '}
-                      {formatTimeInZone(booking.start_time, organization.timezone)} –{' '}
-                      {formatTimeInZone(booking.end_time, organization.timezone)}
-                    </Text>
-                    <Text style={styles.upcomingCode}>{booking.confirmation_code}</Text>
-                  </View>
-                  <ChevronRight size={20} color={colors.mutedForeground} />
+              <View style={styles.upcomingRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.upcomingBay}>
+                    {booking.bays?.name ?? 'Booking'}
+                  </Text>
+                  <Text style={styles.upcomingDetails}>
+                    {formatDate(booking.date)} &middot;{' '}
+                    {formatTimeInZone(booking.start_time, organization.timezone)} –{' '}
+                    {formatTimeInZone(booking.end_time, organization.timezone)}
+                  </Text>
+                  <Text style={styles.upcomingCode}>{booking.confirmation_code}</Text>
                 </View>
-              </Card>
+                <Ionicons name="chevron-forward" size={20} color={colors.mutedForeground} />
+              </View>
             </TouchableOpacity>
           ))}
         </View>
       )}
 
+      {/* Quick Actions */}
+      <View style={styles.quickActions}>
+        <TouchableOpacity
+          style={styles.quickCard}
+          activeOpacity={0.85}
+          onPress={() => (navigation as any).navigate('Book')}
+        >
+          <Ionicons name="calendar" size={22} color="#166534" style={{ marginBottom: 6 }} />
+          <Text style={styles.quickText}>Book Now</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.quickCard}
+          activeOpacity={0.85}
+          onPress={() => (navigation as any).navigate('Bookings')}
+        >
+          <Ionicons name="list" size={22} color="#166534" style={{ marginBottom: 6 }} />
+          <Text style={styles.quickText}>Bookings</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Available to Book */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Available to Book</Text>
+        <Text style={styles.sectionTitle}>Book</Text>
         {loading ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
         ) : isDynamic ? (
-          <>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {facilityGroups.map((group) => (
               <TouchableOpacity
                 key={group.id}
+                style={styles.bookingCard}
+                activeOpacity={0.85}
                 onPress={() =>
                   (navigation as any).navigate('Book', {
                     date: getDynamicDate(),
@@ -240,22 +252,15 @@ export function HomeScreen({ navigation }: Props) {
                   })
                 }
               >
-                <Card style={styles.facilityCard}>
-                  <View style={styles.facilityRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.facilityName2}>{group.name}</Text>
-                      <View style={styles.facilityMeta}>
-                        <Badge label={`${group.bays.length} available`} variant="muted" />
-                      </View>
-                    </View>
-                    <ChevronRight size={20} color={colors.mutedForeground} />
-                  </View>
-                </Card>
+                <Text style={styles.bookingTitle}>{group.name}</Text>
+                <Text style={styles.bookingSub}>{group.bays.length} available</Text>
               </TouchableOpacity>
             ))}
             {standaloneBays.map((bay) => (
               <TouchableOpacity
                 key={bay.id}
+                style={styles.bookingCard}
+                activeOpacity={0.85}
                 onPress={() =>
                   (navigation as any).navigate('Book', {
                     date: getDynamicDate(),
@@ -263,27 +268,20 @@ export function HomeScreen({ navigation }: Props) {
                   })
                 }
               >
-                <Card style={styles.facilityCard}>
-                  <View style={styles.facilityRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.facilityName2}>{bay.name}</Text>
-                      {bay.resource_type && (
-                        <View style={styles.facilityMeta}>
-                          <Badge label={bay.resource_type} variant="muted" />
-                        </View>
-                      )}
-                    </View>
-                    <ChevronRight size={20} color={colors.mutedForeground} />
-                  </View>
-                </Card>
+                <Text style={styles.bookingTitle}>{bay.name}</Text>
+                {bay.resource_type && (
+                  <Text style={styles.bookingSub}>{bay.resource_type}</Text>
+                )}
               </TouchableOpacity>
             ))}
-          </>
-        ) : (
-          bays.length > 0 ? (
-            bays.map((bay) => (
+          </ScrollView>
+        ) : bays.length > 0 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {bays.map((bay) => (
               <TouchableOpacity
                 key={bay.id}
+                style={styles.bookingCard}
+                activeOpacity={0.85}
                 onPress={() =>
                   (navigation as any).navigate('Book', {
                     date: earliestDates[bay.id] || getTodayInTimezone(organization.timezone),
@@ -291,26 +289,17 @@ export function HomeScreen({ navigation }: Props) {
                   })
                 }
               >
-                <Card style={styles.facilityCard}>
-                  <View style={styles.facilityRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.facilityName2}>{bay.name}</Text>
-                      {bay.resource_type && (
-                        <View style={styles.facilityMeta}>
-                          <Badge label={bay.resource_type} variant="muted" />
-                        </View>
-                      )}
-                    </View>
-                    <ChevronRight size={20} color={colors.mutedForeground} />
-                  </View>
-                </Card>
+                <Text style={styles.bookingTitle}>{bay.name}</Text>
+                {bay.resource_type && (
+                  <Text style={styles.bookingSub}>{bay.resource_type}</Text>
+                )}
               </TouchableOpacity>
-            ))
-          ) : (
-            <Card>
-              <Text style={styles.emptyText}>No facilities available at this time.</Text>
-            </Card>
-          )
+            ))}
+          </ScrollView>
+        ) : (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyText}>No facilities available at this time.</Text>
+          </View>
         )}
       </View>
     </ScrollView>
@@ -320,11 +309,11 @@ export function HomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#F8FAF9',
   },
   content: {
-    padding: spacing.lg,
-    paddingBottom: spacing['5xl'],
+    paddingHorizontal: 20,
+    paddingBottom: 120,
   },
   centered: {
     flex: 1,
@@ -332,51 +321,72 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   header: {
-    marginBottom: spacing['2xl'],
-    paddingTop: spacing.sm,
+    marginBottom: 10,
   },
   greeting: {
-    ...typography.h2,
-    color: colors.foreground,
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#111',
   },
   facilityName: {
-    ...typography.h3,
-    color: colors.mutedForeground,
-    marginTop: spacing.xs,
-  },
-  address: {
-    ...typography.bodySmall,
-    color: colors.mutedForeground,
-    marginTop: spacing.xs,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    marginBottom: spacing['2xl'],
-  },
-  quickAction: {
-    flex: 1,
-    backgroundColor: colors.selectionBg,
-    borderRadius: 12,
-    padding: spacing.lg,
-    alignItems: 'center',
-  },
-  quickActionLabel: {
-    marginTop: spacing.sm,
-    ...typography.button,
-    color: colors.primary,
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 4,
   },
   section: {
-    marginBottom: spacing['2xl'],
+    marginTop: 25,
   },
   sectionTitle: {
-    ...typography.h3,
-    color: colors.foreground,
-    marginBottom: spacing.md,
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+    color: '#111',
   },
-  // Upcoming booking cards
+  /* Hero card */
+  heroCard: {
+    backgroundColor: colors.primary,
+    borderRadius: 20,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
+  heroTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: 'white',
+  },
+  heroTime: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 6,
+  },
+  heroFooter: {
+    marginTop: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  heroCode: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  heroView: {
+    color: 'white',
+    opacity: 0.8,
+  },
+  /* Upcoming booking cards (non-hero) */
   upcomingCard: {
-    marginBottom: spacing.sm,
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   upcomingRow: {
     flexDirection: 'row',
@@ -397,23 +407,52 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: '600',
   },
-  // Facility / Available to Book cards
-  facilityCard: {
-    marginBottom: spacing.sm,
-  },
-  facilityRow: {
+  /* Quick Actions */
+  quickActions: {
     flexDirection: 'row',
-    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 20,
+    gap: 12,
   },
-  facilityName2: {
-    ...typography.label,
-    color: colors.foreground,
+  quickCard: {
+    flex: 1,
+    backgroundColor: '#E7F5EC',
+    padding: 18,
+    borderRadius: 16,
+    alignItems: 'flex-start',
   },
-  facilityMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.xs,
+  quickText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#166534',
+  },
+  /* Horizontal booking cards */
+  bookingCard: {
+    width: 160,
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 16,
+    marginRight: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  bookingTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111',
+  },
+  bookingSub: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 6,
+  },
+  emptyCard: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 16,
   },
   emptyText: {
     ...typography.body,

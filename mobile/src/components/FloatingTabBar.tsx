@@ -1,0 +1,173 @@
+import React from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+} from 'react-native';
+import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
+import { colors } from '../theme/colors';
+
+const ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
+  Home: 'home',
+  Book: 'calendar',
+  Bookings: 'list',
+  Membership: 'star',
+  Account: 'person',
+};
+
+const ICON_MAP_OUTLINE: Record<string, keyof typeof Ionicons.glyphMap> = {
+  Home: 'home-outline',
+  Book: 'calendar-outline',
+  Bookings: 'list-outline',
+  Membership: 'star-outline',
+  Account: 'person-outline',
+};
+
+export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const insets = useSafeAreaInsets();
+  const activeIndex = state.index;
+
+  return (
+    <View style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+      <BlurView intensity={40} tint="light" style={styles.container}>
+        {state.routes.map((route, index) => {
+          const { options } = descriptors[route.key];
+          const label = options.tabBarLabel !== undefined
+            ? String(options.tabBarLabel)
+            : options.title !== undefined
+            ? options.title
+            : route.name;
+
+          const isActive = activeIndex === index;
+          const isBookTab = route.name === 'Book';
+
+          const onPress = () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            });
+
+            if (!isActive && !event.defaultPrevented) {
+              navigation.navigate(route.name, route.params);
+            }
+          };
+
+          // "Book" button — raised center circle
+          if (isBookTab) {
+            return (
+              <TouchableOpacity
+                key={route.key}
+                style={styles.bookTab}
+                onPress={onPress}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.primaryButton, isActive && styles.primaryButtonActive]}>
+                  <Ionicons name="add" size={26} color="white" />
+                </View>
+              </TouchableOpacity>
+            );
+          }
+
+          const iconName = isActive
+            ? (ICON_MAP[route.name] || 'ellipse')
+            : (ICON_MAP_OUTLINE[route.name] || 'ellipse-outline');
+
+          return (
+            <TouchableOpacity
+              key={route.key}
+              style={[styles.tab, isActive && styles.activeTab]}
+              onPress={onPress}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={iconName}
+                size={20}
+                color={isActive ? colors.primary : '#6B7280'}
+              />
+              <Text style={[styles.label, isActive && styles.activeLabel]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </BlurView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  wrapper: {
+    position: 'absolute',
+    bottom: 0,
+    width: '100%',
+    alignItems: 'center',
+  },
+  container: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    width: '92%',
+    borderRadius: 30,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    overflow: 'visible',
+    ...Platform.select({
+      android: {
+        backgroundColor: 'rgba(255,255,255,0.92)',
+      },
+    }),
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  activeTab: {
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  bookTab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -20,
+  },
+  label: {
+    fontSize: 10,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  activeLabel: {
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  primaryButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  primaryButtonActive: {
+    backgroundColor: '#15803D',
+  },
+});
