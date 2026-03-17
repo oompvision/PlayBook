@@ -1696,7 +1696,7 @@ export function DynamicAvailabilityWidget(
                               <span>Subtotal</span>
                               <span>{formatPrice(selectedSlot.price_cents)}</span>
                             </div>
-                            <div className="flex items-center justify-between text-xs text-teal-600 dark:text-teal-400 mb-1">
+                            <div className="flex items-center justify-between text-xs text-green-600 dark:text-green-400 mb-1">
                               <span className="flex items-center gap-1">
                                 <Crown className="h-3 w-3" />
                                 {label}
@@ -2279,7 +2279,7 @@ export function DynamicAvailabilityWidget(
                                         <span>Subtotal</span>
                                         <span>{formatPrice(selectedSlot.price_cents)}</span>
                                       </div>
-                                      <div className="flex justify-between text-sm text-teal-600 dark:text-teal-400">
+                                      <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
                                         <span className="flex items-center gap-1">
                                           <Crown className="h-3.5 w-3.5" />
                                           {disc.label}
@@ -2534,7 +2534,7 @@ export function DynamicAvailabilityWidget(
                               return (
                                 <>
                                   {disc.discountCents > 0 && (
-                                    <div className="flex items-center justify-between border-t pt-3 text-sm text-teal-600 dark:text-teal-400">
+                                    <div className="flex items-center justify-between border-t pt-3 text-sm text-green-600 dark:text-green-400">
                                       <span className="flex items-center gap-1">
                                         <Crown className="h-3.5 w-3.5" />
                                         {disc.label}
