@@ -54,12 +54,13 @@ export function MarketingNav({ onOpenDemo, onOpenContact, authInfo }: MarketingN
             <Image
               src="/logos/ezbooker-logo-light.svg"
               alt="EZBooker"
-              width={160}
-              height={36}
+              width={200}
+              height={45}
               priority
+              className="brightness-0 saturate-100 [filter:brightness(0)_saturate(100%)_invert(22%)_sepia(95%)_saturate(1200%)_hue-rotate(130deg)_brightness(92%)_contrast(100%)]"
             />
           </Link>
-          <div className="hidden md:flex items-center gap-8 text-sm font-medium text-gray-700">
+          <div className="hidden md:flex items-center gap-8 text-base font-medium text-gray-700">
             {navLinks.map((link) => (
               <a
                 key={link.href}
@@ -76,25 +77,25 @@ export function MarketingNav({ onOpenDemo, onOpenContact, authInfo }: MarketingN
         <div className="hidden md:flex items-center gap-3">
           <button
             onClick={onOpenContact}
-            className="text-sm font-medium text-gray-700 hover:text-brand transition-colors"
+            className="text-base font-medium text-gray-700 hover:text-brand transition-colors"
           >
             Contact Us
           </button>
           <button
             onClick={onOpenDemo}
-            className="bg-brand text-white px-5 py-2 rounded-full text-sm font-semibold hover:bg-brand-dark transition-colors"
+            className="bg-brand text-white px-6 py-2.5 rounded-full text-base font-semibold hover:bg-brand-dark transition-colors"
           >
             Book a Demo
           </button>
           {dashboardLink ? (
             <a href={dashboardLink}>
-              <span className="bg-gray-100 text-gray-900 px-5 py-2 rounded-full text-sm font-semibold hover:bg-gray-200 transition-colors inline-block">
+              <span className="bg-gray-100 text-gray-900 px-6 py-2.5 rounded-full text-base font-semibold hover:bg-gray-200 transition-colors inline-block">
                 Dashboard
               </span>
             </a>
           ) : (
             <Link href="/auth/admin-login">
-              <span className="bg-gray-100 text-gray-900 px-5 py-2 rounded-full text-sm font-semibold hover:bg-gray-200 transition-colors inline-block">
+              <span className="bg-gray-100 text-gray-900 px-6 py-2.5 rounded-full text-base font-semibold hover:bg-gray-200 transition-colors inline-block">
                 Log In
               </span>
             </Link>
@@ -119,7 +120,7 @@ export function MarketingNav({ onOpenDemo, onOpenContact, authInfo }: MarketingN
               <a
                 key={link.href}
                 href={link.href}
-                className="block text-sm font-medium text-gray-700 hover:text-brand py-2 transition-colors"
+                className="block text-base font-medium text-gray-700 hover:text-brand py-2 transition-colors"
                 onClick={() => setMobileOpen(false)}
               >
                 {link.label}
@@ -129,25 +130,25 @@ export function MarketingNav({ onOpenDemo, onOpenContact, authInfo }: MarketingN
             <div className="flex flex-col gap-2 pt-2">
               <button
                 onClick={() => { setMobileOpen(false); onOpenContact(); }}
-                className="w-full text-left text-sm font-medium text-gray-700 hover:text-brand py-2 transition-colors"
+                className="w-full text-left text-base font-medium text-gray-700 hover:text-brand py-2 transition-colors"
               >
                 Contact Us
               </button>
               <button
                 onClick={() => { setMobileOpen(false); onOpenDemo(); }}
-                className="w-full bg-brand text-white px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-brand-dark transition-colors"
+                className="w-full bg-brand text-white px-5 py-2.5 rounded-full text-base font-semibold hover:bg-brand-dark transition-colors"
               >
                 Book a Demo
               </button>
               {dashboardLink ? (
                 <a href={dashboardLink} className="w-full">
-                  <span className="block w-full text-center bg-gray-100 text-gray-900 px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-gray-200 transition-colors">
+                  <span className="block w-full text-center bg-gray-100 text-gray-900 px-5 py-2.5 rounded-full text-base font-semibold hover:bg-gray-200 transition-colors">
                     Dashboard
                   </span>
                 </a>
               ) : (
                 <Link href="/auth/admin-login" className="w-full">
-                  <span className="block w-full text-center bg-gray-100 text-gray-900 px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-gray-200 transition-colors">
+                  <span className="block w-full text-center bg-gray-100 text-gray-900 px-5 py-2.5 rounded-full text-base font-semibold hover:bg-gray-200 transition-colors">
                     Log In
                   </span>
                 </Link>
