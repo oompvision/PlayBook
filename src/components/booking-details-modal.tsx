@@ -31,6 +31,7 @@ import {
   ShieldCheck,
   ChevronDown,
   Settings2,
+  Crown,
 } from "lucide-react";
 
 type ModifiedFromInfo = {
@@ -1178,8 +1179,8 @@ export function BookingDetailsModal({
                   </div>
                 )}
                 {(booking.discount_cents ?? 0) > 0 && (
-                  <div className="flex items-center justify-between px-3 py-1 text-sm text-teal-600 dark:text-teal-400">
-                    <span>★ {booking.discount_description || "Member discount"}</span>
+                  <div className="flex items-center justify-between px-3 py-1 text-sm text-green-600 dark:text-green-400">
+                    <span className="flex items-center gap-1"><Crown className="h-3.5 w-3.5" /> {booking.discount_description || "Member discount"}</span>
                     <span>-${((booking.discount_cents ?? 0) / 100).toFixed(2)}</span>
                   </div>
                 )}
@@ -1200,8 +1201,8 @@ export function BookingDetailsModal({
                         {formatPrice(booking.total_price_cents)}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between px-3 py-1 text-sm text-teal-600 dark:text-teal-400">
-                      <span>★ {booking.discount_description || "Member discount"}</span>
+                    <div className="flex items-center justify-between px-3 py-1 text-sm text-green-600 dark:text-green-400">
+                      <span className="flex items-center gap-1"><Crown className="h-3.5 w-3.5" /> {booking.discount_description || "Member discount"}</span>
                       <span>-${((booking.discount_cents ?? 0) / 100).toFixed(2)}</span>
                     </div>
                   </>

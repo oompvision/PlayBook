@@ -227,11 +227,11 @@ export function EventDetailsModal({
                       <span>{formatPrice(event.priceCents)}</span>
                     </div>
                     <div className="flex items-center justify-between py-1 text-sm">
-                      <span className="flex items-center gap-1 text-teal-600 dark:text-teal-400">
+                      <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
                         <Crown className="h-3 w-3" />
                         {event.discountDescription || "Member discount"}
                       </span>
-                      <span className="text-teal-600 dark:text-teal-400">-{formatPrice(discount)}</span>
+                      <span className="text-green-600 dark:text-green-400">-{formatPrice(discount)}</span>
                     </div>
                     <div className="mt-1 flex items-center justify-between border-t pt-2 text-sm font-semibold">
                       <span>Total</span>

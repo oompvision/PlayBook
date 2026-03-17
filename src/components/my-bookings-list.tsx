@@ -353,7 +353,7 @@ export function MyBookingsList({
           {discount > 0 ? (
             <p className="mt-0.5 text-xs">
               <span className="text-muted-foreground line-through">{formatPrice(booking.total_price_cents)}</span>
-              <span className="ml-1 font-semibold text-teal-600 dark:text-teal-400">
+              <span className="ml-1 font-semibold text-green-600 dark:text-green-400">
                 <Crown className="mr-0.5 inline h-3 w-3" /> {formatPrice(total)}
               </span>
             </p>
@@ -482,7 +482,7 @@ export function MyBookingsList({
             discount > 0 ? (
               <p className="mt-0.5 text-xs">
                 <span className="text-muted-foreground line-through">{formatPrice(eventData.priceCents)}</span>
-                <span className="ml-1 font-semibold text-teal-600 dark:text-teal-400">
+                <span className="ml-1 font-semibold text-green-600 dark:text-green-400">
                   <Crown className="mr-0.5 inline h-3 w-3" /> {formatPrice(total)}
                 </span>
               </p>

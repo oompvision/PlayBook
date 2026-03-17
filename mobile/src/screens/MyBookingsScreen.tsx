@@ -500,7 +500,7 @@ export function MyBookingsScreen() {
                     <Text style={[styles.cardPriceStrike, isCancelled && styles.mutedText]}>
                       {formatPrice(booking.total_price_cents)}
                     </Text>
-                    <CrownIcon size={13} color={isCancelled ? colors.mutedForeground : '#0d9488'} />
+                    <CrownIcon size={13} color={isCancelled ? colors.mutedForeground : '#16a34a'} />
                     <Text style={[styles.cardPriceDiscount, isCancelled && styles.mutedText]}>
                       {formatPrice(total)}
                     </Text>
@@ -612,7 +612,7 @@ export function MyBookingsScreen() {
                 <Text style={[styles.cardPriceStrike, isCancelled && styles.mutedText]}>
                   {formatPrice(evt.price_cents)}
                 </Text>
-                <CrownIcon size={13} color={isCancelled ? colors.mutedForeground : '#0d9488'} />
+                <CrownIcon size={13} color={isCancelled ? colors.mutedForeground : '#16a34a'} />
                 <Text style={[styles.cardPriceDiscount, isCancelled && styles.mutedText]}>
                   {formatPrice(total)}
                 </Text>
@@ -793,7 +793,7 @@ const styles = StyleSheet.create({
   },
   cardPriceDiscount: {
     ...typography.bodySmall,
-    color: '#0d9488',
+    color: '#16a34a',
     fontWeight: '600',
   },
   cardPriceText: {

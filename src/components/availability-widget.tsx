@@ -2063,7 +2063,7 @@ export function AvailabilityWidget({
                                 <span>Subtotal</span>
                                 <span>${(totalCents / 100).toFixed(2)}</span>
                               </div>
-                              <div className="flex items-center justify-between text-xs text-teal-600 dark:text-teal-400 mb-1">
+                              <div className="flex items-center justify-between text-xs text-green-600 dark:text-green-400 mb-1">
                                 <span className="flex items-center gap-1">
                                   <Crown className="h-3 w-3" />
                                   {label}
@@ -2299,7 +2299,7 @@ export function AvailabilityWidget({
                     <p className="text-xs text-muted-foreground">
                       Total: ${(calcDiscount(totalCents).finalCents / 100).toFixed(2)}
                       {calcDiscount(totalCents).discountCents > 0 && (
-                        <span className="ml-1 text-teal-600 dark:text-teal-400">(member price)</span>
+                        <span className="ml-1 text-green-600 dark:text-green-400">(member price)</span>
                       )}
                       {selectedBayObj && eligibleBays.length > 1 && (
                         <> &middot; {selectedBayObj.name}</>
@@ -2674,7 +2674,7 @@ export function AvailabilityWidget({
                             return (
                               <>
                                 {disc.discountCents > 0 && (
-                                  <div className="mb-1 flex items-center justify-between text-sm text-teal-600 dark:text-teal-400">
+                                  <div className="mb-1 flex items-center justify-between text-sm text-green-600 dark:text-green-400">
                                     <span className="flex items-center gap-1">
                                       <Crown className="h-3.5 w-3.5" />
                                       {disc.label}
@@ -2999,7 +2999,7 @@ export function AvailabilityWidget({
                               {(() => {
                                 const disc = calcDiscount(totalCents);
                                 return disc.discountCents > 0 ? (
-                                  <div className="mb-1 flex items-center justify-between text-sm text-teal-600 dark:text-teal-400">
+                                  <div className="mb-1 flex items-center justify-between text-sm text-green-600 dark:text-green-400">
                                     <span className="flex items-center gap-1">
                                       <Crown className="h-3.5 w-3.5" />
                                       {disc.label}
@@ -3246,7 +3246,7 @@ export function AvailabilityWidget({
                               return (
                                 <>
                                   {disc.discountCents > 0 && (
-                                    <div className="flex items-center justify-between border-t pt-3 text-sm text-teal-600 dark:text-teal-400">
+                                    <div className="flex items-center justify-between border-t pt-3 text-sm text-green-600 dark:text-green-400">
                                       <span className="flex items-center gap-1">
                                         <Crown className="h-3.5 w-3.5" />
                                         {disc.label}

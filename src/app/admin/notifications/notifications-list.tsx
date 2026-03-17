@@ -45,7 +45,7 @@ const TYPE_COLORS: Record<string, string> = {
   booking_modified: "bg-blue-100 text-blue-600",
   booking_reminder_48hr: "bg-amber-100 text-amber-600",
   cancellation_window_closed: "bg-orange-100 text-orange-600",
-  new_customer_signup: "bg-teal-100 text-teal-600",
+  new_customer_signup: "bg-cyan-100 text-cyan-600",
   guest_booking_created: "bg-indigo-100 text-indigo-600",
   admin_daily_digest: "bg-gray-100 text-gray-600",
 };

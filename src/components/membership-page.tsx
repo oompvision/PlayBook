@@ -163,7 +163,7 @@ export function MembershipPage({
       {isAuthenticated && (
         <div className="flex justify-center">
           {isMember ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-100 px-4 py-1.5 text-sm font-medium text-teal-800 dark:bg-teal-900/30 dark:text-teal-300">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-4 py-1.5 text-sm font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300">
               <Crown className="h-4 w-4" />
               {isCancelledButActive
                 ? "Member (until period end)"
@@ -343,7 +343,7 @@ export function MembershipPage({
               <div className="text-gray-500 dark:text-gray-400">
                 Guest: {guestWindow} days
               </div>
-              <div className="font-medium text-teal-600 dark:text-teal-400">
+              <div className="font-medium text-green-600 dark:text-green-400">
                 Member: {memberWindow} days
               </div>
             </div>
@@ -365,7 +365,7 @@ export function MembershipPage({
                 <div className="text-gray-500 dark:text-gray-400">
                   Guest: Full price
                 </div>
-                <div className="font-medium text-teal-600 dark:text-teal-400">
+                <div className="font-medium text-green-600 dark:text-green-400">
                   Member: {discountLabel} off
                 </div>
               </div>
@@ -385,7 +385,7 @@ export function MembershipPage({
             </div>
             <div className="text-right text-sm">
               <div className="text-gray-500 dark:text-gray-400">Guest: —</div>
-              <div className="font-medium text-teal-600 dark:text-teal-400">
+              <div className="font-medium text-green-600 dark:text-green-400">
                 Member: <Check className="inline h-4 w-4" />
               </div>
             </div>
