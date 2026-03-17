@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,6 @@ import {
   StyleSheet,
   Platform,
 } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-} from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -36,48 +31,11 @@ const ICON_MAP_OUTLINE: Record<string, keyof typeof Ionicons.glyphMap> = {
 
 export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
-  const tabCount = state.routes.length;
   const activeIndex = state.index;
-
-  // Find the index of the "Book" tab (it may shift if Membership is toggled)
-  const bookTabIndex = state.routes.findIndex((r) => r.name === 'Book');
-
-  // Animated pill indicator
-  const translateX = useSharedValue(0);
-
-  useEffect(() => {
-    // Skip indicator animation for the Book tab (it has its own raised button)
-    if (activeIndex === bookTabIndex) return;
-
-    // Calculate position based on tab index
-    translateX.value = withSpring(activeIndex * (1 / tabCount) * 100, {
-      damping: 15,
-      stiffness: 120,
-    });
-  }, [activeIndex, tabCount, bookTabIndex]);
-
-  const indicatorStyle = useAnimatedStyle(() => ({
-    left: `${translateX.value}%` as any,
-  }));
 
   return (
     <View style={[styles.wrapper, { paddingBottom: Math.max(insets.bottom, 10) }]}>
       <BlurView intensity={40} tint="light" style={styles.container}>
-        {/* Active pill indicator */}
-        {activeIndex !== bookTabIndex && (
-          <Animated.View
-            style={[
-              styles.indicator,
-              {
-                width: `${(1 / tabCount) * 100}%` as any,
-              },
-              indicatorStyle,
-            ]}
-          >
-            <View style={styles.indicatorInner} />
-          </Animated.View>
-        )}
-
         {state.routes.map((route, index) => {
           const { options } = descriptors[route.key];
           const label = options.tabBarLabel !== undefined
@@ -126,7 +84,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
           return (
             <TouchableOpacity
               key={route.key}
-              style={styles.tab}
+              style={[styles.tab, isActive && styles.activeTab]}
               onPress={onPress}
               activeOpacity={0.8}
             >
@@ -158,10 +116,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     width: '92%',
     borderRadius: 30,
-    paddingVertical: 10,
+    paddingVertical: 6,
     paddingHorizontal: 6,
     overflow: 'visible',
-    // Fallback background for Android (BlurView may not work as well)
     ...Platform.select({
       android: {
         backgroundColor: 'rgba(255,255,255,0.92)',
@@ -172,7 +129,11 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 2,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  activeTab: {
+    backgroundColor: 'rgba(22,163,74,0.12)',
   },
   bookTab: {
     flex: 1,
@@ -189,19 +150,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '600',
   },
-  indicator: {
-    position: 'absolute',
-    top: 4,
-    bottom: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  indicatorInner: {
-    height: 40,
-    width: '80%',
-    backgroundColor: 'rgba(22,163,74,0.12)',
-    borderRadius: 20,
-  },
   primaryButton: {
     width: 48,
     height: 48,
@@ -209,7 +157,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    // Shadow for elevated look
     shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
