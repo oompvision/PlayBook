@@ -212,7 +212,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.lg,
-    paddingBottom: spacing['5xl'],
+    paddingBottom: 120,
   },
   sectionTitle: {
     ...typography.h3,

@@ -696,7 +696,7 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: spacing.lg,
-    paddingBottom: spacing['5xl'],
+    paddingBottom: 120,
   },
   sectionHeader: {
     ...typography.h3,
