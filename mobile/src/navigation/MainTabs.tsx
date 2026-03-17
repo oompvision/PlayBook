@@ -36,14 +36,14 @@ export function MainTabs() {
         options={{ headerShown: false }}
       />
       <Tab.Screen
-        name="Book"
-        component={BookingScreen}
-        options={{ title: 'Book', tabBarLabel: 'Book' }}
-      />
-      <Tab.Screen
         name="Bookings"
         component={MyBookingsScreen}
         options={{ title: 'Bookings' }}
+      />
+      <Tab.Screen
+        name="Book"
+        component={BookingScreen}
+        options={{ title: 'Book', tabBarLabel: 'Book' }}
       />
       {membershipEnabled && (
         <Tab.Screen

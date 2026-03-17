@@ -49,8 +49,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
     // Skip indicator animation for the Book tab (it has its own raised button)
     if (activeIndex === bookTabIndex) return;
 
-    // Calculate position — we need to account for the Book tab taking space
-    // The indicator slides across non-book tabs
+    // Calculate position based on tab index
     translateX.value = withSpring(activeIndex * (1 / tabCount) * 100, {
       damping: 15,
       stiffness: 120,
@@ -104,19 +103,18 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
             }
           };
 
-          // "Book" button — compact raised circle
+          // "Book" button — raised center circle
           if (isBookTab) {
             return (
               <TouchableOpacity
                 key={route.key}
-                style={styles.tab}
+                style={styles.bookTab}
                 onPress={onPress}
                 activeOpacity={0.8}
               >
                 <View style={[styles.primaryButton, isActive && styles.primaryButtonActive]}>
-                  <Ionicons name="add" size={22} color="white" />
+                  <Ionicons name="add" size={26} color="white" />
                 </View>
-                <Text style={[styles.label, { color: colors.primary }]}>Book</Text>
               </TouchableOpacity>
             );
           }
@@ -157,11 +155,12 @@ const styles = StyleSheet.create({
   },
   container: {
     flexDirection: 'row',
-    width: '90%',
+    alignItems: 'flex-end',
+    width: '92%',
     borderRadius: 30,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    overflow: 'hidden',
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    overflow: 'visible',
     // Fallback background for Android (BlurView may not work as well)
     ...Platform.select({
       android: {
@@ -173,6 +172,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 2,
+  },
+  bookTab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -20,
   },
   label: {
     fontSize: 10,
@@ -185,24 +191,30 @@ const styles = StyleSheet.create({
   },
   indicator: {
     position: 'absolute',
-    top: 6,
-    bottom: 6,
+    top: 4,
+    bottom: 4,
     justifyContent: 'center',
     alignItems: 'center',
   },
   indicatorInner: {
     height: 40,
     width: '80%',
-    backgroundColor: 'rgba(22,163,74,0.15)',
+    backgroundColor: 'rgba(22,163,74,0.12)',
     borderRadius: 20,
   },
   primaryButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    // Shadow for elevated look
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   primaryButtonActive: {
     backgroundColor: '#15803D',
