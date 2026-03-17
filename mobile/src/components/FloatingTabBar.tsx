@@ -104,7 +104,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
             }
           };
 
-          // Raised "Book" button
+          // "Book" button — compact raised circle
           if (isBookTab) {
             return (
               <TouchableOpacity
@@ -114,8 +114,9 @@ export function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarP
                 activeOpacity={0.8}
               >
                 <View style={[styles.primaryButton, isActive && styles.primaryButtonActive]}>
-                  <Ionicons name="add" size={24} color="white" />
+                  <Ionicons name="add" size={22} color="white" />
                 </View>
+                <Text style={[styles.label, { color: colors.primary }]}>Book</Text>
               </TouchableOpacity>
             );
           }
@@ -196,20 +197,14 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   primaryButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -30,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 5,
   },
   primaryButtonActive: {
-    backgroundColor: '#15803D', // slightly darker when active
+    backgroundColor: '#15803D',
   },
 });
