@@ -237,13 +237,17 @@ export function AdminSidebar({
     ? { label: "Schedule Rules", href: "/admin/schedule/rules", icon: CalendarCog }
     : { label: "Schedule", href: "/admin/schedule", icon: Calendar };
 
-  const eventsItem: NavItem[] = eventsEnabled
-    ? [{ label: "Events", href: "/admin/events", icon: CalendarDays }]
+  const eventsItems: NavItem[] = eventsEnabled
+    ? [
+        { label: "Events", href: "/admin/events", icon: CalendarDays },
+        { label: "Event Calendar", href: "/admin/events/calendar", icon: Calendar },
+        { label: "Event Templates", href: "/admin/events/templates", icon: LayoutTemplate },
+      ]
     : [];
 
   const scheduleChildren: NavItem[] = isDynamic
-    ? [...dynamicScheduleSubItems, ...eventsItem]
-    : [...slotBasedScheduleSubItems, ...eventsItem];
+    ? [...dynamicScheduleSubItems, ...eventsItems]
+    : [...slotBasedScheduleSubItems, ...eventsItems];
 
   // All hrefs that count as "schedule section" for auto-open
   const allScheduleHrefs = [scheduleParent.href, ...scheduleChildren.map((c) => c.href)];

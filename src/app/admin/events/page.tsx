@@ -269,11 +269,11 @@ export default async function EventsPage({
             Templates
           </Link>
           <Link
-            href={`/admin/events/create${locationId ? `?location=${locationId}` : ""}`}
+            href={`/admin/events/calendar${locationId ? `?location=${locationId}` : ""}`}
             className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700"
           >
-            <Plus className="h-4 w-4" />
-            Create Event
+            <CalendarDays className="h-4 w-4" />
+            Event Calendar
           </Link>
         </div>
       </div>

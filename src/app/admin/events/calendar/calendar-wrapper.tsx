@@ -1,0 +1,133 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { EventCalendar } from "@/components/admin/event-calendar";
+import { EventDayModal } from "@/components/admin/event-day-modal";
+
+type EventDaySummary = {
+  id: string;
+  name: string;
+  templateId: string | null;
+  color: string;
+  status: string;
+};
+
+type EventTemplateSummary = {
+  id: string;
+  name: string;
+  color: string;
+  start_time: string | null;
+  end_time: string | null;
+  bay_ids: string[];
+};
+
+type DayScheduleInfo = {
+  id: string;
+  name: string;
+  entryCount: number;
+};
+
+type BayInfo = {
+  id: string;
+  name: string;
+};
+
+type ApplyResult = {
+  success: boolean;
+  count: number;
+  error?: string;
+};
+
+type EventCalendarWrapperProps = {
+  today: string;
+  timezone: string;
+  orgId: string;
+  eventMap: Record<string, EventDaySummary[]>;
+  eventTemplates: EventTemplateSummary[];
+  daySchedules: DayScheduleInfo[];
+  bays: BayInfo[];
+  onApplyEventTemplate: (
+    templateId: string,
+    bayIds: string[],
+    dates: string[],
+    status: "draft" | "published"
+  ) => Promise<ApplyResult>;
+  onApplyDaySchedule: (
+    dayScheduleId: string,
+    dates: string[],
+    status: "draft" | "published"
+  ) => Promise<ApplyResult>;
+  onUpdateEvent: (
+    eventId: string,
+    updates: { start_time?: string; end_time?: string; capacity?: number; price_cents?: number }
+  ) => Promise<{ success: boolean; error?: string }>;
+  onDeleteEvent: (eventId: string) => Promise<{ success: boolean; error?: string }>;
+  onAddEventFromTemplate: (
+    templateId: string,
+    date: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  onSaveDaySchedule: (
+    date: string,
+    name: string
+  ) => Promise<{ success: boolean; error?: string }>;
+};
+
+export function EventCalendarWrapper({
+  today,
+  timezone,
+  orgId,
+  eventMap,
+  eventTemplates,
+  daySchedules,
+  bays,
+  onApplyEventTemplate,
+  onApplyDaySchedule,
+  onUpdateEvent,
+  onDeleteEvent,
+  onAddEventFromTemplate,
+  onSaveDaySchedule,
+}: EventCalendarWrapperProps) {
+  const [viewingDate, setViewingDate] = useState<string | null>(null);
+  const router = useRouter();
+
+  return (
+    <>
+      <EventCalendar
+        today={today}
+        timezone={timezone}
+        orgId={orgId}
+        eventMap={eventMap}
+        eventTemplates={eventTemplates}
+        daySchedules={daySchedules}
+        bays={bays}
+        onApplyEventTemplate={onApplyEventTemplate}
+        onApplyDaySchedule={onApplyDaySchedule}
+        onOpenDay={setViewingDate}
+      />
+
+      {viewingDate && (
+        <EventDayModal
+          date={viewingDate}
+          orgId={orgId}
+          timezone={timezone}
+          eventTemplates={eventTemplates.map((t) => ({
+            id: t.id,
+            name: t.name,
+            color: t.color,
+            start_time: t.start_time,
+            end_time: t.end_time,
+          }))}
+          onClose={() => {
+            setViewingDate(null);
+            router.refresh();
+          }}
+          onUpdateEvent={onUpdateEvent}
+          onDeleteEvent={onDeleteEvent}
+          onAddEventFromTemplate={onAddEventFromTemplate}
+          onSaveDaySchedule={onSaveDaySchedule}
+        />
+      )}
+    </>
+  );
+}
