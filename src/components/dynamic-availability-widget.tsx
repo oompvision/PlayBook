@@ -1956,10 +1956,7 @@ export function DynamicAvailabilityWidget(
 
             {/* Within cancellation window warning */}
             {isWithinCancellationWindow && (
-              <div className="text-center space-y-0.5">
-                <p className="text-xs text-muted-foreground">Within {cancellationWindowHours} hours</p>
-                <p className="text-xs text-red-600 dark:text-red-400">✕ Refunds ✕ Modifications</p>
-              </div>
+              <p className="text-center text-xs text-muted-foreground">Within {cancellationWindowHours} hours, no refunds or modifications</p>
             )}
 
             {/* Error display */}
@@ -2317,10 +2314,7 @@ export function DynamicAvailabilityWidget(
 
                           {/* Within cancellation window warning */}
                           {isWithinCancellationWindow && (
-                            <div className="space-y-0.5">
-                              <p className="text-sm text-muted-foreground">Within {cancellationWindowHours} hours</p>
-                              <p className="text-sm text-red-600 dark:text-red-400">✕ Refunds ✕ Modifications</p>
-                            </div>
+                            <p className="text-sm text-muted-foreground">Within {cancellationWindowHours} hours, no refunds or modifications</p>
                           )}
 
                           {/* User info */}
