@@ -10,7 +10,7 @@ export interface Organization {
   address: string | null;
   phone: string | null;
   min_booking_lead_minutes: number;
-  scheduling_type: 'slot_based' | 'dynamic';
+  scheduling_type: 'slot_based' | 'dynamic' | 'events_only';
   bookable_window_days: number | null;
   membership_tiers_enabled: boolean;
   guest_booking_window_days: number | null;
