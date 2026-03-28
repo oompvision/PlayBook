@@ -98,7 +98,7 @@ export default async function EventTemplatesPage({
     const config = {
       capacity: parseInt(formData.get("capacity") as string, 10) || 12,
       price_cents: Math.round((parseFloat(formData.get("price") as string) || 0) * 100),
-      members_only: formData.get("members_only") === "true",
+      members_only: formData.has("members_only"),
       member_enrollment_days_before: formData.get("member_enrollment_days_before")
         ? parseInt(formData.get("member_enrollment_days_before") as string, 10)
         : null,
@@ -144,7 +144,7 @@ export default async function EventTemplatesPage({
     const config = {
       capacity: parseInt(formData.get("capacity") as string, 10) || 12,
       price_cents: Math.round((parseFloat(formData.get("price") as string) || 0) * 100),
-      members_only: formData.get("members_only") === "true",
+      members_only: formData.has("members_only"),
       member_enrollment_days_before: formData.get("member_enrollment_days_before")
         ? parseInt(formData.get("member_enrollment_days_before") as string, 10)
         : null,
@@ -245,25 +245,20 @@ export default async function EventTemplatesPage({
           </div>
 
           {/* Members Only */}
-          <div className="flex items-center gap-3 sm:col-span-2">
-            <label className="relative inline-flex cursor-pointer items-center">
+          <div className="sm:col-span-2">
+            <label className="flex cursor-pointer items-center gap-3">
               <input
                 type="checkbox"
-                name="members_only_checkbox"
+                name="members_only"
+                value="true"
                 defaultChecked={defaults?.members_only || false}
-                className="peer sr-only"
-                onChange={(e) => {
-                  const hidden = e.target.closest("form")?.querySelector<HTMLInputElement>("input[name=members_only]");
-                  if (hidden) hidden.value = e.target.checked ? "true" : "false";
-                }}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
-              <div className="h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:ring-3 peer-focus:ring-blue-500/10 dark:bg-gray-700" />
+              <div>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Members Only</span>
+                <p className="text-xs text-gray-400 dark:text-gray-500">Restrict this event to members</p>
+              </div>
             </label>
-            <input type="hidden" name="members_only" defaultValue={defaults?.members_only ? "true" : "false"} />
-            <div>
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Members Only</span>
-              <p className="text-xs text-gray-400 dark:text-gray-500">Restrict this event to members</p>
-            </div>
           </div>
 
           {/* Color Picker */}
