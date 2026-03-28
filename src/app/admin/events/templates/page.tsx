@@ -49,6 +49,7 @@ export default async function EventTemplatesPage({
     edit?: string;
     editSchedule?: string;
     location?: string;
+    tab?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -216,7 +217,7 @@ export default async function EventTemplatesPage({
     await supabase.from("event_day_schedules").update({ name }).eq("id", id);
     revalidatePath("/admin/events/templates");
     revalidatePath("/admin/events/calendar");
-    redirect("/admin/events/templates?saved=true");
+    redirect("/admin/events/templates?tab=schedules&saved=true");
   }
 
   async function deleteDaySchedule(formData: FormData) {
@@ -226,7 +227,7 @@ export default async function EventTemplatesPage({
     await supabase.from("event_day_schedules").delete().eq("id", id);
     revalidatePath("/admin/events/templates");
     revalidatePath("/admin/events/calendar");
-    redirect("/admin/events/templates");
+    redirect("/admin/events/templates?tab=schedules");
   }
 
   async function deleteDayScheduleEntry(formData: FormData) {
@@ -236,7 +237,7 @@ export default async function EventTemplatesPage({
     await supabase.from("event_day_schedule_entries").delete().eq("id", entryId);
     revalidatePath("/admin/events/templates");
     revalidatePath("/admin/events/calendar");
-    redirect(`/admin/events/templates?edit=${formData.get("schedule_id")}`);
+    redirect(`/admin/events/templates?tab=schedules&editSchedule=${formData.get("schedule_id")}`);
   }
 
   async function updateDayScheduleEntry(formData: FormData) {
@@ -251,7 +252,7 @@ export default async function EventTemplatesPage({
       .eq("id", entryId);
     revalidatePath("/admin/events/templates");
     revalidatePath("/admin/events/calendar");
-    redirect(`/admin/events/templates?edit=${formData.get("schedule_id")}&saved=true`);
+    redirect(`/admin/events/templates?tab=schedules&editSchedule=${formData.get("schedule_id")}&saved=true`);
   }
 
   async function addDayScheduleEntry(formData: FormData) {
@@ -280,7 +281,57 @@ export default async function EventTemplatesPage({
     });
     revalidatePath("/admin/events/templates");
     revalidatePath("/admin/events/calendar");
-    redirect(`/admin/events/templates?edit=${scheduleId}&saved=true`);
+    redirect(`/admin/events/templates?tab=schedules&editSchedule=${scheduleId}&saved=true`);
+  }
+
+  async function createDaySchedule(formData: FormData) {
+    "use server";
+    const org = await getOrg();
+    if (!org) return;
+    const supabase = await createClient();
+    const locationId = await resolveLocationId(org.id, null);
+
+    const name = formData.get("name") as string;
+    if (!name?.trim()) return;
+
+    // Create the day schedule
+    const { data: ds, error: dsError } = await supabase
+      .from("event_day_schedules")
+      .insert({ org_id: org.id, location_id: locationId, name: name.trim() })
+      .select("id")
+      .single();
+
+    if (dsError || !ds) {
+      redirect(`/admin/events/templates?tab=schedules&error=${encodeURIComponent(dsError?.message || "Failed to create")}`);
+      return;
+    }
+
+    // Parse entries from form (entry_0_template_id, entry_0_start_time, entry_0_end_time, etc.)
+    const entries: { template_id: string; start_time: string; end_time: string }[] = [];
+    for (let i = 0; i < 20; i++) {
+      const templateId = formData.get(`entry_${i}_template_id`) as string;
+      const startTime = formData.get(`entry_${i}_start_time`) as string;
+      const endTime = formData.get(`entry_${i}_end_time`) as string;
+      if (templateId && startTime && endTime) {
+        entries.push({ template_id: templateId, start_time: startTime, end_time: endTime });
+      }
+    }
+
+    if (entries.length > 0) {
+      await supabase.from("event_day_schedule_entries").insert(
+        entries.map((e, i) => ({
+          day_schedule_id: ds.id,
+          event_template_id: e.template_id,
+          sort_order: i,
+          start_time: e.start_time,
+          end_time: e.end_time,
+        }))
+      );
+    }
+
+    revalidatePath("/admin/events/templates");
+    revalidatePath("/admin/events/calendar");
+    redirect(`/admin/events/templates?tab=schedules&saved=true`);
   }
 
   const inputClass =
@@ -416,6 +467,8 @@ export default async function EventTemplatesPage({
     );
   }
 
+  const activeTab = params.tab === "schedules" || params.editSchedule ? "schedules" : "templates";
+
   return (
     <div className="mx-auto max-w-[1100px] space-y-6">
       {/* Header */}
@@ -429,13 +482,43 @@ export default async function EventTemplatesPage({
           </Link>
           <div>
             <h1 className="text-2xl font-semibold text-gray-800 dark:text-white/90">
-              Event Templates
+              Templates
             </h1>
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Save reusable event configurations for the event calendar.
+              Manage event templates and day schedule templates.
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 rounded-lg border border-gray-200 bg-gray-100 p-1 dark:border-gray-700 dark:bg-gray-800">
+        <a
+          href="/admin/events/templates"
+          className={
+            activeTab === "templates"
+              ? "flex-1 rounded-md bg-white px-4 py-2 text-center text-sm font-medium text-gray-800 shadow-sm dark:bg-gray-700 dark:text-white"
+              : "flex-1 rounded-md px-4 py-2 text-center text-sm font-medium text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+          }
+        >
+          <span className="flex items-center justify-center gap-1.5">
+            <LayoutTemplate className="h-4 w-4" />
+            Event Templates
+          </span>
+        </a>
+        <a
+          href="/admin/events/templates?tab=schedules"
+          className={
+            activeTab === "schedules"
+              ? "flex-1 rounded-md bg-white px-4 py-2 text-center text-sm font-medium text-gray-800 shadow-sm dark:bg-gray-700 dark:text-white"
+              : "flex-1 rounded-md px-4 py-2 text-center text-sm font-medium text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+          }
+        >
+          <span className="flex items-center justify-center gap-1.5">
+            <CalendarClock className="h-4 w-4" />
+            Day Schedule Templates
+          </span>
+        </a>
       </div>
 
       {/* Alerts */}
@@ -445,6 +528,9 @@ export default async function EventTemplatesPage({
         </div>
       )}
       <SavedToast message="Template saved." />
+
+      {/* ─── Event Templates Tab ─── */}
+      {activeTab === "templates" && <>
 
       {/* Edit form */}
       {editingTemplate && (
@@ -564,6 +650,11 @@ export default async function EventTemplatesPage({
         </div>
       )}
 
+      </>}
+
+      {/* ─── Day Schedule Templates Tab ─── */}
+      {activeTab === "schedules" && <>
+
       {/* ─── Day Schedules Section ─── */}
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
         <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
@@ -605,7 +696,7 @@ export default async function EventTemplatesPage({
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <a href={`/admin/events/templates?editSchedule=${ds.id}`}>
+                    <a href={`/admin/events/templates?tab=schedules&editSchedule=${ds.id}`}>
                       <button className="rounded-lg border border-gray-300 bg-white p-2 text-gray-500 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:bg-gray-800">
                         <Pencil className="h-4 w-4" />
                       </button>
@@ -719,7 +810,7 @@ export default async function EventTemplatesPage({
                     </div>
 
                     <div className="mt-3">
-                      <a href="/admin/events/templates" className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300">
+                      <a href="/admin/events/templates?tab=schedules" className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300">
                         ← Done editing
                       </a>
                     </div>
@@ -730,6 +821,86 @@ export default async function EventTemplatesPage({
           </div>
         )}
       </div>
+
+      {/* Create New Day Schedule */}
+      {!editingDayScheduleId && (
+        <div className="rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+          <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
+            <div className="flex items-center gap-2">
+              <Plus className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+              <h2 className="font-semibold text-gray-800 dark:text-white/90">
+                New Day Schedule
+              </h2>
+            </div>
+          </div>
+          <div className="p-6">
+            <form action={createDaySchedule} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className={labelClass}>Schedule Name *</label>
+                <input
+                  name="name"
+                  required
+                  placeholder="e.g. Monday & Wednesday"
+                  className={inputClass + " placeholder:text-gray-400 dark:placeholder:text-white/30"}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className={labelClass}>Events</label>
+                <p className="text-xs text-gray-400 dark:text-gray-500">
+                  Add events to this schedule. Select a template and set the time for each.
+                </p>
+                {templates && templates.length > 0 ? (
+                  <div className="space-y-2" id="new-schedule-entries">
+                    {[0, 1, 2, 3, 4].map((i) => (
+                      <div key={i} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-900">
+                        <select
+                          name={`entry_${i}_template_id`}
+                          className="h-8 flex-1 rounded border border-gray-300 px-2 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                        >
+                          <option value="">{i === 0 ? "Select template..." : "(empty — skip)"}</option>
+                          {templates.map((t) => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                          ))}
+                        </select>
+                        <input
+                          name={`entry_${i}_start_time`}
+                          type="time"
+                          className="h-8 w-24 rounded border border-gray-300 px-2 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                        />
+                        <span className="text-xs text-gray-400">–</span>
+                        <input
+                          name={`entry_${i}_end_time`}
+                          type="time"
+                          className="h-8 w-24 rounded border border-gray-300 px-2 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                        />
+                      </div>
+                    ))}
+                    <p className="text-xs text-gray-400">
+                      Fill in at least one event. Empty rows are skipped. You can add more after creating.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400">
+                    Create event templates first before creating a day schedule.
+                  </p>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={!templates || templates.length === 0}
+                className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:opacity-50"
+              >
+                <Plus className="h-4 w-4" />
+                Create Day Schedule
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      </>}
     </div>
   );
 }
