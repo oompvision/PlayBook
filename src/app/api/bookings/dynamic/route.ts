@@ -21,10 +21,10 @@ const bookingSchema = z.object({
   start_time: z.string().min(1),
   end_time: z.string().min(1),
   price_cents: z.number().int().min(0),
-  notes: z.string().max(1000).optional(),
-  location_id: z.string().uuid().optional(),
-  discount_cents: z.number().int().min(0).optional(),
-  discount_description: z.string().max(200).optional(),
+  notes: z.string().max(1000).nullish(),
+  location_id: z.string().uuid().nullish(),
+  discount_cents: z.number().int().min(0).nullish(),
+  discount_description: z.string().max(200).nullish(),
 });
 
 /**

@@ -6,11 +6,11 @@ const leadSchema = z.object({
   type: z.enum(["contact", "demo"]),
   name: z.string().min(1).max(200),
   email: z.string().email().max(320),
-  phone: z.string().max(30).optional(),
-  company: z.string().max(200).optional(),
-  facilityType: z.string().max(100).optional(),
-  locations: z.string().max(20).optional(),
-  message: z.string().max(2000).optional(),
+  phone: z.string().max(30).nullish(),
+  company: z.string().max(200).nullish(),
+  facilityType: z.string().max(100).nullish(),
+  locations: z.string().max(20).nullish(),
+  message: z.string().max(2000).nullish(),
 });
 
 const resend = process.env.RESEND_API_KEY
