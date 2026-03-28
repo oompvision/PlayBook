@@ -1424,8 +1424,9 @@ export function DynamicAvailabilityWidget(
         </div>
       )}
 
-      {/* Play for [duration] — hidden for events_only */}
-      {!eventsOnly && <div className="surface-1 rounded-xl bg-card px-4 py-3">
+      {/* Play for [duration] + Available Times — hidden for events_only */}
+      {!eventsOnly && <>
+      <div className="surface-1 rounded-xl bg-card px-4 py-3">
         <p className="mb-2 text-sm font-medium text-foreground">
           {hasMultipleOptions ? "3" : "2"}. Play for {formatDuration(selectedDuration)}
         </p>
@@ -1526,7 +1527,8 @@ export function DynamicAvailabilityWidget(
             })}
           </div>
         )}
-      </div>}
+      </div>
+      </>}
 
       {/* Events on this date */}
       {(dayEvents.length > 0 || loadingEvents || eventsOnly) && (
