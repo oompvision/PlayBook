@@ -945,6 +945,7 @@ export function EventDayModal({
                 </div>
               )}
             </div>
+            </div>
 
             {/* Publish All / Unpublish All */}
             <div className="flex shrink-0 items-center gap-2">
@@ -987,3 +988,4 @@ export function EventDayModal({
     document.body
   );
 }
+
