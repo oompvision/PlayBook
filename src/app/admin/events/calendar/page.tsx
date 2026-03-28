@@ -306,7 +306,10 @@ export default async function EventCalendarPage({
         .lte("start_time", endTs)
         .in("status", ["draft", "published"]);
 
-      if (!existingEvents || existingEvents.length === 0) {
+      type ExistingEvent = { id: string; template_id: string | null; start_time: string; end_time: string; status: string };
+      const existing = (existingEvents || []) as ExistingEvent[];
+
+      if (existing.length === 0) {
         // No existing events — just insert all
         if (confirm !== false) {
           for (const entry of validEntries) {
@@ -334,10 +337,10 @@ export default async function EventCalendarPage({
       }
 
       // Convert existing events to fingerprints for comparison
-      const existingFingerprints = new Map<string, typeof existingEvents[0]>();
-      const eventsToDelete: typeof existingEvents = [];
+      const existingFingerprints = new Map<string, ExistingEvent>();
+      const eventsToDelete: ExistingEvent[] = [];
 
-      for (const ev of existingEvents) {
+      for (const ev of existing) {
         // Convert timestamptz to HH:MM in org timezone
         const evStart = new Date(ev.start_time).toLocaleTimeString("en-GB", {
           timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
