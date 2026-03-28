@@ -15,6 +15,9 @@ import {
   Send,
   XCircle,
   LayoutTemplate,
+  ChevronDown,
+  ChevronRight,
+  Clock,
 } from "lucide-react";
 import { SavedToast } from "@/components/admin/saved-toast";
 
@@ -209,28 +212,35 @@ export default async function EventsPage({
 
   const statusFilter = params.status || "all";
   const locParam = locationId ? `&location=${locationId}` : "";
+  const tz = org.timezone || "America/New_York";
+  const now = new Date();
 
-  const formatTime = (isoString: string) => {
+  const formatTimeOnly = (isoString: string) => {
     return new Intl.DateTimeFormat("en-US", {
-      timeZone: org.timezone || "America/New_York",
-      month: "short",
-      day: "numeric",
+      timeZone: tz,
       hour: "numeric",
       minute: "2-digit",
     }).format(new Date(isoString));
   };
 
-  const formatDate = (isoString: string) => {
+  const formatDateLabel = (isoString: string) => {
     return new Intl.DateTimeFormat("en-US", {
-      timeZone: org.timezone || "America/New_York",
-      weekday: "short",
-      month: "short",
+      timeZone: tz,
+      weekday: "long",
+      month: "long",
       day: "numeric",
       year: "numeric",
     }).format(new Date(isoString));
   };
 
-  const statusBadgeClass = (status: string) => {
+  const getDateKey = (isoString: string) => {
+    return new Date(isoString).toLocaleDateString("en-CA", { timeZone: tz });
+  };
+
+  const statusBadgeClass = (status: string, isPast: boolean) => {
+    if (isPast && status !== "cancelled") {
+      return "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400";
+    }
     switch (status) {
       case "published":
         return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
@@ -238,14 +248,184 @@ export default async function EventsPage({
         return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400";
       case "cancelled":
         return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400";
-      case "completed":
-        return "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400";
       default:
         return "bg-gray-100 text-gray-500";
     }
   };
 
-  const totalEvents = events?.length ?? 0;
+  const getDisplayStatus = (status: string, isPast: boolean) => {
+    if (isPast && status !== "cancelled") return "completed";
+    return status;
+  };
+
+  // Group events by date
+  type EventWithMeta = (typeof events extends (infer T)[] | null ? T : never) & { _isPast: boolean; _dateKey: string };
+  const upcomingGroups: Record<string, EventWithMeta[]> = {};
+  const completedGroups: Record<string, EventWithMeta[]> = {};
+
+  for (const event of events || []) {
+    const isPast = new Date(event.end_time) < now;
+    const dateKey = getDateKey(event.start_time);
+    const eventWithMeta = { ...event, _isPast: isPast, _dateKey: dateKey } as EventWithMeta;
+
+    // Apply status filter
+    const displayStatus = getDisplayStatus(event.status, isPast);
+    if (statusFilter !== "all" && displayStatus !== statusFilter) continue;
+
+    if (isPast) {
+      if (!completedGroups[dateKey]) completedGroups[dateKey] = [];
+      completedGroups[dateKey].push(eventWithMeta);
+    } else {
+      if (!upcomingGroups[dateKey]) upcomingGroups[dateKey] = [];
+      upcomingGroups[dateKey].push(eventWithMeta);
+    }
+  }
+
+  // Sort: upcoming = nearest first; completed = most recent first
+  const upcomingDates = Object.keys(upcomingGroups).sort();
+  const completedDates = Object.keys(completedGroups).sort().reverse();
+
+  // Sort events within each date by start_time ascending
+  for (const dateKey of [...upcomingDates, ...completedDates]) {
+    const group = upcomingGroups[dateKey] || completedGroups[dateKey];
+    group.sort((a, b) => a.start_time.localeCompare(b.start_time));
+  }
+
+  const totalEvents = (events || []).filter((e) => {
+    const isPast = new Date(e.end_time) < now;
+    const displayStatus = getDisplayStatus(e.status, isPast);
+    return statusFilter === "all" || displayStatus === statusFilter;
+  }).length;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function renderEventCard(event: EventWithMeta, actions: any) {
+    const registered = regCounts[event.id] || 0;
+    const spotsLeft = event.capacity - registered;
+    const bayNames = event.event_bays
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ?.map((eb: any) => eb.bays?.name ?? eb.bays?.[0]?.name)
+      .filter(Boolean)
+      .join(", ");
+    const displayStatus = getDisplayStatus(event.status, event._isPast);
+
+    return (
+      <div key={event.id} className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-gray-50/50 dark:hover:bg-white/[0.02]">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium text-gray-800 dark:text-white/90">
+              {event.name}
+            </p>
+            <span className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${statusBadgeClass(event.status, event._isPast)}`}>
+              {displayStatus}
+            </span>
+            {event.members_only && (
+              <span className="inline-flex shrink-0 items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                Members
+              </span>
+            )}
+          </div>
+          <div className="mt-0.5 flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {formatTimeOnly(event.start_time)} – {formatTimeOnly(event.end_time)}
+            </span>
+            {bayNames && <span>{bayNames}</span>}
+            <span className="flex items-center gap-1">
+              <Users className="h-3 w-3" />
+              {registered}/{event.capacity}
+              {spotsLeft === 0 && <span className="font-medium text-red-500">Full</span>}
+            </span>
+            <span className="font-medium">
+              {event.price_cents === 0 ? "Free" : `$${(event.price_cents / 100).toFixed(2)}`}
+            </span>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {actions}
+        </div>
+      </div>
+    );
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function renderEventActions(event: any) {
+    return (
+      <>
+        <Link
+          href={`/admin/events/${event.id}${locationId ? `?location=${locationId}` : ""}`}
+          className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+          title="View"
+        >
+          <Eye className="h-4 w-4" />
+        </Link>
+        {event.status === "draft" && (
+          <form action={publishEvent}>
+            <input type="hidden" name="id" value={event.id} />
+            {locationId && <input type="hidden" name="location" value={locationId} />}
+            <button type="submit" className="rounded-lg p-1.5 text-green-600 transition-colors hover:bg-green-50 dark:text-green-400" title="Publish">
+              <Send className="h-4 w-4" />
+            </button>
+          </form>
+        )}
+        <Link
+          href={`/admin/events/${event.id}/edit${locationId ? `?location=${locationId}` : ""}`}
+          className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+          title="Edit"
+        >
+          <Pencil className="h-4 w-4" />
+        </Link>
+        <form action={duplicateEvent}>
+          <input type="hidden" name="id" value={event.id} />
+          {locationId && <input type="hidden" name="location" value={locationId} />}
+          <button type="submit" className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800" title="Duplicate">
+            <Copy className="h-4 w-4" />
+          </button>
+        </form>
+        {event.status === "published" && !event._isPast && (
+          <form action={cancelEvent}>
+            <input type="hidden" name="id" value={event.id} />
+            {locationId && <input type="hidden" name="location" value={locationId} />}
+            <button type="submit" className="rounded-lg p-1.5 text-red-400 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30" title="Cancel">
+              <XCircle className="h-4 w-4" />
+            </button>
+          </form>
+        )}
+        {event.status === "draft" && (
+          <form action={deleteEvent}>
+            <input type="hidden" name="id" value={event.id} />
+            {locationId && <input type="hidden" name="location" value={locationId} />}
+            <button type="submit" className="rounded-lg p-1.5 text-red-400 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30" title="Delete">
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </form>
+        )}
+      </>
+    );
+  }
+
+  function renderDateGroup(dateKey: string, groupEvents: EventWithMeta[], index: number, defaultOpen: boolean) {
+    const dateLabel = formatDateLabel(groupEvents[0].start_time);
+    const count = groupEvents.length;
+
+    return (
+      <details key={dateKey} open={defaultOpen || undefined} className="group">
+        <summary className="flex cursor-pointer items-center gap-3 border-b border-gray-100 px-5 py-3 transition-colors hover:bg-gray-50 dark:border-white/[0.05] dark:hover:bg-white/[0.02]">
+          <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition-transform group-open:rotate-90" />
+          <span className="text-sm font-semibold text-gray-800 dark:text-white/90">
+            {dateLabel}
+          </span>
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+            {count} event{count !== 1 ? "s" : ""}
+          </span>
+        </summary>
+        <div className="divide-y divide-gray-50 dark:divide-white/[0.03]">
+          {groupEvents.map((event) =>
+            renderEventCard(event, renderEventActions(event))
+          )}
+        </div>
+      </details>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -256,8 +436,7 @@ export default async function EventsPage({
             Events
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Create and manage open-enrollment events — clinics, group sessions, and
-            more.
+            Create and manage open-enrollment events — clinics, group sessions, and more.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -306,302 +485,57 @@ export default async function EventsPage({
         </span>
       </div>
 
-      {/* Events List */}
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-        {!events || events.length === 0 ? (
+      {totalEvents === 0 ? (
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
           <div className="px-6 py-16 text-center">
             <CalendarDays className="mx-auto h-10 w-10 text-gray-300 dark:text-gray-600" />
             <p className="mt-3 text-sm font-medium text-gray-500 dark:text-gray-400">
-              No events yet
+              No events found
             </p>
             <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">
-              Create your first event to start accepting registrations.
+              {statusFilter !== "all" ? `No ${statusFilter} events.` : "Create your first event to start accepting registrations."}
             </p>
           </div>
-        ) : (
-          <>
-            {/* Desktop Table */}
-            <div className="hidden md:block">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-gray-100 dark:border-white/[0.05]">
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                        Event
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                        Date &amp; Time
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                        Facilities
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                        Spots
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                        Price
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
-                    {events.map((event) => {
-                      const registered = regCounts[event.id] || 0;
-                      const spotsLeft = event.capacity - registered;
-                      const bayNames = event.event_bays
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        ?.map((eb: any) => eb.bays?.name ?? eb.bays?.[0]?.name)
-                        .filter(Boolean)
-                        .join(", ");
-
-                      return (
-                        <tr
-                          key={event.id}
-                          className="transition-colors hover:bg-gray-50/50 dark:hover:bg-white/[0.02]"
-                        >
-                          <td className="px-6 py-4">
-                            <div>
-                              <p className="text-sm font-medium text-gray-800 dark:text-white/90">
-                                {event.name}
-                              </p>
-                              {event.members_only && (
-                                <span className="mt-0.5 inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                                  Members Only
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <p className="text-sm text-gray-800 dark:text-white/90">
-                              {formatDate(event.start_time)}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              {formatTime(event.start_time)} –{" "}
-                              {formatTime(event.end_time)}
-                            </p>
-                          </td>
-                          <td className="px-6 py-4">
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                              {bayNames || "—"}
-                            </p>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-1.5">
-                              <Users className="h-3.5 w-3.5 text-gray-400" />
-                              <span className="text-sm text-gray-800 dark:text-white/90">
-                                {registered}/{event.capacity}
-                              </span>
-                              {spotsLeft === 0 && (
-                                <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-600 dark:bg-red-900/30 dark:text-red-400">
-                                  Full
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="text-sm font-semibold text-gray-800 dark:text-white/90">
-                              {event.price_cents === 0
-                                ? "Free"
-                                : `$${(event.price_cents / 100).toFixed(2)}`}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span
-                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${statusBadgeClass(event.status)}`}
-                            >
-                              {event.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <Link
-                                href={`/admin/events/${event.id}${locationId ? `?location=${locationId}` : ""}`}
-                                className="rounded-lg border border-gray-300 bg-white p-2 text-gray-500 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:bg-gray-800"
-                                title="View Details"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Link>
-                              {event.status === "draft" && (
-                                <form action={publishEvent}>
-                                  <input type="hidden" name="id" value={event.id} />
-                                  {locationId && (
-                                    <input type="hidden" name="location" value={locationId} />
-                                  )}
-                                  <button
-                                    type="submit"
-                                    className="rounded-lg border border-green-300 bg-white p-2 text-green-600 shadow-sm transition-colors hover:bg-green-50 dark:border-green-700 dark:bg-transparent dark:text-green-400 dark:hover:bg-green-950/30"
-                                    title="Publish"
-                                  >
-                                    <Send className="h-4 w-4" />
-                                  </button>
-                                </form>
-                              )}
-                              <Link
-                                href={`/admin/events/${event.id}/edit${locationId ? `?location=${locationId}` : ""}`}
-                                className="rounded-lg border border-gray-300 bg-white p-2 text-gray-500 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:bg-gray-800"
-                                title="Edit"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Link>
-                              <form action={duplicateEvent}>
-                                <input type="hidden" name="id" value={event.id} />
-                                {locationId && (
-                                  <input type="hidden" name="location" value={locationId} />
-                                )}
-                                <button
-                                  type="submit"
-                                  className="rounded-lg border border-gray-300 bg-white p-2 text-gray-500 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:bg-gray-800"
-                                  title="Duplicate"
-                                >
-                                  <Copy className="h-4 w-4" />
-                                </button>
-                              </form>
-                              {event.status === "published" && (
-                                <form action={cancelEvent}>
-                                  <input type="hidden" name="id" value={event.id} />
-                                  {locationId && (
-                                    <input type="hidden" name="location" value={locationId} />
-                                  )}
-                                  <button
-                                    type="submit"
-                                    className="rounded-lg border border-gray-300 bg-white p-2 text-red-500 shadow-sm transition-colors hover:bg-red-50 dark:border-gray-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
-                                    title="Cancel Event"
-                                  >
-                                    <XCircle className="h-4 w-4" />
-                                  </button>
-                                </form>
-                              )}
-                              {event.status === "draft" && (
-                                <form action={deleteEvent}>
-                                  <input type="hidden" name="id" value={event.id} />
-                                  {locationId && (
-                                    <input type="hidden" name="location" value={locationId} />
-                                  )}
-                                  <button
-                                    type="submit"
-                                    className="rounded-lg border border-gray-300 bg-white p-2 text-red-500 shadow-sm transition-colors hover:bg-red-50 dark:border-gray-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30"
-                                    title="Delete"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
-                                </form>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+        </div>
+      ) : (
+        <>
+          {/* Upcoming Events */}
+          {upcomingDates.length > 0 && (
+            <div>
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                <CalendarDays className="h-4 w-4" />
+                Upcoming
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                  {upcomingDates.reduce((sum, d) => sum + upcomingGroups[d].length, 0)}
+                </span>
+              </h2>
+              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+                {upcomingDates.map((dateKey, i) =>
+                  renderDateGroup(dateKey, upcomingGroups[dateKey], i, i < 5)
+                )}
               </div>
             </div>
+          )}
 
-            {/* Mobile Card View */}
-            <div className="divide-y divide-gray-100 md:hidden dark:divide-white/[0.05]">
-              {events.map((event) => {
-                const registered = regCounts[event.id] || 0;
-                const bayNames = event.event_bays
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  ?.map((eb: any) => eb.bays?.name ?? eb.bays?.[0]?.name)
-                  .filter(Boolean)
-                  .join(", ");
-
-                return (
-                  <div key={event.id} className="px-5 py-4">
-                    <div className="flex items-start justify-between">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="truncate text-sm font-medium text-gray-800 dark:text-white/90">
-                            {event.name}
-                          </p>
-                          <span
-                            className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${statusBadgeClass(event.status)}`}
-                          >
-                            {event.status}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                          {formatDate(event.start_time)} · {formatTime(event.start_time)} – {formatTime(event.end_time)}
-                        </p>
-                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                          {bayNames || "No facilities"} · {registered}/{event.capacity} spots ·{" "}
-                          {event.price_cents === 0 ? "Free" : `$${(event.price_cents / 100).toFixed(2)}`}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        {event.status === "draft" && (
-                          <form action={publishEvent}>
-                            <input type="hidden" name="id" value={event.id} />
-                            {locationId && (
-                              <input type="hidden" name="location" value={locationId} />
-                            )}
-                            <button
-                              type="submit"
-                              className="rounded-lg p-1.5 text-green-600 transition-colors hover:bg-green-50 dark:text-green-400 dark:hover:bg-green-950/30"
-                              title="Publish"
-                            >
-                              <Send className="h-4 w-4" />
-                            </button>
-                          </form>
-                        )}
-                        <Link
-                          href={`/admin/events/${event.id}/edit${locationId ? `?location=${locationId}` : ""}`}
-                          className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Link>
-                        <form action={duplicateEvent}>
-                          <input type="hidden" name="id" value={event.id} />
-                          {locationId && (
-                            <input type="hidden" name="location" value={locationId} />
-                          )}
-                          <button
-                            type="submit"
-                            className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-                          >
-                            <Copy className="h-4 w-4" />
-                          </button>
-                        </form>
-                        {event.status === "published" && (
-                          <form action={cancelEvent}>
-                            <input type="hidden" name="id" value={event.id} />
-                            {locationId && (
-                              <input type="hidden" name="location" value={locationId} />
-                            )}
-                            <button
-                              type="submit"
-                              className="rounded-lg p-1.5 text-red-400 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30"
-                              title="Cancel Event"
-                            >
-                              <XCircle className="h-4 w-4" />
-                            </button>
-                          </form>
-                        )}
-                        {event.status === "draft" && (
-                          <form action={deleteEvent}>
-                            <input type="hidden" name="id" value={event.id} />
-                            <button
-                              type="submit"
-                              className="rounded-lg p-1.5 text-red-400 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </form>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+          {/* Completed Events */}
+          {completedDates.length > 0 && (
+            <div>
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                <Clock className="h-4 w-4" />
+                Completed
+                <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+                  {completedDates.reduce((sum, d) => sum + completedGroups[d].length, 0)}
+                </span>
+              </h2>
+              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+                {completedDates.map((dateKey, i) =>
+                  renderDateGroup(dateKey, completedGroups[dateKey], i, i < 5)
+                )}
+              </div>
             </div>
-          </>
-        )}
-      </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
