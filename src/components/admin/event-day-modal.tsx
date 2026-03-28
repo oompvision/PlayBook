@@ -827,7 +827,8 @@ export function EventDayModal({
 
         {/* Footer actions */}
         <div className="border-t border-gray-200 px-4 py-3 md:px-6">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
             {/* Add Event from Template */}
             <div className="relative">
               <Button
@@ -943,41 +944,41 @@ export function EventDayModal({
                   </Button>
                 </div>
               )}
-            {/* Spacer */}
-            <div className="flex-1" />
+            </div>
 
             {/* Publish All / Unpublish All */}
-            {events.some((e) => e.status === "draft") && (
-              <Button
-                size="sm"
-                onClick={handlePublishAll}
-                disabled={publishingAll || unpublishingAll}
-                className="gap-1.5 bg-green-600 text-white hover:bg-green-700"
-              >
-                {publishingAll ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Eye className="h-3.5 w-3.5" />
-                )}
-                Publish All
-              </Button>
-            )}
-            {events.some((e) => e.status === "published") && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleUnpublishAll}
-                disabled={publishingAll || unpublishingAll}
-                className="gap-1.5 border-amber-200 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
-              >
-                {unpublishingAll ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <EyeOff className="h-3.5 w-3.5" />
-                )}
-                Unpublish All
-              </Button>
-            )}
+            <div className="flex shrink-0 items-center gap-2">
+              {events.some((e) => e.status === "draft") && (
+                <Button
+                  size="sm"
+                  onClick={handlePublishAll}
+                  disabled={publishingAll || unpublishingAll}
+                  className="gap-1.5 bg-green-600 text-white hover:bg-green-700"
+                >
+                  {publishingAll ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Eye className="h-3.5 w-3.5" />
+                  )}
+                  Publish All
+                </Button>
+              )}
+              {events.some((e) => e.status === "published") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleUnpublishAll}
+                  disabled={publishingAll || unpublishingAll}
+                  className="gap-1.5 border-amber-200 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                >
+                  {unpublishingAll ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <EyeOff className="h-3.5 w-3.5" />
+                  )}
+                  Unpublish All
+                </Button>
+              )}
             </div>
           </div>
         </div>
