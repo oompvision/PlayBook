@@ -23,7 +23,7 @@ import type { Booking, Bay } from '../types';
 type Props = NativeStackScreenProps<MainTabParamList, 'Home'>;
 
 export function HomeScreen({ navigation }: Props) {
-  const { organization, selectedLocation, bays, facilityGroups, standaloneBays, isDynamic } = useFacility();
+  const { organization, selectedLocation, bays, facilityGroups, standaloneBays, isDynamic, isEventsOnly } = useFacility();
   const { user, profile } = useAuth();
   const insets = useSafeAreaInsets();
   const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
@@ -62,8 +62,8 @@ export function HomeScreen({ navigation }: Props) {
       );
     }
 
-    // Fetch earliest available date per bay (slot-based)
-    if (!isDynamic) {
+    // Fetch earliest available date per bay (slot-based only)
+    if (!isDynamic && !isEventsOnly) {
       promises.push(
         (async () => {
           const { data } = await supabase
@@ -233,11 +233,21 @@ export function HomeScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Available to Book */}
+      {/* Available to Book / Events */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Book</Text>
+        <Text style={styles.sectionTitle}>{isEventsOnly ? 'Events' : 'Book'}</Text>
         {loading ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
+        ) : isEventsOnly ? (
+          <TouchableOpacity
+            style={[styles.bookingCard, { minWidth: 200 }]}
+            activeOpacity={0.85}
+            onPress={() => (navigation as any).navigate('Events')}
+          >
+            <Ionicons name="calendar" size={24} color={colors.primary} style={{ marginBottom: 4 }} />
+            <Text style={styles.bookingTitle}>Browse Events</Text>
+            <Text style={styles.bookingSub}>View & register for upcoming events</Text>
+          </TouchableOpacity>
         ) : isDynamic ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {facilityGroups.map((group) => (

@@ -175,6 +175,7 @@ type DynamicAvailabilityWidgetProps = {
   originalBooking?: DynamicOriginalBookingInfo;
   modifyRedirectBase?: string;
   demoMode?: boolean;
+  eventsOnly?: boolean;
 };
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -304,6 +305,7 @@ export function DynamicAvailabilityWidget(
     originalBooking,
     modifyRedirectBase,
     demoMode = false,
+    eventsOnly = false,
   } = props;
 
   // In demo mode, override auth state with simulated user
@@ -651,23 +653,28 @@ export function DynamicAvailabilityWidget(
   const fetchEvents = useCallback(async () => {
     if (!selectedDate) return;
 
+    // For events_only, skip bay filtering — show all events
+    const skipBayFilter = eventsOnly;
+
     // Determine which bay IDs to filter by
     let bayIdsToCheck: string[] = [];
-    if (selectedGroupId) {
-      const group = facilityGroups.find((g) => g.id === selectedGroupId);
-      if (group) bayIdsToCheck = group.bays.map((b) => b.id);
-    } else if (selectedBayId) {
-      bayIdsToCheck = [selectedBayId];
-    } else if (!hasMultipleOptions) {
-      bayIdsToCheck = bays.map((b) => b.id);
-    } else {
-      setDayEvents([]);
-      return;
-    }
+    if (!skipBayFilter) {
+      if (selectedGroupId) {
+        const group = facilityGroups.find((g) => g.id === selectedGroupId);
+        if (group) bayIdsToCheck = group.bays.map((b) => b.id);
+      } else if (selectedBayId) {
+        bayIdsToCheck = [selectedBayId];
+      } else if (!hasMultipleOptions) {
+        bayIdsToCheck = bays.map((b) => b.id);
+      } else {
+        setDayEvents([]);
+        return;
+      }
 
-    if (bayIdsToCheck.length === 0) {
-      setDayEvents([]);
-      return;
+      if (bayIdsToCheck.length === 0) {
+        setDayEvents([]);
+        return;
+      }
     }
 
     setLoadingEvents(true);
@@ -698,9 +705,10 @@ export function DynamicAvailabilityWidget(
     }
 
     // Filter to events that involve at least one bay in the selected group/bay
-    const bayIdSet = new Set(bayIdsToCheck);
+    // (skip for events_only — show all events regardless of bay)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const filtered = events.filter((evt: any) => {
+    const filtered = skipBayFilter ? events : events.filter((evt: any) => {
+      const bayIdSet = new Set(bayIdsToCheck);
       const eventBayIds = (evt.event_bays as { bay_id: string }[])?.map((eb) => eb.bay_id) || [];
       return eventBayIds.some((id) => bayIdSet.has(id));
     });
@@ -748,7 +756,7 @@ export function DynamicAvailabilityWidget(
 
     setDayEvents(result);
     setLoadingEvents(false);
-  }, [orgId, selectedDate, selectedGroupId, selectedBayId, facilityGroups, bays, hasMultipleOptions, timezone]);
+  }, [orgId, selectedDate, selectedGroupId, selectedBayId, facilityGroups, bays, hasMultipleOptions, timezone, eventsOnly]);
 
   useEffect(() => {
     fetchEvents();
@@ -1368,8 +1376,8 @@ export function DynamicAvailabilityWidget(
         </div>
       </div>
 
-      {/* Select Facility (if needed) */}
-      {hasMultipleOptions && (
+      {/* Select Facility (if needed) — hidden for events_only */}
+      {hasMultipleOptions && !eventsOnly && (
         <div className="surface-1 rounded-xl bg-card px-4 py-3">
           <p className="mb-2.5 text-sm font-medium text-foreground">
             2. Select Facility
@@ -1416,7 +1424,8 @@ export function DynamicAvailabilityWidget(
         </div>
       )}
 
-      {/* Play for [duration] */}
+      {/* Play for [duration] + Available Times — hidden for events_only */}
+      {!eventsOnly && <>
       <div className="surface-1 rounded-xl bg-card px-4 py-3">
         <p className="mb-2 text-sm font-medium text-foreground">
           {hasMultipleOptions ? "3" : "2"}. Play for {formatDuration(selectedDuration)}
@@ -1519,15 +1528,16 @@ export function DynamicAvailabilityWidget(
           </div>
         )}
       </div>
+      </>}
 
-      {/* Step 4: Events on this date for the selected facility */}
-      {(dayEvents.length > 0 || loadingEvents) && (
+      {/* Events on this date */}
+      {(dayEvents.length > 0 || loadingEvents || eventsOnly) && (
         <div className="surface-1 rounded-xl bg-card px-4 py-3">
           <div className="mb-2.5 flex items-center gap-2">
             <CalendarDays className="h-4 w-4 text-green-600 dark:text-green-400" />
             <h3 className="text-sm font-medium text-muted-foreground">
-              Events
-              {selectedOption && (
+              {eventsOnly ? "2. Events" : "Events"}
+              {!eventsOnly && selectedOption && (
                 <span className="ml-1.5">
                   &middot; {selectedOption}
                 </span>
@@ -1538,6 +1548,13 @@ export function DynamicAvailabilityWidget(
           {loadingEvents ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : dayEvents.length === 0 && eventsOnly ? (
+            <div className="py-8 text-center">
+              <CalendarDays className="mx-auto h-8 w-8 text-muted-foreground/50" />
+              <p className="mt-3 text-sm text-muted-foreground">
+                No events scheduled for this date
+              </p>
             </div>
           ) : (
             <div className="space-y-2">

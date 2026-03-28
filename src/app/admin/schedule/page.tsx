@@ -29,6 +29,10 @@ export default async function ScheduleManagerPage({
   const org = await getOrg();
   if (!org) redirect("/");
 
+  if (org.scheduling_type === "events_only") {
+    redirect("/admin/events");
+  }
+
   if (org.scheduling_type === "dynamic") {
     return (
       <div className="space-y-6">

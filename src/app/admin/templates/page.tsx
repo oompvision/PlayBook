@@ -37,7 +37,7 @@ export default async function TemplatesPage({
     ? await resolveLocationId(org.id, params.location)
     : null;
 
-  if (org.scheduling_type === "dynamic") {
+  if (org.scheduling_type === "dynamic" || org.scheduling_type === "events_only") {
     return (
       <div className="mx-auto max-w-[1100px] space-y-6">
         <div>
