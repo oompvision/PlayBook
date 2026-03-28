@@ -463,6 +463,9 @@ export default async function FacilityHomePage({
                 bookableWindowDays={membershipContext.effectiveWindowDays}
                 facilitySlug={slug}
                 isAuthenticated={!!auth}
+                userEmail={auth?.profile.email}
+                userFullName={auth?.profile.full_name}
+                userProfileId={auth?.profile.id}
                 paymentMode={paymentMode}
                 cancellationWindowHours={cancellationWindowHours}
                 locationId={activeLocationId}
@@ -481,6 +484,9 @@ export default async function FacilityHomePage({
                 bookableWindowDays={membershipContext.effectiveWindowDays}
                 facilitySlug={slug}
                 isAuthenticated={!!auth}
+                userEmail={auth?.profile.email}
+                userFullName={auth?.profile.full_name}
+                userProfileId={auth?.profile.id}
                 paymentMode={paymentMode}
                 cancellationWindowHours={cancellationWindowHours}
                 locationId={activeLocationId}
