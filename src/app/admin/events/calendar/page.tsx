@@ -6,6 +6,8 @@ import { getTodayInTimezone, toTimestamp } from "@/lib/utils";
 import { resolveLocationId } from "@/lib/location";
 import { EventCalendarWrapper } from "./calendar-wrapper";
 import { addMonths, endOfMonth, format } from "date-fns";
+import { createNotification } from "@/lib/notifications";
+import { createServiceClient } from "@/lib/supabase/service";
 
 async function getOrg() {
   const slug = await getFacilitySlug();
@@ -494,6 +496,100 @@ export default async function EventCalendarPage({
     return { success: true };
   }
 
+  // ─── Server Action: Publish an event ───
+
+  async function publishEventAction(
+    eventId: string
+  ): Promise<{ success: boolean; error?: string }> {
+    "use server";
+
+    const supabase = await createClient();
+    const { error } = await supabase.rpc("publish_event", {
+      p_event_id: eventId,
+      p_cancel_conflicting_bookings: false,
+    });
+
+    if (error) return { success: false, error: error.message };
+
+    revalidatePath("/admin/events/calendar");
+    revalidatePath("/admin/events");
+    return { success: true };
+  }
+
+  // ─── Server Action: Unpublish an event (back to draft) ───
+
+  async function unpublishEventAction(
+    eventId: string
+  ): Promise<{ success: boolean; cancelledRegistrations?: number; error?: string }> {
+    "use server";
+
+    const supabase = await createClient();
+
+    // Call the unpublish RPC which releases slots and cancels registrations
+    const { data, error } = await supabase.rpc("unpublish_event", {
+      p_event_id: eventId,
+    });
+
+    if (error) return { success: false, error: error.message };
+
+    const result = data as { status: string; released_slots: number; cancelled_registrations: number };
+
+    // If registrations were cancelled, notify each registrant
+    if (result.cancelled_registrations > 0) {
+      const org = await getOrg();
+      if (org) {
+        const serviceClient = createServiceClient();
+
+        // Fetch the event name for the notification
+        const { data: eventData } = await supabase
+          .from("events")
+          .select("name, start_time")
+          .eq("id", eventId)
+          .single();
+
+        // Fetch cancelled registrants
+        const { data: registrations } = await serviceClient
+          .from("event_registrations")
+          .select("customer_id, profiles:customer_id(id, email, full_name)")
+          .eq("event_id", eventId)
+          .eq("status", "cancelled")
+          .not("cancelled_at", "is", null);
+
+        if (registrations && eventData) {
+          const tz = org.timezone || "America/New_York";
+          const eventDate = new Date(eventData.start_time).toLocaleDateString("en-US", {
+            timeZone: tz,
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+          });
+
+          for (const reg of registrations) {
+            const profile = reg.profiles as unknown as { id: string; email: string; full_name: string } | null;
+            if (!profile) continue;
+
+            await createNotification({
+              orgId: org.id,
+              recipientId: profile.id,
+              recipientType: "customer",
+              type: "event_cancelled",
+              title: "Event Cancelled",
+              message: `${eventData.name} on ${eventDate} has been cancelled. Your registration has been removed.`,
+              link: "/my-bookings",
+              recipientEmail: profile.email,
+              recipientName: profile.full_name,
+              orgName: org.name,
+            });
+          }
+        }
+      }
+    }
+
+    revalidatePath("/admin/events/calendar");
+    revalidatePath("/admin/events");
+    return { success: true, cancelledRegistrations: result.cancelled_registrations };
+  }
+
   return (
     <EventCalendarWrapper
       today={today}
@@ -509,6 +605,8 @@ export default async function EventCalendarPage({
       onDeleteEvent={deleteEventAction}
       onAddEventFromTemplate={addEventFromTemplateAction}
       onSaveDaySchedule={saveDayScheduleAction}
+      onPublishEvent={publishEventAction}
+      onUnpublishEvent={unpublishEventAction}
     />
   );
 }

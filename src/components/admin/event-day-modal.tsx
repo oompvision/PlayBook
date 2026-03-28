@@ -14,6 +14,8 @@ import {
   ChevronDown,
   Save,
   ExternalLink,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────
@@ -51,6 +53,12 @@ type EventDayModalProps = {
     date: string,
     name: string
   ) => Promise<{ success: boolean; error?: string }>;
+  onPublishEvent: (
+    eventId: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  onUnpublishEvent: (
+    eventId: string
+  ) => Promise<{ success: boolean; cancelledRegistrations?: number; error?: string }>;
 };
 
 type EventRow = {
@@ -118,6 +126,8 @@ export function EventDayModal({
   onDeleteEvent,
   onAddEventFromTemplate,
   onSaveDaySchedule,
+  onPublishEvent,
+  onUnpublishEvent,
 }: EventDayModalProps) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -153,6 +163,11 @@ export function EventDayModal({
 
   // Deleting state
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
+
+  // Publish/unpublish state
+  const [publishingEventId, setPublishingEventId] = useState<string | null>(null);
+  const [publishingAll, setPublishingAll] = useState(false);
+  const [unpublishingAll, setUnpublishingAll] = useState(false);
 
   // Mount + animate in
   useEffect(() => {
@@ -349,6 +364,101 @@ export function EventDayModal({
     }
 
     setDeletingEventId(null);
+  }
+
+  // ─── Publish / Unpublish handlers ────────────────────────────
+
+  async function handlePublish(eventId: string) {
+    setPublishingEventId(eventId);
+    setMessage(null);
+
+    const result = await onPublishEvent(eventId);
+
+    if (result.success) {
+      setMessage({ type: "success", text: "Event published" });
+      await fetchEvents();
+    } else {
+      setMessage({ type: "error", text: result.error || "Failed to publish event" });
+    }
+
+    setPublishingEventId(null);
+  }
+
+  async function handleUnpublish(eventId: string) {
+    // Find the event to check registration count
+    const event = events.find((e) => e.id === eventId);
+    if (event && event.registration_count > 0) {
+      const confirmed = window.confirm(
+        `This event has ${event.registration_count} registration${event.registration_count !== 1 ? "s" : ""}. Unpublishing will cancel all registrations and notify registrants. Continue?`
+      );
+      if (!confirmed) return;
+    }
+
+    setPublishingEventId(eventId);
+    setMessage(null);
+
+    const result = await onUnpublishEvent(eventId);
+
+    if (result.success) {
+      const extra = result.cancelledRegistrations
+        ? ` (${result.cancelledRegistrations} registration${result.cancelledRegistrations !== 1 ? "s" : ""} cancelled)`
+        : "";
+      setMessage({ type: "success", text: `Event unpublished${extra}` });
+      await fetchEvents();
+    } else {
+      setMessage({ type: "error", text: result.error || "Failed to unpublish event" });
+    }
+
+    setPublishingEventId(null);
+  }
+
+  async function handlePublishAll() {
+    const draftEvents = events.filter((e) => e.status === "draft");
+    if (draftEvents.length === 0) return;
+
+    setPublishingAll(true);
+    setMessage(null);
+
+    let published = 0;
+    for (const event of draftEvents) {
+      const result = await onPublishEvent(event.id);
+      if (result.success) published++;
+    }
+
+    setMessage({
+      type: "success",
+      text: `Published ${published} event${published !== 1 ? "s" : ""}`,
+    });
+    await fetchEvents();
+    setPublishingAll(false);
+  }
+
+  async function handleUnpublishAll() {
+    const publishedEvents = events.filter((e) => e.status === "published");
+    if (publishedEvents.length === 0) return;
+
+    const totalRegs = publishedEvents.reduce((sum, e) => sum + e.registration_count, 0);
+    let confirmMsg = `Unpublish ${publishedEvents.length} event${publishedEvents.length !== 1 ? "s" : ""}?`;
+    if (totalRegs > 0) {
+      confirmMsg += ` This will cancel ${totalRegs} registration${totalRegs !== 1 ? "s" : ""} and notify registrants.`;
+    }
+    if (!window.confirm(confirmMsg)) return;
+
+    setUnpublishingAll(true);
+    setMessage(null);
+
+    let unpublished = 0;
+    for (const event of publishedEvents) {
+      const result = await onUnpublishEvent(event.id);
+      if (result.success) unpublished++;
+    }
+
+    setMessage({
+      type: "success",
+      text: `Unpublished ${unpublished} event${unpublished !== 1 ? "s" : ""}`,
+    });
+    await fetchEvents();
+    setUnpublishingAll(false);
   }
 
   // ─── Add from template handler ───────────────────────────────
@@ -558,6 +668,38 @@ export function EventDayModal({
                         >
                           <ExternalLink className="h-4 w-4" />
                         </a>
+
+                        {event.status === "draft" && (
+                          <button
+                            onClick={() => handlePublish(event.id)}
+                            disabled={publishingEventId === event.id}
+                            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-green-50 hover:text-green-600 disabled:opacity-50"
+                            title="Publish event"
+                          >
+                            {publishingEventId === event.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Eye className="h-4 w-4" />
+                            )}
+                          </button>
+                        )}
+
+                        {event.status === "published" && (
+                          <button
+                            onClick={() => handleUnpublish(event.id)}
+                            disabled={publishingEventId === event.id}
+                            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50"
+                            title={event.registration_count > 0
+                              ? `Unpublish (${event.registration_count} registration${event.registration_count !== 1 ? "s" : ""} will be cancelled)`
+                              : "Unpublish event"}
+                          >
+                            {publishingEventId === event.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <EyeOff className="h-4 w-4" />
+                            )}
+                          </button>
+                        )}
 
                         {event.status === "draft" && (
                           <button
@@ -801,6 +943,41 @@ export function EventDayModal({
                   </Button>
                 </div>
               )}
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* Publish All / Unpublish All */}
+            {events.some((e) => e.status === "draft") && (
+              <Button
+                size="sm"
+                onClick={handlePublishAll}
+                disabled={publishingAll || unpublishingAll}
+                className="gap-1.5 bg-green-600 text-white hover:bg-green-700"
+              >
+                {publishingAll ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Eye className="h-3.5 w-3.5" />
+                )}
+                Publish All
+              </Button>
+            )}
+            {events.some((e) => e.status === "published") && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleUnpublishAll}
+                disabled={publishingAll || unpublishingAll}
+                className="gap-1.5 border-amber-200 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+              >
+                {unpublishingAll ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <EyeOff className="h-3.5 w-3.5" />
+                )}
+                Unpublish All
+              </Button>
+            )}
             </div>
           </div>
         </div>
