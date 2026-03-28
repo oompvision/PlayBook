@@ -645,6 +645,29 @@ export default async function EventCalendarPage({
     return { success: true };
   }
 
+  // ─── Server Action: Publish multiple events at once ───
+
+  async function publishAllEventsAction(
+    eventIds: string[]
+  ): Promise<{ success: boolean; published: number; error?: string }> {
+    "use server";
+
+    const supabase = await createClient();
+    let published = 0;
+
+    for (const eventId of eventIds) {
+      const { error } = await supabase.rpc("publish_event", {
+        p_event_id: eventId,
+        p_cancel_conflicting_bookings: false,
+      });
+      if (!error) published++;
+    }
+
+    revalidatePath("/admin/events/calendar");
+    revalidatePath("/admin/events");
+    return { success: published > 0, published };
+  }
+
   // ─── Server Action: Unpublish an event (back to draft) ───
 
   async function unpublishEventAction(
@@ -719,6 +742,76 @@ export default async function EventCalendarPage({
     return { success: true, cancelledRegistrations: result.cancelled_registrations };
   }
 
+  // ─── Server Action: Unpublish multiple events at once ───
+
+  async function unpublishAllEventsAction(
+    eventIds: string[]
+  ): Promise<{ success: boolean; unpublished: number; cancelledRegistrations: number; error?: string }> {
+    "use server";
+
+    const org = await getOrg();
+    if (!org) return { success: false, unpublished: 0, cancelledRegistrations: 0, error: "Organization not found" };
+
+    const supabase = await createClient();
+    const serviceClient = createServiceClient();
+    const tz = org.timezone || "America/New_York";
+    let unpublished = 0;
+    let totalCancelledRegs = 0;
+
+    for (const eventId of eventIds) {
+      const { data, error } = await supabase.rpc("unpublish_event", {
+        p_event_id: eventId,
+      });
+      if (error) continue;
+
+      const res = data as { cancelled_registrations: number };
+      unpublished++;
+      totalCancelledRegs += res.cancelled_registrations;
+
+      // Notify cancelled registrants
+      if (res.cancelled_registrations > 0) {
+        const { data: eventData } = await supabase
+          .from("events")
+          .select("name, start_time")
+          .eq("id", eventId)
+          .single();
+
+        const { data: regs } = await serviceClient
+          .from("event_registrations")
+          .select("customer_id, profiles:customer_id(id, email, full_name)")
+          .eq("event_id", eventId)
+          .eq("status", "cancelled")
+          .not("cancelled_at", "is", null);
+
+        if (regs && eventData) {
+          const eventDate = new Date(eventData.start_time).toLocaleDateString("en-US", {
+            timeZone: tz, weekday: "long", month: "long", day: "numeric",
+          });
+          for (const reg of regs) {
+            const profile = reg.profiles as unknown as { id: string; email: string; full_name: string } | null;
+            if (!profile) continue;
+            await createNotification({
+              orgId: org.id,
+              recipientId: profile.id,
+              recipientType: "customer",
+              type: "event_cancelled",
+              title: "Event Cancelled",
+              message: `${eventData.name} on ${eventDate} has been cancelled. Your registration has been removed.`,
+              link: "/my-bookings",
+              recipientEmail: profile.email,
+              recipientName: profile.full_name,
+              orgName: org.name,
+            });
+          }
+        }
+      }
+    }
+
+    revalidatePath("/admin/events/calendar");
+    revalidatePath("/admin/events");
+    return { success: unpublished > 0, unpublished, cancelledRegistrations: totalCancelledRegs };
+  }
+
   return (
     <EventCalendarWrapper
       today={today}
@@ -737,6 +830,8 @@ export default async function EventCalendarPage({
       onPublishEvent={publishEventAction}
       onUnpublishEvent={unpublishEventAction}
       onDeleteEventsForDates={deleteEventsForDatesAction}
+      onPublishAllEvents={publishAllEventsAction}
+      onUnpublishAllEvents={unpublishAllEventsAction}
     />
   );
 }

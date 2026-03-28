@@ -83,6 +83,12 @@ type EventCalendarWrapperProps = {
     dates: string[],
     confirm: boolean
   ) => Promise<{ success: boolean; eventCount: number; registrationCount: number; deletedCount?: number; error?: string }>;
+  onPublishAllEvents: (
+    eventIds: string[]
+  ) => Promise<{ success: boolean; published: number; error?: string }>;
+  onUnpublishAllEvents: (
+    eventIds: string[]
+  ) => Promise<{ success: boolean; unpublished: number; cancelledRegistrations: number; error?: string }>;
 };
 
 export function EventCalendarWrapper({
@@ -102,6 +108,8 @@ export function EventCalendarWrapper({
   onPublishEvent,
   onUnpublishEvent,
   onDeleteEventsForDates,
+  onPublishAllEvents,
+  onUnpublishAllEvents,
 }: EventCalendarWrapperProps) {
   const [viewingDate, setViewingDate] = useState<string | null>(null);
   const router = useRouter();
@@ -142,6 +150,8 @@ export function EventCalendarWrapper({
           onSaveDaySchedule={onSaveDaySchedule}
           onPublishEvent={onPublishEvent}
           onUnpublishEvent={onUnpublishEvent}
+          onPublishAllEvents={onPublishAllEvents}
+          onUnpublishAllEvents={onUnpublishAllEvents}
         />
       )}
     </>

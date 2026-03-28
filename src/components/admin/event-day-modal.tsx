@@ -59,6 +59,12 @@ type EventDayModalProps = {
   onUnpublishEvent: (
     eventId: string
   ) => Promise<{ success: boolean; cancelledRegistrations?: number; error?: string }>;
+  onPublishAllEvents: (
+    eventIds: string[]
+  ) => Promise<{ success: boolean; published: number; error?: string }>;
+  onUnpublishAllEvents: (
+    eventIds: string[]
+  ) => Promise<{ success: boolean; unpublished: number; cancelledRegistrations: number; error?: string }>;
 };
 
 type EventRow = {
@@ -128,6 +134,8 @@ export function EventDayModal({
   onSaveDaySchedule,
   onPublishEvent,
   onUnpublishEvent,
+  onPublishAllEvents,
+  onUnpublishAllEvents,
 }: EventDayModalProps) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -419,15 +427,13 @@ export function EventDayModal({
     setPublishingAll(true);
     setMessage(null);
 
-    let published = 0;
-    for (const event of draftEvents) {
-      const result = await onPublishEvent(event.id);
-      if (result.success) published++;
-    }
+    const result = await onPublishAllEvents(draftEvents.map((e) => e.id));
 
     setMessage({
-      type: "success",
-      text: `Published ${published} event${published !== 1 ? "s" : ""}`,
+      type: result.success ? "success" : "error",
+      text: result.success
+        ? `Published ${result.published} event${result.published !== 1 ? "s" : ""}`
+        : result.error || "Failed to publish events",
     });
     await fetchEvents();
     setPublishingAll(false);
@@ -447,15 +453,16 @@ export function EventDayModal({
     setUnpublishingAll(true);
     setMessage(null);
 
-    let unpublished = 0;
-    for (const event of publishedEvents) {
-      const result = await onUnpublishEvent(event.id);
-      if (result.success) unpublished++;
-    }
+    const result = await onUnpublishAllEvents(publishedEvents.map((e) => e.id));
 
+    const extra = result.cancelledRegistrations > 0
+      ? ` (${result.cancelledRegistrations} registration${result.cancelledRegistrations !== 1 ? "s" : ""} cancelled)`
+      : "";
     setMessage({
-      type: "success",
-      text: `Unpublished ${unpublished} event${unpublished !== 1 ? "s" : ""}`,
+      type: result.success ? "success" : "error",
+      text: result.success
+        ? `Unpublished ${result.unpublished} event${result.unpublished !== 1 ? "s" : ""}${extra}`
+        : result.error || "Failed to unpublish events",
     });
     await fetchEvents();
     setUnpublishingAll(false);
