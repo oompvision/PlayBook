@@ -593,6 +593,7 @@ export function EventDayModal({
                                   start_time: e.target.value,
                                 }))
                               }
+                              onKeyDown={(e) => e.stopPropagation()}
                               className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                             />
                           </div>
@@ -609,6 +610,7 @@ export function EventDayModal({
                                   end_time: e.target.value,
                                 }))
                               }
+                              onKeyDown={(e) => e.stopPropagation()}
                               className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                             />
                           </div>
@@ -714,12 +716,14 @@ export function EventDayModal({
                       type="time"
                       value={addStartTime}
                       onChange={(e) => setAddStartTime(e.target.value)}
+                      onKeyDown={(e) => e.stopPropagation()}
                       className="h-8 w-full rounded border border-gray-300 px-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none"
                     />
                     <input
                       type="time"
                       value={addEndTime}
                       onChange={(e) => setAddEndTime(e.target.value)}
+                      onKeyDown={(e) => e.stopPropagation()}
                       className="h-8 w-full rounded border border-gray-300 px-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none"
                     />
                   </div>

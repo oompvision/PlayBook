@@ -834,6 +834,7 @@ export function EventCalendar({
                           type="time"
                           value={applyStartTime}
                           onChange={(e) => setApplyStartTime(e.target.value)}
+                          onKeyDown={(e) => e.stopPropagation()}
                           className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10"
                         />
                       </div>
@@ -845,6 +846,7 @@ export function EventCalendar({
                           type="time"
                           value={applyEndTime}
                           onChange={(e) => setApplyEndTime(e.target.value)}
+                          onKeyDown={(e) => e.stopPropagation()}
                           className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10"
                         />
                       </div>
