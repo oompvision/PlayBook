@@ -70,6 +70,16 @@ export default async function EventsPage({
 
   const { data: events } = await eventsQuery;
 
+  // Fetch template colors
+  const { data: allTemplates } = await supabase
+    .from("event_templates")
+    .select("id, config")
+    .eq("org_id", org.id);
+  const templateColorMap: Record<string, string> = {};
+  for (const t of allTemplates || []) {
+    templateColorMap[t.id] = (t.config as Record<string, unknown>)?.color as string || "#3B82F6";
+  }
+
   // Get registration counts for all events
   const eventIds = events?.map((e) => e.id) ?? [];
   let regCounts: Record<string, number> = {};
@@ -259,14 +269,15 @@ export default async function EventsPage({
   };
 
   // Group events by date
-  type EventWithMeta = (typeof events extends (infer T)[] | null ? T : never) & { _isPast: boolean; _dateKey: string };
+  type EventWithMeta = (typeof events extends (infer T)[] | null ? T : never) & { _isPast: boolean; _dateKey: string; _color: string };
   const upcomingGroups: Record<string, EventWithMeta[]> = {};
   const completedGroups: Record<string, EventWithMeta[]> = {};
 
   for (const event of events || []) {
     const isPast = new Date(event.end_time) < now;
     const dateKey = getDateKey(event.start_time);
-    const eventWithMeta = { ...event, _isPast: isPast, _dateKey: dateKey } as EventWithMeta;
+    const color = event.template_id ? (templateColorMap[event.template_id] || "#3B82F6") : "#3B82F6";
+    const eventWithMeta = { ...event, _isPast: isPast, _dateKey: dateKey, _color: color } as EventWithMeta;
 
     // Apply status filter
     const displayStatus = getDisplayStatus(event.status, isPast);
@@ -310,7 +321,12 @@ export default async function EventsPage({
 
     return (
       <div key={event.id} className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-gray-50/50 dark:hover:bg-white/[0.02]">
-        <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <span
+            className="mt-1.5 inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ backgroundColor: event._color }}
+          />
+          <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium text-gray-800 dark:text-white/90">
               {event.name}
@@ -338,6 +354,7 @@ export default async function EventsPage({
             <span className="font-medium">
               {event.price_cents === 0 ? "Free" : `$${(event.price_cents / 100).toFixed(2)}`}
             </span>
+          </div>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -403,18 +420,26 @@ export default async function EventsPage({
     );
   }
 
+  // Get ISO week number for week break detection
+  function getWeekNumber(dateStr: string): number {
+    const d = new Date(dateStr + "T12:00:00");
+    d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+    const yearStart = new Date(d.getFullYear(), 0, 1);
+    return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  }
+
   function renderDateGroup(dateKey: string, groupEvents: EventWithMeta[], index: number, defaultOpen: boolean) {
     const dateLabel = formatDateLabel(groupEvents[0].start_time);
     const count = groupEvents.length;
 
     return (
       <details key={dateKey} open={defaultOpen || undefined} className="group">
-        <summary className="flex cursor-pointer items-center gap-3 border-b border-gray-100 px-5 py-3 transition-colors hover:bg-gray-50 dark:border-white/[0.05] dark:hover:bg-white/[0.02]">
-          <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition-transform group-open:rotate-90" />
+        <summary className="flex cursor-pointer items-center gap-3 bg-gray-100 px-5 py-3 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700">
+          <ChevronRight className="h-4 w-4 shrink-0 text-gray-500 transition-transform group-open:rotate-90 dark:text-gray-400" />
           <span className="text-sm font-semibold text-gray-800 dark:text-white/90">
             {dateLabel}
           </span>
-          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+          <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-600 dark:text-gray-200">
             {count} event{count !== 1 ? "s" : ""}
           </span>
         </summary>
@@ -510,9 +535,18 @@ export default async function EventsPage({
                 </span>
               </h2>
               <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-                {upcomingDates.map((dateKey, i) =>
-                  renderDateGroup(dateKey, upcomingGroups[dateKey], i, i < 5)
-                )}
+                {upcomingDates.map((dateKey, i) => {
+                  const prevKey = i > 0 ? upcomingDates[i - 1] : null;
+                  const showWeekBreak = prevKey && getWeekNumber(dateKey) !== getWeekNumber(prevKey);
+                  return (
+                    <div key={dateKey}>
+                      {showWeekBreak && (
+                        <div className="border-t-2 border-gray-300 dark:border-gray-600" />
+                      )}
+                      {renderDateGroup(dateKey, upcomingGroups[dateKey], i, i < 5)}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -528,9 +562,18 @@ export default async function EventsPage({
                 </span>
               </h2>
               <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
-                {completedDates.map((dateKey, i) =>
-                  renderDateGroup(dateKey, completedGroups[dateKey], i, i < 5)
-                )}
+                {completedDates.map((dateKey, i) => {
+                  const prevKey = i > 0 ? completedDates[i - 1] : null;
+                  const showWeekBreak = prevKey && getWeekNumber(dateKey) !== getWeekNumber(prevKey);
+                  return (
+                    <div key={dateKey}>
+                      {showWeekBreak && (
+                        <div className="border-t-2 border-gray-300 dark:border-gray-600" />
+                      )}
+                      {renderDateGroup(dateKey, completedGroups[dateKey], i, i < 5)}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
