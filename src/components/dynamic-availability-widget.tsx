@@ -474,15 +474,6 @@ export function DynamicAvailabilityWidget(
       cancellationWindowHours * 60 * 60 * 1000
     : false;
 
-  // Show toast when user selects slots within the non-refundable window
-  const prevWithinWindow = useRef(false);
-  useEffect(() => {
-    if (isWithinCancellationWindow && !prevWithinWindow.current) {
-      setToast({ message: "This booking cannot be modified or refunded" });
-    }
-    prevWithinWindow.current = isWithinCancellationWindow;
-  }, [isWithinCancellationWindow]);
-
   // ─── Mounted guard for portal rendering ─────────────────
 
   useEffect(() => {
@@ -1963,6 +1954,14 @@ export function DynamicAvailabilityWidget(
               })()}
             </div>
 
+            {/* Within cancellation window warning */}
+            {isWithinCancellationWindow && (
+              <div className="text-center space-y-0.5">
+                <p className="text-xs text-muted-foreground">Within {cancellationWindowHours} hours</p>
+                <p className="text-xs text-red-600 dark:text-red-400">✕ Refunds ✕ Modifications</p>
+              </div>
+            )}
+
             {/* Error display */}
             {paymentValidationError && (
               <p className="text-xs text-red-600">{paymentValidationError}</p>
@@ -2316,19 +2315,13 @@ export function DynamicAvailabilityWidget(
                             })()}
                           </div>
 
-                          {/* Notes */}
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-muted-foreground">
-                              Notes (optional)
-                            </label>
-                            <textarea
-                              value={bookingNotes}
-                              onChange={(e) => setBookingNotes(e.target.value)}
-                              placeholder="Any special requests..."
-                              rows={2}
-                              className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                            />
-                          </div>
+                          {/* Within cancellation window warning */}
+                          {isWithinCancellationWindow && (
+                            <div className="space-y-0.5">
+                              <p className="text-sm text-muted-foreground">Within {cancellationWindowHours} hours</p>
+                              <p className="text-sm text-red-600 dark:text-red-400">✕ Refunds ✕ Modifications</p>
+                            </div>
+                          )}
 
                           {/* User info */}
                           <p className="text-sm text-muted-foreground">
