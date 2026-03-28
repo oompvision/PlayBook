@@ -228,8 +228,12 @@ export function EventDayModal({
     const eventRows: EventRow[] = [];
     for (const ev of eventsData || []) {
       const bayNames = (ev.event_bays || []).map(
-        (eb: { bay_id: string; bays: { name: string } | null }) =>
-          eb.bays?.name || "Unknown"
+        // Supabase returns bays as { name } (single join) or array — handle both
+        (eb: { bay_id: string; bays: { name: string } | { name: string }[] | null }) => {
+          if (!eb.bays) return "Unknown";
+          if (Array.isArray(eb.bays)) return eb.bays[0]?.name || "Unknown";
+          return eb.bays.name || "Unknown";
+        }
       );
 
       eventRows.push({
