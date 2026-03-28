@@ -195,6 +195,7 @@ export default async function EventTemplatesPage({
       description?: string;
       capacity?: number;
       price_cents?: number;
+      members_only?: boolean;
       guest_enrollment_days_before?: number;
       waitlist_promotion_hours?: number;
       bay_ids?: string[];
@@ -241,6 +242,28 @@ export default async function EventTemplatesPage({
           <div className="space-y-1.5">
             <label className={labelClass}>Waitlist Window (hours)</label>
             <input name="waitlist_promotion_hours" type="number" min="1" defaultValue={defaults?.waitlist_promotion_hours || 24} className={inputClass} />
+          </div>
+
+          {/* Members Only */}
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <label className="relative inline-flex cursor-pointer items-center">
+              <input
+                type="checkbox"
+                name="members_only_checkbox"
+                defaultChecked={defaults?.members_only || false}
+                className="peer sr-only"
+                onChange={(e) => {
+                  const hidden = e.target.closest("form")?.querySelector<HTMLInputElement>("input[name=members_only]");
+                  if (hidden) hidden.value = e.target.checked ? "true" : "false";
+                }}
+              />
+              <div className="h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-blue-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:ring-3 peer-focus:ring-blue-500/10 dark:bg-gray-700" />
+            </label>
+            <input type="hidden" name="members_only" defaultValue={defaults?.members_only ? "true" : "false"} />
+            <div>
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Members Only</span>
+              <p className="text-xs text-gray-400 dark:text-gray-500">Restrict this event to members</p>
+            </div>
           </div>
 
           {/* Color Picker */}
@@ -345,6 +368,7 @@ export default async function EventTemplatesPage({
                   description: editingTemplate.config?.description,
                   capacity: editingTemplate.config?.capacity,
                   price_cents: editingTemplate.config?.price_cents,
+                  members_only: editingTemplate.config?.members_only,
                   guest_enrollment_days_before: editingTemplate.config?.guest_enrollment_days_before,
                   waitlist_promotion_hours: editingTemplate.config?.waitlist_promotion_hours,
                   bay_ids: editingTemplate.config?.bay_ids,
