@@ -51,8 +51,6 @@ type EventTemplateSummary = {
   id: string;
   name: string;
   color: string;
-  start_time: string | null;
-  end_time: string | null;
   bay_ids: string[];
 };
 
@@ -85,7 +83,9 @@ type EventCalendarProps = {
     templateId: string,
     bayIds: string[],
     dates: string[],
-    status: "draft" | "published"
+    status: "draft" | "published",
+    startTime: string,
+    endTime: string
   ) => Promise<ApplyResult>;
   onApplyDaySchedule: (
     dayScheduleId: string,
@@ -240,6 +240,8 @@ export function EventCalendar({
   const [selectedBayIds, setSelectedBayIds] = useState<Set<string>>(new Set());
   const [selectedDayScheduleId, setSelectedDayScheduleId] = useState("");
   const [applyStatus, setApplyStatus] = useState<"draft" | "published">("draft");
+  const [applyStartTime, setApplyStartTime] = useState("09:00");
+  const [applyEndTime, setApplyEndTime] = useState("10:00");
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
 
@@ -323,6 +325,8 @@ export function EventCalendar({
     setSelectedTemplateId("");
     setSelectedBayIds(new Set(bays.map((b) => b.id)));
     setApplyStatus("draft");
+    setApplyStartTime("09:00");
+    setApplyEndTime("10:00");
     setApplyResult(null);
   }, [bays]);
 
@@ -355,7 +359,7 @@ export function EventCalendar({
   }, [bays]);
 
   const handleApplyTemplate = useCallback(async () => {
-    if (!selectedTemplateId || selectedBayIds.size === 0 || selectedDates.size === 0) return;
+    if (!selectedTemplateId || selectedBayIds.size === 0 || selectedDates.size === 0 || !applyStartTime || !applyEndTime) return;
     setApplying(true);
     setApplyResult(null);
     try {
@@ -363,7 +367,9 @@ export function EventCalendar({
         selectedTemplateId,
         Array.from(selectedBayIds),
         Array.from(selectedDates),
-        applyStatus
+        applyStatus,
+        applyStartTime,
+        applyEndTime
       );
       setApplyResult(result);
       if (result.success) {
@@ -505,7 +511,7 @@ export function EventCalendar({
   const selectedArray = useMemo(() => Array.from(selectedDates).sort(), [selectedDates]);
 
   const selectedTemplate = eventTemplates.find((t) => t.id === selectedTemplateId);
-  const canApplyTemplate = selectedCount > 0 && selectedBayIds.size > 0 && !!selectedTemplateId;
+  const canApplyTemplate = selectedCount > 0 && selectedBayIds.size > 0 && !!selectedTemplateId && !!applyStartTime && !!applyEndTime;
   const canApplyDaySchedule = selectedCount > 0 && !!selectedDayScheduleId;
 
   function getWillBeSelected(dateStr: string, isSelected: boolean, inPreview: boolean): boolean {
@@ -812,13 +818,36 @@ export function EventCalendar({
                           {eventTemplates.map((t) => (
                             <option key={t.id} value={t.id}>
                               {t.name}
-                              {t.start_time && t.end_time
-                                ? ` (${t.start_time}–${t.end_time})`
-                                : ""}
                             </option>
                           ))}
                         </select>
                       )}
+                    </div>
+
+                    {/* Time inputs */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                          Start Time
+                        </label>
+                        <input
+                          type="time"
+                          value={applyStartTime}
+                          onChange={(e) => setApplyStartTime(e.target.value)}
+                          className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                          End Time
+                        </label>
+                        <input
+                          type="time"
+                          value={applyEndTime}
+                          onChange={(e) => setApplyEndTime(e.target.value)}
+                          className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10"
+                        />
+                      </div>
                     </div>
 
                     {/* Bay selector */}

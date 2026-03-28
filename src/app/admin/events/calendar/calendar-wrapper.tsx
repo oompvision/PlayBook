@@ -17,8 +17,6 @@ type EventTemplateSummary = {
   id: string;
   name: string;
   color: string;
-  start_time: string | null;
-  end_time: string | null;
   bay_ids: string[];
 };
 
@@ -51,7 +49,9 @@ type EventCalendarWrapperProps = {
     templateId: string,
     bayIds: string[],
     dates: string[],
-    status: "draft" | "published"
+    status: "draft" | "published",
+    startTime: string,
+    endTime: string
   ) => Promise<ApplyResult>;
   onApplyDaySchedule: (
     dayScheduleId: string,
@@ -65,7 +65,9 @@ type EventCalendarWrapperProps = {
   onDeleteEvent: (eventId: string) => Promise<{ success: boolean; error?: string }>;
   onAddEventFromTemplate: (
     templateId: string,
-    date: string
+    date: string,
+    startTime: string,
+    endTime: string
   ) => Promise<{ success: boolean; error?: string }>;
   onSaveDaySchedule: (
     date: string,
@@ -115,8 +117,6 @@ export function EventCalendarWrapper({
             id: t.id,
             name: t.name,
             color: t.color,
-            start_time: t.start_time,
-            end_time: t.end_time,
           }))}
           onClose={() => {
             setViewingDate(null);

@@ -87,8 +87,6 @@ export default async function EventTemplatesPage({
     const supabase = await createClient();
 
     const name = formData.get("name") as string;
-    const startTime = (formData.get("start_time") as string) || null;
-    const endTime = (formData.get("end_time") as string) || null;
     // Read bay checkboxes directly from formData (bay_XXX fields)
     const bayIds: string[] = [];
     for (const [key, value] of formData.entries()) {
@@ -111,8 +109,6 @@ export default async function EventTemplatesPage({
         formData.get("waitlist_promotion_hours") as string, 10
       ) || 24,
       description: (formData.get("description") as string) || null,
-      start_time: startTime,
-      end_time: endTime,
       bay_ids: bayIds,
       color,
     };
@@ -137,8 +133,6 @@ export default async function EventTemplatesPage({
     const supabase = await createClient();
     const id = formData.get("id") as string;
     const name = formData.get("name") as string;
-    const startTime = (formData.get("start_time") as string) || null;
-    const endTime = (formData.get("end_time") as string) || null;
     // Read bay checkboxes directly from formData (bay_XXX fields)
     const bayIds: string[] = [];
     for (const [key, value] of formData.entries()) {
@@ -161,8 +155,6 @@ export default async function EventTemplatesPage({
         formData.get("waitlist_promotion_hours") as string, 10
       ) || 24,
       description: (formData.get("description") as string) || null,
-      start_time: startTime,
-      end_time: endTime,
       bay_ids: bayIds,
       color,
     };
@@ -201,8 +193,6 @@ export default async function EventTemplatesPage({
     defaults?: {
       name?: string;
       description?: string;
-      start_time?: string;
-      end_time?: string;
       capacity?: number;
       price_cents?: number;
       guest_enrollment_days_before?: number;
@@ -235,14 +225,6 @@ export default async function EventTemplatesPage({
               placeholder="Optional default description"
               className={inputClass + " placeholder:text-gray-400 dark:placeholder:text-white/30"}
             />
-          </div>
-          <div className="space-y-1.5">
-            <label className={labelClass}>Default Start Time</label>
-            <input name="start_time" type="time" defaultValue={defaults?.start_time || ""} className={inputClass} />
-          </div>
-          <div className="space-y-1.5">
-            <label className={labelClass}>Default End Time</label>
-            <input name="end_time" type="time" defaultValue={defaults?.end_time || ""} className={inputClass} />
           </div>
           <div className="space-y-1.5">
             <label className={labelClass}>Default Capacity</label>
@@ -361,8 +343,6 @@ export default async function EventTemplatesPage({
                 defaults={{
                   name: editingTemplate.name,
                   description: editingTemplate.config?.description,
-                  start_time: editingTemplate.config?.start_time,
-                  end_time: editingTemplate.config?.end_time,
                   capacity: editingTemplate.config?.capacity,
                   price_cents: editingTemplate.config?.price_cents,
                   guest_enrollment_days_before: editingTemplate.config?.guest_enrollment_days_before,
@@ -412,9 +392,6 @@ export default async function EventTemplatesPage({
                       {tpl.name}
                     </p>
                     <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      {tpl.config?.start_time && tpl.config?.end_time
-                        ? `${tpl.config.start_time} – ${tpl.config.end_time} · `
-                        : ""}
                       {tpl.config?.capacity || "?"} spots ·{" "}
                       {tpl.config?.price_cents
                         ? `$${(tpl.config.price_cents / 100).toFixed(2)}`

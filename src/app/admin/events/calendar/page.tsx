@@ -85,8 +85,6 @@ export default async function EventCalendarPage({
       id: t.id,
       name: t.name,
       color: (config.color as string) || "#3B82F6",
-      start_time: (config.start_time as string) || null,
-      end_time: (config.end_time as string) || null,
       bay_ids: (config.bay_ids as string[]) || [],
     };
   });
@@ -133,9 +131,15 @@ export default async function EventCalendarPage({
     templateId: string,
     bayIds: string[],
     dates: string[],
-    status: "draft" | "published"
+    status: "draft" | "published",
+    startTime?: string,
+    endTime?: string
   ): Promise<{ success: boolean; count: number; error?: string }> {
     "use server";
+
+    if (!startTime || !endTime) {
+      return { success: false, count: 0, error: "Start time and end time are required" };
+    }
 
     const org = await getOrg();
     if (!org) return { success: false, count: 0, error: "Organization not found" };
@@ -153,8 +157,6 @@ export default async function EventCalendarPage({
     if (!tpl) return { success: false, count: 0, error: "Template not found" };
 
     const config = (tpl.config || {}) as Record<string, unknown>;
-    const startTime = (config.start_time as string) || "09:00";
-    const endTime = (config.end_time as string) || "10:00";
     const capacity = (config.capacity as number) || 12;
     const priceCents = (config.price_cents as number) || 0;
     const membersOnly = (config.members_only as boolean) || false;
@@ -253,10 +255,10 @@ export default async function EventCalendarPage({
 
     const supabase = await createClient();
 
-    // Fetch the day schedule entries with their template configs
+    // Fetch the day schedule entries with their saved times
     const { data: entries } = await supabase
       .from("event_day_schedule_entries")
-      .select("event_template_id, bay_id_overrides, sort_order")
+      .select("event_template_id, bay_id_overrides, sort_order, start_time, end_time")
       .eq("day_schedule_id", dayScheduleId)
       .order("sort_order");
 
@@ -267,6 +269,8 @@ export default async function EventCalendarPage({
     let totalCreated = 0;
 
     for (const entry of entries) {
+      if (!entry.start_time || !entry.end_time) continue;
+
       // Get the template's bay_ids (use overrides if set)
       let bayIds: string[] = [];
       if (entry.bay_id_overrides && entry.bay_id_overrides.length > 0) {
@@ -286,7 +290,9 @@ export default async function EventCalendarPage({
         entry.event_template_id,
         bayIds,
         dates,
-        status
+        status,
+        entry.start_time,
+        entry.end_time
       );
       totalCreated += result.count;
     }
@@ -346,9 +352,15 @@ export default async function EventCalendarPage({
 
   async function addEventFromTemplateAction(
     templateId: string,
-    date: string
+    date: string,
+    startTime?: string,
+    endTime?: string
   ): Promise<{ success: boolean; error?: string }> {
     "use server";
+
+    if (!startTime || !endTime) {
+      return { success: false, error: "Start time and end time are required" };
+    }
 
     const org = await getOrg();
     if (!org) return { success: false, error: "Organization not found" };
@@ -364,7 +376,7 @@ export default async function EventCalendarPage({
       ? ((tpl.config as Record<string, unknown>).bay_ids as string[]) || []
       : [];
 
-    const result = await applyEventTemplateAction(templateId, bayIds, [date], "draft");
+    const result = await applyEventTemplateAction(templateId, bayIds, [date], "draft", startTime, endTime);
     return { success: result.success, error: result.error };
   }
 
@@ -382,12 +394,12 @@ export default async function EventCalendarPage({
     const supabase = await createClient();
     const tz = org.timezone || "America/New_York";
 
-    // Find all events on this date
+    // Find all events on this date (include start_time and end_time for saving)
     const startTs = toTimestamp(date, "00:00", tz);
     const endTs = toTimestamp(date, "23:59", tz);
     const { data: events } = await supabase
       .from("events")
-      .select("id, template_id")
+      .select("id, template_id, start_time, end_time")
       .eq("org_id", org.id)
       .gte("start_time", startTs)
       .lte("start_time", endTs)
@@ -422,12 +434,29 @@ export default async function EventCalendarPage({
       return { success: false, error: dsError?.message || "Failed to create day schedule" };
     }
 
-    // Create entries
-    const entries = templatedEvents.map((e, i) => ({
-      day_schedule_id: daySchedule.id,
-      event_template_id: e.template_id!,
-      sort_order: i,
-    }));
+    // Create entries with the actual event times (as HH:MM in org timezone)
+    const entries = templatedEvents.map((e, i) => {
+      // Convert timestamptz to HH:MM in org timezone
+      const startLocal = new Date(e.start_time).toLocaleTimeString("en-GB", {
+        timeZone: tz,
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      const endLocal = new Date(e.end_time).toLocaleTimeString("en-GB", {
+        timeZone: tz,
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      return {
+        day_schedule_id: daySchedule.id,
+        event_template_id: e.template_id!,
+        sort_order: i,
+        start_time: startLocal,
+        end_time: endLocal,
+      };
+    });
 
     const { error: entryError } = await supabase
       .from("event_day_schedule_entries")

@@ -26,8 +26,6 @@ type EventDayModalProps = {
     id: string;
     name: string;
     color: string;
-    start_time: string | null;
-    end_time: string | null;
   }[];
   onClose: () => void;
   onUpdateEvent: (
@@ -44,7 +42,9 @@ type EventDayModalProps = {
   ) => Promise<{ success: boolean; error?: string }>;
   onAddEventFromTemplate: (
     templateId: string,
-    date: string
+    date: string,
+    startTime: string,
+    endTime: string
   ) => Promise<{ success: boolean; error?: string }>;
   onSaveDaySchedule: (
     date: string,
@@ -136,6 +136,8 @@ export function EventDayModal({
   // Add from template state
   const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
   const [addingFromTemplate, setAddingFromTemplate] = useState(false);
+  const [addStartTime, setAddStartTime] = useState("09:00");
+  const [addEndTime, setAddEndTime] = useState("10:00");
 
   // Save as day schedule state
   const [showSaveSchedule, setShowSaveSchedule] = useState(false);
@@ -349,14 +351,20 @@ export function EventDayModal({
   // ─── Add from template handler ───────────────────────────────
 
   async function handleAddFromTemplate(templateId: string) {
+    if (!addStartTime || !addEndTime) {
+      setMessage({ type: "error", text: "Please set start and end times" });
+      return;
+    }
     setAddingFromTemplate(true);
     setMessage(null);
 
-    const result = await onAddEventFromTemplate(templateId, date);
+    const result = await onAddEventFromTemplate(templateId, date, addStartTime, addEndTime);
 
     if (result.success) {
       setMessage({ type: "success", text: "Event created from template" });
       setShowTemplateDropdown(false);
+      setAddStartTime("09:00");
+      setAddEndTime("10:00");
       await fetchEvents();
     } else {
       setMessage({
@@ -694,8 +702,25 @@ export function EventDayModal({
               </Button>
 
               {showTemplateDropdown && (
-                <div className="absolute bottom-full left-0 z-10 mb-1 w-56 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                <div className="absolute bottom-full left-0 z-10 mb-1 w-72 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
                   <div className="px-3 py-1.5 text-xs font-medium text-gray-500">
+                    Set Time
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 px-3 pb-2">
+                    <input
+                      type="time"
+                      value={addStartTime}
+                      onChange={(e) => setAddStartTime(e.target.value)}
+                      className="h-8 w-full rounded border border-gray-300 px-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none"
+                    />
+                    <input
+                      type="time"
+                      value={addEndTime}
+                      onChange={(e) => setAddEndTime(e.target.value)}
+                      className="h-8 w-full rounded border border-gray-300 px-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="border-t border-gray-100 px-3 py-1.5 text-xs font-medium text-gray-500">
                     Select Template
                   </div>
                   {eventTemplates.map((template) => (
