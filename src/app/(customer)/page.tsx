@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { SignOutButton } from "@/components/sign-out-button";
 import { AvailabilityWidget } from "@/components/availability-widget";
 import { DynamicAvailabilityWidget } from "@/components/dynamic-availability-widget";
+import { EventsFeed } from "@/components/events/events-feed";
 import { AdminLoginForm } from "@/components/admin-login-form";
 import { MarketingHomepage, type DemoOrgData } from "@/components/marketing/marketing-homepage";
 
@@ -363,6 +364,46 @@ export default async function FacilityHomePage({
   }
 
   const isDynamic = schedulingType === "dynamic";
+  const isEventsOnly = schedulingType === "events_only";
+
+  // Events-only: resolve membership for event discounts
+  let eventsOnlyIsMember = false;
+  let eventsOnlyEventDiscount: { type: "percent" | "flat"; value: number } | null = null;
+  if (isEventsOnly && auth) {
+    const { data: membership } = await serviceClient
+      .from("user_memberships")
+      .select("status, current_period_end, expires_at")
+      .eq("org_id", org!.id)
+      .eq("user_id", auth.user.id)
+      .single();
+
+    if (membership) {
+      const now = new Date();
+      eventsOnlyIsMember = !!(
+        (membership.status === "active" &&
+          (!membership.current_period_end || new Date(membership.current_period_end) > now)) ||
+        (membership.status === "admin_granted" &&
+          (!membership.expires_at || new Date(membership.expires_at) > now)) ||
+        (membership.status === "cancelled" &&
+          membership.current_period_end &&
+          new Date(membership.current_period_end) > now)
+      );
+
+      if (eventsOnlyIsMember) {
+        const { data: tier } = await serviceClient
+          .from("membership_tiers")
+          .select("event_discount_type, event_discount_value")
+          .eq("org_id", org!.id)
+          .single();
+        if (tier && Number(tier.event_discount_value) > 0) {
+          eventsOnlyEventDiscount = {
+            type: tier.event_discount_type as "percent" | "flat",
+            value: Number(tier.event_discount_value),
+          };
+        }
+      }
+    }
+  }
 
   return (
     <div className="flex flex-1 flex-col">
@@ -382,10 +423,21 @@ export default async function FacilityHomePage({
           </div>
         )}
 
-        {/* Availability Widget */}
+        {/* Availability Widget / Events Feed */}
         <div className="flex-1 py-6">
           <div className="mx-auto max-w-6xl px-6">
-            {org && bays && bays.length > 0 ? (
+            {org && isEventsOnly ? (
+              <EventsFeed
+                orgId={org.id}
+                timezone={timezone}
+                isAuthenticated={!!auth}
+                isMember={eventsOnlyIsMember}
+                eventDiscount={eventsOnlyEventDiscount}
+                userId={auth?.profile.id}
+                paymentMode={paymentMode}
+                locationId={activeLocationId}
+              />
+            ) : org && bays && bays.length > 0 ? (
               isDynamic ? (
                 <DynamicAvailabilityWidget
                   orgId={org.id}
@@ -447,8 +499,19 @@ export default async function FacilityHomePage({
       <div className="flex flex-1 flex-col lg:hidden">
         <div className="flex flex-1 flex-col p-6">
 
-          {/* Mobile availability widget with embedded chat */}
-          {org && bays && bays.length > 0 ? (
+          {/* Mobile availability widget / events feed */}
+          {org && isEventsOnly ? (
+            <EventsFeed
+              orgId={org.id}
+              timezone={timezone}
+              isAuthenticated={!!auth}
+              isMember={eventsOnlyIsMember}
+              eventDiscount={eventsOnlyEventDiscount}
+              userId={auth?.profile.id}
+              paymentMode={paymentMode}
+              locationId={activeLocationId}
+            />
+          ) : org && bays && bays.length > 0 ? (
             isDynamic ? (
               <DynamicAvailabilityWidget
                 orgId={org.id}
