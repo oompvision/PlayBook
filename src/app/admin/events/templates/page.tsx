@@ -89,9 +89,13 @@ export default async function EventTemplatesPage({
     const name = formData.get("name") as string;
     const startTime = (formData.get("start_time") as string) || null;
     const endTime = (formData.get("end_time") as string) || null;
-    const bayIds: string[] = JSON.parse(
-      (formData.get("bay_ids") as string) || "[]"
-    );
+    // Read bay checkboxes directly from formData (bay_XXX fields)
+    const bayIds: string[] = [];
+    for (const [key, value] of formData.entries()) {
+      if (key.startsWith("bay_") && key !== "bay_ids") {
+        bayIds.push(value as string);
+      }
+    }
     const color = (formData.get("color") as string) || TEMPLATE_COLORS[0];
     const config = {
       capacity: parseInt(formData.get("capacity") as string, 10) || 12,
@@ -135,9 +139,13 @@ export default async function EventTemplatesPage({
     const name = formData.get("name") as string;
     const startTime = (formData.get("start_time") as string) || null;
     const endTime = (formData.get("end_time") as string) || null;
-    const bayIds: string[] = JSON.parse(
-      (formData.get("bay_ids") as string) || "[]"
-    );
+    // Read bay checkboxes directly from formData (bay_XXX fields)
+    const bayIds: string[] = [];
+    for (const [key, value] of formData.entries()) {
+      if (key.startsWith("bay_") && key !== "bay_ids") {
+        bayIds.push(value as string);
+      }
+    }
     const color = (formData.get("color") as string) || TEMPLATE_COLORS[0];
     const config = {
       capacity: parseInt(formData.get("capacity") as string, 10) || 12,
@@ -301,19 +309,12 @@ export default async function EventTemplatesPage({
                   </label>
                 ))}
               </div>
-              {/* Hidden field to collect bay_ids via JS — we use a script-free approach:
-                  the server action reads individual bay_* checkboxes */}
             </div>
           )}
         </div>
       </>
     );
   }
-
-  // Helper to extract bay_ids from form fields (used by hidden input approach)
-  // We'll serialize bay_ids in a hidden input via a client-side workaround,
-  // but since this is a server component, we handle it in the server action
-  // by reading the individual checkbox values
 
   return (
     <div className="mx-auto max-w-[1100px] space-y-6">
@@ -356,7 +357,6 @@ export default async function EventTemplatesPage({
           <div className="p-6">
             <form action={updateTemplate} className="space-y-4">
               <input type="hidden" name="id" value={editingTemplate.id} />
-              <input type="hidden" name="bay_ids" value="__BAY_PLACEHOLDER__" />
               <TemplateFormFields
                 defaults={{
                   name: editingTemplate.name,
@@ -458,7 +458,6 @@ export default async function EventTemplatesPage({
           </div>
           <div className="p-6">
             <form action={createTemplate} className="space-y-4">
-              <input type="hidden" name="bay_ids" value="__BAY_PLACEHOLDER__" />
               <TemplateFormFields />
               <button type="submit" className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700">
                 <Plus className="h-4 w-4" />
@@ -469,23 +468,6 @@ export default async function EventTemplatesPage({
         </div>
       )}
 
-      {/* Script to collect bay checkboxes into hidden bay_ids field before submit */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `
-            document.querySelectorAll('form').forEach(function(form) {
-              form.addEventListener('submit', function() {
-                var checked = [];
-                form.querySelectorAll('input[type=checkbox][name^=bay_]').forEach(function(cb) {
-                  if (cb.checked) checked.push(cb.value);
-                });
-                var hidden = form.querySelector('input[name=bay_ids]');
-                if (hidden) hidden.value = JSON.stringify(checked);
-              });
-            });
-          `,
-        }}
-      />
     </div>
   );
 }
