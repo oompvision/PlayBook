@@ -60,7 +60,7 @@ type EventCalendarWrapperProps = {
   ) => Promise<ApplyResult>;
   onUpdateEvent: (
     eventId: string,
-    updates: { start_time?: string; end_time?: string; capacity?: number; price_cents?: number }
+    updates: { date?: string; start_time?: string; end_time?: string; capacity?: number; price_cents?: number }
   ) => Promise<{ success: boolean; error?: string }>;
   onDeleteEvent: (eventId: string) => Promise<{ success: boolean; error?: string }>;
   onAddEventFromTemplate: (

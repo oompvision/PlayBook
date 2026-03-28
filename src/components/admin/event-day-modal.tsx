@@ -31,6 +31,7 @@ type EventDayModalProps = {
   onUpdateEvent: (
     eventId: string,
     updates: {
+      date?: string;
       start_time?: string;
       end_time?: string;
       capacity?: number;
@@ -295,13 +296,15 @@ export function EventDayModal({
     setMessage(null);
 
     const updates: {
+      date?: string;
       start_time?: string;
       end_time?: string;
       capacity?: number;
       price_cents?: number;
     } = {
-      start_time: `${date}T${editForm.start_time}:00`,
-      end_time: `${date}T${editForm.end_time}:00`,
+      date,
+      start_time: editForm.start_time,
+      end_time: editForm.end_time,
       capacity: editForm.capacity,
       price_cents: editForm.price_cents,
     };

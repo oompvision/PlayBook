@@ -305,6 +305,7 @@ export default async function EventCalendarPage({
   async function updateEventAction(
     eventId: string,
     updates: {
+      date?: string;
       start_time?: string;
       end_time?: string;
       capacity?: number;
@@ -313,10 +314,33 @@ export default async function EventCalendarPage({
   ): Promise<{ success: boolean; error?: string }> {
     "use server";
 
+    const org = await getOrg();
+    const tz = org?.timezone || "America/New_York";
+
     const supabase = await createClient();
+
+    // Build the actual DB updates
+    const dbUpdates: Record<string, unknown> = {};
+    if (updates.capacity !== undefined) dbUpdates.capacity = updates.capacity;
+    if (updates.price_cents !== undefined) dbUpdates.price_cents = updates.price_cents;
+
+    // Convert HH:MM times to proper timestamptz using org timezone
+    if (updates.date && updates.start_time) {
+      dbUpdates.start_time = toTimestamp(updates.date, updates.start_time, tz);
+    }
+    if (updates.date && updates.end_time) {
+      let endDate = updates.date;
+      if (updates.start_time && updates.end_time <= updates.start_time) {
+        const d = new Date(updates.date);
+        d.setDate(d.getDate() + 1);
+        endDate = d.toISOString().slice(0, 10);
+      }
+      dbUpdates.end_time = toTimestamp(endDate, updates.end_time, tz);
+    }
+
     const { error } = await supabase
       .from("events")
-      .update(updates)
+      .update(dbUpdates)
       .eq("id", eventId);
 
     if (error) return { success: false, error: error.message };
