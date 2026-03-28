@@ -247,5 +247,9 @@ export async function GET(request: NextRequest) {
   // Also return the available durations from the first rule (for the UI)
   const availableDurations = rules.length > 0 ? rules[0].available_durations : [];
 
-  return NextResponse.json({ slots, available_durations: availableDurations });
+  const response = NextResponse.json({ slots, available_durations: availableDurations });
+  // Cache availability for 30 seconds — data changes with bookings but short cache
+  // reduces DB load significantly under traffic spikes
+  response.headers.set("Cache-Control", "public, s-maxage=30, stale-while-revalidate=60");
+  return response;
 }

@@ -37,24 +37,27 @@ export async function GET(request: Request) {
     .lte("start_time", hour72);
 
   if (upcoming48 && upcoming48.length > 0) {
+    // Batch-fetch related data to avoid N+1 queries
+    const orgIds48 = [...new Set(upcoming48.map((b) => b.org_id))];
+    const bayIds48 = [...new Set(upcoming48.map((b) => b.bay_id))];
+    const custIds48 = [...new Set(upcoming48.filter((b) => b.customer_id).map((b) => b.customer_id!))];
+
+    const [{ data: orgs48 }, { data: bays48 }, { data: profiles48 }] = await Promise.all([
+      supabase.from("organizations").select("id, name, timezone").in("id", orgIds48),
+      supabase.from("bays").select("id, name").in("id", bayIds48),
+      supabase.from("profiles").select("id, email, full_name").in("id", custIds48),
+    ]);
+
+    const orgMap = new Map((orgs48 ?? []).map((o) => [o.id, o]));
+    const bayMap = new Map((bays48 ?? []).map((b) => [b.id, b]));
+    const profileMap = new Map((profiles48 ?? []).map((p) => [p.id, p]));
+
     for (const b of upcoming48) {
       if (!b.customer_id) continue;
 
-      const { data: org } = await supabase
-        .from("organizations")
-        .select("name, timezone")
-        .eq("id", b.org_id)
-        .single();
-      const { data: bay } = await supabase
-        .from("bays")
-        .select("name")
-        .eq("id", b.bay_id)
-        .single();
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("email, full_name")
-        .eq("id", b.customer_id)
-        .single();
+      const org = orgMap.get(b.org_id);
+      const bay = bayMap.get(b.bay_id);
+      const profile = profileMap.get(b.customer_id);
 
       const tz = org?.timezone ?? "America/New_York";
       const bayName = bay?.name ?? "Facility";
@@ -126,24 +129,27 @@ export async function GET(request: Request) {
     .lte("start_time", hour48);
 
   if (upcoming24 && upcoming24.length > 0) {
+    // Batch-fetch related data to avoid N+1 queries
+    const orgIds24 = [...new Set(upcoming24.map((b) => b.org_id))];
+    const bayIds24 = [...new Set(upcoming24.map((b) => b.bay_id))];
+    const custIds24 = [...new Set(upcoming24.filter((b) => b.customer_id).map((b) => b.customer_id!))];
+
+    const [{ data: orgs24 }, { data: bays24 }, { data: profiles24 }] = await Promise.all([
+      supabase.from("organizations").select("id, name, timezone").in("id", orgIds24),
+      supabase.from("bays").select("id, name").in("id", bayIds24),
+      supabase.from("profiles").select("id, email, full_name").in("id", custIds24),
+    ]);
+
+    const orgMap24 = new Map((orgs24 ?? []).map((o) => [o.id, o]));
+    const bayMap24 = new Map((bays24 ?? []).map((b) => [b.id, b]));
+    const profileMap24 = new Map((profiles24 ?? []).map((p) => [p.id, p]));
+
     for (const b of upcoming24) {
       if (!b.customer_id) continue;
 
-      const { data: org } = await supabase
-        .from("organizations")
-        .select("name, timezone")
-        .eq("id", b.org_id)
-        .single();
-      const { data: bay } = await supabase
-        .from("bays")
-        .select("name")
-        .eq("id", b.bay_id)
-        .single();
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("email, full_name")
-        .eq("id", b.customer_id)
-        .single();
+      const org = orgMap24.get(b.org_id);
+      const bay = bayMap24.get(b.bay_id);
+      const profile = profileMap24.get(b.customer_id);
 
       const tz = org?.timezone ?? "America/New_York";
       const bayName = bay?.name ?? "Facility";

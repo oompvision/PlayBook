@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
+import { rateLimit } from "@/lib/rate-limit";
 
 // Domains that should NOT be treated as facility subdomains
 const RESERVED_SUBDOMAINS = ["www", "admin", "api"];
@@ -42,9 +43,58 @@ function extractFacilitySlug(hostname: string): string | null {
   return null;
 }
 
+function applySecurityHeaders(response: NextResponse): void {
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=()"
+  );
+  response.headers.set("X-DNS-Prefetch-Control", "on");
+  response.headers.set(
+    "Strict-Transport-Security",
+    "max-age=63072000; includeSubDomains; preload"
+  );
+}
+
+// Rate limit config per path prefix: [maxRequests, windowMs]
+const RATE_LIMITS: Record<string, [number, number]> = {
+  "/api/chat":  [20, 60_000],   // 20 req/min
+  "/api/lead":  [5,  60_000],   // 5 req/min
+  "/auth/login": [10, 60_000],  // 10 req/min
+  "/auth/signup": [5, 60_000],  // 5 req/min
+};
+
+function getClientIp(request: NextRequest): string {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown"
+  );
+}
+
 export async function middleware(request: NextRequest) {
   const hostname = request.headers.get("host") || "";
   const { pathname } = request.nextUrl;
+
+  // Rate limiting for sensitive endpoints
+  for (const [prefix, [limit, windowMs]] of Object.entries(RATE_LIMITS)) {
+    if (pathname.startsWith(prefix)) {
+      const ip = getClientIp(request);
+      const result = rateLimit(`${ip}:${prefix}`, limit, windowMs);
+      if (result.limited) {
+        const res = NextResponse.json(
+          { error: "Too many requests. Please try again later." },
+          { status: 429 }
+        );
+        res.headers.set("Retry-After", String(Math.ceil((result.resetAt - Date.now()) / 1000)));
+        applySecurityHeaders(res);
+        return res;
+      }
+      break;
+    }
+  }
 
   // Extract facility slug from subdomain
   let facilitySlug = extractFacilitySlug(hostname);
@@ -101,6 +151,9 @@ export async function middleware(request: NextRequest) {
     });
   }
 
+  // Apply security headers to all responses
+  applySecurityHeaders(response);
+
   // Super admin routes — no facility context needed
   if (pathname.startsWith("/super-admin")) {
     return response;
@@ -109,7 +162,9 @@ export async function middleware(request: NextRequest) {
   // Admin routes — require facility context
   if (pathname.startsWith("/admin")) {
     if (!facilitySlug) {
-      return NextResponse.redirect(new URL("/", request.url));
+      const redirect = NextResponse.redirect(new URL("/", request.url));
+      applySecurityHeaders(redirect);
+      return redirect;
     }
     return response;
   }

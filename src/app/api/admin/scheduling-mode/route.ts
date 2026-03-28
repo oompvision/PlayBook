@@ -52,7 +52,8 @@ export async function PUT(request: NextRequest) {
     .eq("id", org.id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[admin/scheduling-mode] update error:", error.message);
+    return NextResponse.json({ error: "Failed to update scheduling mode" }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });

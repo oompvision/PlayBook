@@ -7,6 +7,8 @@ export function getStripe(): Stripe {
     _stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
       apiVersion: "2026-02-25.clover",
       typescript: true,
+      timeout: 30_000, // 30s timeout for all Stripe API calls
+      maxNetworkRetries: 2, // Auto-retry on network errors
     });
   }
   return _stripe;

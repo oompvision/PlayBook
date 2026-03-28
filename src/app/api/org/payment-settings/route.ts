@@ -76,8 +76,9 @@ export async function GET(_request: NextRequest) {
             .single();
           settings = existing;
         } else {
+          console.error("[payment-settings] insert error:", error.message);
           return NextResponse.json(
-            { error: `Failed to create payment settings: ${error.message}` },
+            { error: "Failed to create payment settings" },
             { status: 500 }
           );
         }
@@ -215,8 +216,9 @@ export async function PUT(request: NextRequest) {
       .single();
 
     if (error) {
+      console.error("[payment-settings] update error:", error.message);
       return NextResponse.json(
-        { error: `Failed to update payment settings: ${error.message}` },
+        { error: "Failed to update payment settings" },
         { status: 500 }
       );
     }

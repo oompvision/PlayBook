@@ -70,7 +70,8 @@ export async function POST(request: NextRequest) {
       .eq("id", existing.id);
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("[admin/members] update membership error:", error.message);
+      return NextResponse.json({ error: "Failed to grant membership" }, { status: 500 });
     }
   } else {
     const { error } = await supabase.from("user_memberships").insert({
@@ -82,7 +83,8 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("[admin/members] insert membership error:", error.message);
+      return NextResponse.json({ error: "Failed to grant membership" }, { status: 500 });
     }
   }
 
@@ -155,7 +157,8 @@ export async function DELETE(request: NextRequest) {
     .eq("id", membership_id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[admin/members] delete membership error:", error.message);
+    return NextResponse.json({ error: "Failed to revoke membership" }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });

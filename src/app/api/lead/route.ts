@@ -1,5 +1,17 @@
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
+import { z } from "zod/v4";
+
+const leadSchema = z.object({
+  type: z.enum(["contact", "demo"]),
+  name: z.string().min(1).max(200),
+  email: z.string().email().max(320),
+  phone: z.string().max(30).optional(),
+  company: z.string().max(200).optional(),
+  facilityType: z.string().max(100).optional(),
+  locations: z.string().max(20).optional(),
+  message: z.string().max(2000).optional(),
+});
 
 const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
@@ -11,11 +23,13 @@ const FROM_EMAIL = "EZBooker <noreply@updates.ezbooker.app>";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { type, name, email, phone, company, facilityType, locations, message } = body;
+    const parsed = leadSchema.safeParse(body);
 
-    if (!name || !email || !type) {
-      return NextResponse.json({ error: "Name, email, and type are required" }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
     }
+
+    const { type, name, email, phone, company, facilityType, locations, message } = parsed.data;
 
     if (!resend) {
       console.error("[lead] Resend not configured (RESEND_API_KEY missing)");

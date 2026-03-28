@@ -69,7 +69,8 @@ export default async function CustomerListPage({
     .select("guest_name, guest_email, guest_phone, created_at")
     .eq("org_id", org.id)
     .eq("is_guest", true)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .limit(5000);
 
   // Deduplicate guests by email (if present) or by name
   const guestDeduped = new Map<
