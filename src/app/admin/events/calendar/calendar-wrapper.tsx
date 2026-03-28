@@ -56,8 +56,9 @@ type EventCalendarWrapperProps = {
   onApplyDaySchedule: (
     dayScheduleId: string,
     dates: string[],
-    status: "draft" | "published"
-  ) => Promise<ApplyResult>;
+    status: "draft" | "published",
+    confirm?: boolean
+  ) => Promise<{ success: boolean; count: number; error?: string; needsConfirmation?: boolean; eventsToDelete?: number; registrationsToCancel?: number }>;
   onUpdateEvent: (
     eventId: string,
     updates: { date?: string; start_time?: string; end_time?: string; capacity?: number; price_cents?: number }

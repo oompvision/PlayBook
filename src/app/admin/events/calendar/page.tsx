@@ -248,14 +248,23 @@ export default async function EventCalendarPage({
   async function applyDayScheduleAction(
     dayScheduleId: string,
     dates: string[],
-    status: "draft" | "published"
-  ): Promise<{ success: boolean; count: number; error?: string }> {
+    status: "draft" | "published",
+    confirm?: boolean
+  ): Promise<{
+    success: boolean;
+    count: number;
+    error?: string;
+    needsConfirmation?: boolean;
+    eventsToDelete?: number;
+    registrationsToCancel?: number;
+  }> {
     "use server";
 
     const org = await getOrg();
     if (!org) return { success: false, count: 0, error: "Organization not found" };
 
     const supabase = await createClient();
+    const tz = org.timezone || "America/New_York";
 
     // Fetch the day schedule entries with their saved times
     const { data: entries } = await supabase
@@ -268,37 +277,197 @@ export default async function EventCalendarPage({
       return { success: false, count: 0, error: "Day schedule has no entries" };
     }
 
+    // Valid entries (with times)
+    const validEntries = entries.filter((e) => e.start_time && e.end_time);
+    if (validEntries.length === 0) {
+      return { success: false, count: 0, error: "Day schedule entries have no times set" };
+    }
+
+    // For each date, check existing events and determine what to keep/delete/insert
+    let totalEventsToDelete = 0;
+    let totalRegistrationsToCancel = 0;
     let totalCreated = 0;
 
-    for (const entry of entries) {
-      if (!entry.start_time || !entry.end_time) continue;
+    // Build schedule fingerprints: template_id + start_time + end_time
+    const scheduleFingerprints = new Set(
+      validEntries.map((e) => `${e.event_template_id}|${e.start_time}|${e.end_time}`)
+    );
 
-      // Get the template's bay_ids (use overrides if set)
-      let bayIds: string[] = [];
-      if (entry.bay_id_overrides && entry.bay_id_overrides.length > 0) {
-        bayIds = entry.bay_id_overrides;
-      } else {
-        const { data: tpl } = await supabase
-          .from("event_templates")
-          .select("config")
-          .eq("id", entry.event_template_id)
-          .single();
-        if (tpl?.config) {
-          bayIds = ((tpl.config as Record<string, unknown>).bay_ids as string[]) || [];
+    for (const date of dates) {
+      const startTs = toTimestamp(date, "00:00", tz);
+      const endTs = toTimestamp(date, "23:59", tz);
+
+      // Fetch existing events on this date
+      const { data: existingEvents } = await supabase
+        .from("events")
+        .select("id, template_id, start_time, end_time, status")
+        .eq("org_id", org.id)
+        .gte("start_time", startTs)
+        .lte("start_time", endTs)
+        .in("status", ["draft", "published"]);
+
+      if (!existingEvents || existingEvents.length === 0) {
+        // No existing events — just insert all
+        if (confirm !== false) {
+          for (const entry of validEntries) {
+            let bayIds: string[] = [];
+            if (entry.bay_id_overrides && entry.bay_id_overrides.length > 0) {
+              bayIds = entry.bay_id_overrides;
+            } else {
+              const { data: tpl } = await supabase
+                .from("event_templates")
+                .select("config")
+                .eq("id", entry.event_template_id)
+                .single();
+              if (tpl?.config) {
+                bayIds = ((tpl.config as Record<string, unknown>).bay_ids as string[]) || [];
+              }
+            }
+            const result = await applyEventTemplateAction(
+              entry.event_template_id, bayIds, [date], status,
+              entry.start_time!, entry.end_time!
+            );
+            totalCreated += result.count;
+          }
+        }
+        continue;
+      }
+
+      // Convert existing events to fingerprints for comparison
+      const existingFingerprints = new Map<string, typeof existingEvents[0]>();
+      const eventsToDelete: typeof existingEvents = [];
+
+      for (const ev of existingEvents) {
+        // Convert timestamptz to HH:MM in org timezone
+        const evStart = new Date(ev.start_time).toLocaleTimeString("en-GB", {
+          timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
+        });
+        const evEnd = new Date(ev.end_time).toLocaleTimeString("en-GB", {
+          timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
+        });
+        const fp = `${ev.template_id}|${evStart}|${evEnd}`;
+
+        if (scheduleFingerprints.has(fp)) {
+          // Exact match — keep this event
+          existingFingerprints.set(fp, ev);
+        } else {
+          // No match — mark for deletion
+          eventsToDelete.push(ev);
         }
       }
 
-      const result = await applyEventTemplateAction(
-        entry.event_template_id,
-        bayIds,
-        dates,
-        status,
-        entry.start_time,
-        entry.end_time
-      );
-      totalCreated += result.count;
+      // Count registrations on events to delete
+      if (eventsToDelete.length > 0) {
+        const deleteIds = eventsToDelete.map((e) => e.id);
+        const { count: regCount } = await supabase
+          .from("event_registrations")
+          .select("id", { count: "exact", head: true })
+          .in("event_id", deleteIds)
+          .in("status", ["confirmed", "waitlisted", "pending_payment"]);
+
+        totalEventsToDelete += eventsToDelete.length;
+        totalRegistrationsToCancel += regCount || 0;
+      }
+
+      // Determine which schedule entries need new events (not already matched)
+      const entriesToInsert = validEntries.filter((entry) => {
+        const fp = `${entry.event_template_id}|${entry.start_time}|${entry.end_time}`;
+        return !existingFingerprints.has(fp);
+      });
+
+      // If preview only (confirm not set), just accumulate counts
+      if (confirm === false) continue;
+
+      // ── Confirmed: delete non-matching events and insert new ones ──
+
+      // Cancel and delete non-matching events
+      for (const ev of eventsToDelete) {
+        await supabase.rpc("cancel_event", { p_event_id: ev.id });
+        await supabase.from("events").delete().eq("id", ev.id);
+      }
+
+      // Notify registrants of cancelled events
+      if (totalRegistrationsToCancel > 0 && eventsToDelete.length > 0) {
+        const serviceClient = createServiceClient();
+        for (const ev of eventsToDelete) {
+          const { data: regs } = await serviceClient
+            .from("event_registrations")
+            .select("customer_id, profiles:customer_id(id, email, full_name)")
+            .eq("event_id", ev.id)
+            .eq("status", "cancelled")
+            .not("cancelled_at", "is", null);
+
+          if (regs) {
+            const eventDate = new Date(ev.start_time).toLocaleDateString("en-US", {
+              timeZone: tz, weekday: "long", month: "long", day: "numeric",
+            });
+            for (const reg of regs) {
+              const profile = reg.profiles as unknown as { id: string; email: string; full_name: string } | null;
+              if (!profile) continue;
+              await createNotification({
+                orgId: org.id,
+                recipientId: profile.id,
+                recipientType: "customer",
+                type: "event_cancelled",
+                title: "Event Cancelled",
+                message: `An event on ${eventDate} has been cancelled. Your registration has been removed.`,
+                link: "/my-bookings",
+                recipientEmail: profile.email,
+                recipientName: profile.full_name,
+                orgName: org.name,
+              });
+            }
+          }
+        }
+      }
+
+      // Insert new events for unmatched entries
+      for (const entry of entriesToInsert) {
+        let bayIds: string[] = [];
+        if (entry.bay_id_overrides && entry.bay_id_overrides.length > 0) {
+          bayIds = entry.bay_id_overrides;
+        } else {
+          const { data: tpl } = await supabase
+            .from("event_templates")
+            .select("config")
+            .eq("id", entry.event_template_id)
+            .single();
+          if (tpl?.config) {
+            bayIds = ((tpl.config as Record<string, unknown>).bay_ids as string[]) || [];
+          }
+        }
+        const result = await applyEventTemplateAction(
+          entry.event_template_id, bayIds, [date], status,
+          entry.start_time!, entry.end_time!
+        );
+        totalCreated += result.count;
+      }
     }
 
+    // If there are events to delete with registrations, ask for confirmation first
+    if (confirm === false && totalRegistrationsToCancel > 0) {
+      return {
+        success: true,
+        count: 0,
+        needsConfirmation: true,
+        eventsToDelete: totalEventsToDelete,
+        registrationsToCancel: totalRegistrationsToCancel,
+      };
+    }
+
+    // If preview and no registrations to worry about, just proceed
+    if (confirm === false && totalEventsToDelete > 0) {
+      return {
+        success: true,
+        count: 0,
+        needsConfirmation: true,
+        eventsToDelete: totalEventsToDelete,
+        registrationsToCancel: 0,
+      };
+    }
+
+    revalidatePath("/admin/events/calendar");
+    revalidatePath("/admin/events");
     return { success: true, count: totalCreated };
   }
 

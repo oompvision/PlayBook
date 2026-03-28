@@ -91,8 +91,9 @@ type EventCalendarProps = {
   onApplyDaySchedule: (
     dayScheduleId: string,
     dates: string[],
-    status: "draft" | "published"
-  ) => Promise<ApplyResult>;
+    status: "draft" | "published",
+    confirm?: boolean
+  ) => Promise<{ success: boolean; count: number; error?: string; needsConfirmation?: boolean; eventsToDelete?: number; registrationsToCancel?: number }>;
   onOpenDay: (dateStr: string | null) => void;
   onDeleteEventsForDates: (
     dates: string[],
@@ -346,6 +347,7 @@ export function EventCalendar({
     setSelectedDayScheduleId("");
     setApplyStatus("draft");
     setApplyResult(null);
+    setDayScheduleConfirm(null);
   }, []);
 
   const closePanel = useCallback(() => {
@@ -431,7 +433,60 @@ export function EventCalendar({
     }
   }, [selectedTemplateId, selectedBayIds, selectedDates, applyStatus, onApplyEventTemplate]);
 
+  // Day schedule overwrite confirmation state
+  const [dayScheduleConfirm, setDayScheduleConfirm] = useState<{
+    eventsToDelete: number;
+    registrationsToCancel: number;
+  } | null>(null);
+
   const handleApplyDaySchedule = useCallback(async () => {
+    if (!selectedDayScheduleId || selectedDates.size === 0) return;
+    setApplying(true);
+    setApplyResult(null);
+    setDayScheduleConfirm(null);
+    try {
+      // First call: preview mode (confirm=false)
+      const preview = await onApplyDaySchedule(
+        selectedDayScheduleId,
+        Array.from(selectedDates),
+        applyStatus,
+        false
+      );
+
+      if (preview.needsConfirmation) {
+        // Show confirmation UI
+        setDayScheduleConfirm({
+          eventsToDelete: preview.eventsToDelete || 0,
+          registrationsToCancel: preview.registrationsToCancel || 0,
+        });
+        setApplying(false);
+        return;
+      }
+
+      // No conflicts — apply directly (confirm=true)
+      const result = await onApplyDaySchedule(
+        selectedDayScheduleId,
+        Array.from(selectedDates),
+        applyStatus,
+        true
+      );
+      setApplyResult(result);
+      if (result.success) {
+        setTimeout(() => {
+          setPanelMode(null);
+          setSelectedDates(new Set());
+          setApplyResult(null);
+          setDayScheduleConfirm(null);
+        }, 1500);
+      }
+    } catch {
+      setApplyResult({ success: false, count: 0, error: "An unexpected error occurred" });
+    } finally {
+      setApplying(false);
+    }
+  }, [selectedDayScheduleId, selectedDates, applyStatus, onApplyDaySchedule]);
+
+  const handleConfirmDaySchedule = useCallback(async () => {
     if (!selectedDayScheduleId || selectedDates.size === 0) return;
     setApplying(true);
     setApplyResult(null);
@@ -439,9 +494,11 @@ export function EventCalendar({
       const result = await onApplyDaySchedule(
         selectedDayScheduleId,
         Array.from(selectedDates),
-        applyStatus
+        applyStatus,
+        true
       );
       setApplyResult(result);
+      setDayScheduleConfirm(null);
       if (result.success) {
         setTimeout(() => {
           setPanelMode(null);
@@ -1095,30 +1152,58 @@ export function EventCalendar({
                         </button>
                       </div>
                     </div>
+                    {/* Overwrite confirmation warning */}
+                    {dayScheduleConfirm && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <p className="text-sm font-medium text-amber-800">
+                          {dayScheduleConfirm.eventsToDelete} existing event{dayScheduleConfirm.eventsToDelete !== 1 ? "s" : ""} will be replaced.
+                        </p>
+                        {dayScheduleConfirm.registrationsToCancel > 0 && (
+                          <p className="mt-1 text-sm text-amber-700">
+                            {dayScheduleConfirm.registrationsToCancel} active registration{dayScheduleConfirm.registrationsToCancel !== 1 ? "s" : ""} will be cancelled and registrants notified.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Footer */}
                 <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 md:px-6">
                   <div className="text-xs text-gray-500">
-                    {canApplyDaySchedule
-                      ? `Events will be created on ${selectedCount} ${selectedCount === 1 ? "date" : "dates"} as ${applyStatus}`
-                      : "Select a day schedule"}
+                    {dayScheduleConfirm
+                      ? "Existing events will be replaced"
+                      : canApplyDaySchedule
+                        ? `Events will be created on ${selectedCount} ${selectedCount === 1 ? "date" : "dates"} as ${applyStatus}`
+                        : "Select a day schedule"}
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={closePanel} disabled={applying} className="rounded-lg border-gray-200">
+                    <Button variant="outline" size="sm" onClick={() => { closePanel(); setDayScheduleConfirm(null); }} disabled={applying} className="rounded-lg border-gray-200">
                       Cancel
                     </Button>
-                    <Button size="sm" onClick={handleApplyDaySchedule} disabled={!canApplyDaySchedule || applying} className="gap-1.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700">
-                      {applying ? (
-                        <>
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          Applying...
-                        </>
-                      ) : (
-                        <>Apply to {selectedCount} {selectedCount === 1 ? "date" : "dates"}</>
-                      )}
-                    </Button>
+                    {dayScheduleConfirm ? (
+                      <Button size="sm" onClick={handleConfirmDaySchedule} disabled={applying} className="gap-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700">
+                        {applying ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Replacing...
+                          </>
+                        ) : (
+                          <>Replace &amp; Apply</>
+                        )}
+                      </Button>
+                    ) : (
+                      <Button size="sm" onClick={handleApplyDaySchedule} disabled={!canApplyDaySchedule || applying} className="gap-1.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700">
+                        {applying ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Checking...
+                          </>
+                        ) : (
+                          <>Apply to {selectedCount} {selectedCount === 1 ? "date" : "dates"}</>
+                        )}
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
