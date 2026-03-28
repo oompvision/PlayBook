@@ -10,6 +10,8 @@ import {
   Pencil,
   Trash2,
   ArrowLeft,
+  CalendarClock,
+  Clock,
 } from "lucide-react";
 import { SavedToast } from "@/components/admin/saved-toast";
 
@@ -45,6 +47,7 @@ export default async function EventTemplatesPage({
     error?: string;
     saved?: string;
     edit?: string;
+    editSchedule?: string;
     location?: string;
   }>;
 }) {
@@ -77,8 +80,28 @@ export default async function EventTemplatesPage({
   const templates = templatesResult.data;
   const bays = baysResult.data || [];
 
+  // Fetch day schedules with entries
+  const { data: daySchedulesRaw } = await supabase
+    .from("event_day_schedules")
+    .select("id, name, created_at, event_day_schedule_entries(id, event_template_id, sort_order, start_time, end_time)")
+    .eq("org_id", org.id)
+    .order("created_at", { ascending: false });
+
+  const daySchedules = (daySchedulesRaw || []).map((ds) => ({
+    ...ds,
+    entries: (ds.event_day_schedule_entries || [])
+      .sort((a: { sort_order: number }, b: { sort_order: number }) => a.sort_order - b.sort_order)
+      .map((e: { id: string; event_template_id: string; sort_order: number; start_time: string | null; end_time: string | null }) => ({
+        ...e,
+        templateName: templates?.find((t) => t.id === e.event_template_id)?.name || "Unknown",
+        templateColor: templates?.find((t) => t.id === e.event_template_id)?.config?.color || "#3B82F6",
+      })),
+  }));
+
   const editingId = params.edit;
   const editingTemplate = templates?.find((t) => t.id === editingId);
+  const editingDayScheduleId = params.editSchedule;
+  const editingDaySchedule = daySchedules.find((ds) => ds.id === editingDayScheduleId);
 
   async function createTemplate(formData: FormData) {
     "use server";
@@ -181,6 +204,83 @@ export default async function EventTemplatesPage({
     revalidatePath("/admin/events/templates");
     revalidatePath("/admin/events/calendar");
     redirect("/admin/events/templates");
+  }
+
+  // ─── Day Schedule Server Actions ───
+
+  async function renameDaySchedule(formData: FormData) {
+    "use server";
+    const supabase = await createClient();
+    const id = formData.get("id") as string;
+    const name = formData.get("name") as string;
+    await supabase.from("event_day_schedules").update({ name }).eq("id", id);
+    revalidatePath("/admin/events/templates");
+    revalidatePath("/admin/events/calendar");
+    redirect("/admin/events/templates?saved=true");
+  }
+
+  async function deleteDaySchedule(formData: FormData) {
+    "use server";
+    const supabase = await createClient();
+    const id = formData.get("id") as string;
+    await supabase.from("event_day_schedules").delete().eq("id", id);
+    revalidatePath("/admin/events/templates");
+    revalidatePath("/admin/events/calendar");
+    redirect("/admin/events/templates");
+  }
+
+  async function deleteDayScheduleEntry(formData: FormData) {
+    "use server";
+    const supabase = await createClient();
+    const entryId = formData.get("entry_id") as string;
+    await supabase.from("event_day_schedule_entries").delete().eq("id", entryId);
+    revalidatePath("/admin/events/templates");
+    revalidatePath("/admin/events/calendar");
+    redirect(`/admin/events/templates?edit=${formData.get("schedule_id")}`);
+  }
+
+  async function updateDayScheduleEntry(formData: FormData) {
+    "use server";
+    const supabase = await createClient();
+    const entryId = formData.get("entry_id") as string;
+    const startTime = formData.get("start_time") as string;
+    const endTime = formData.get("end_time") as string;
+    await supabase
+      .from("event_day_schedule_entries")
+      .update({ start_time: startTime, end_time: endTime })
+      .eq("id", entryId);
+    revalidatePath("/admin/events/templates");
+    revalidatePath("/admin/events/calendar");
+    redirect(`/admin/events/templates?edit=${formData.get("schedule_id")}&saved=true`);
+  }
+
+  async function addDayScheduleEntry(formData: FormData) {
+    "use server";
+    const supabase = await createClient();
+    const scheduleId = formData.get("schedule_id") as string;
+    const templateId = formData.get("template_id") as string;
+    const startTime = formData.get("start_time") as string;
+    const endTime = formData.get("end_time") as string;
+
+    // Get max sort_order
+    const { data: existing } = await supabase
+      .from("event_day_schedule_entries")
+      .select("sort_order")
+      .eq("day_schedule_id", scheduleId)
+      .order("sort_order", { ascending: false })
+      .limit(1);
+    const nextOrder = existing && existing.length > 0 ? existing[0].sort_order + 1 : 0;
+
+    await supabase.from("event_day_schedule_entries").insert({
+      day_schedule_id: scheduleId,
+      event_template_id: templateId,
+      sort_order: nextOrder,
+      start_time: startTime,
+      end_time: endTime,
+    });
+    revalidatePath("/admin/events/templates");
+    revalidatePath("/admin/events/calendar");
+    redirect(`/admin/events/templates?edit=${scheduleId}&saved=true`);
   }
 
   const inputClass =
@@ -464,6 +564,172 @@ export default async function EventTemplatesPage({
         </div>
       )}
 
+      {/* ─── Day Schedules Section ─── */}
+      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03]">
+        <div className="border-b border-gray-200 px-6 py-4 dark:border-white/[0.05]">
+          <div className="flex items-center gap-2">
+            <CalendarClock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+            <h2 className="font-semibold text-gray-800 dark:text-white/90">
+              Day Schedules
+            </h2>
+          </div>
+          <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">
+            Saved day lineups that can be applied to dates from the Event Calendar.
+          </p>
+        </div>
+
+        {daySchedules.length === 0 ? (
+          <div className="px-6 py-12 text-center">
+            <CalendarClock className="mx-auto h-10 w-10 text-gray-300 dark:text-gray-600" />
+            <p className="mt-3 text-sm font-medium text-gray-500 dark:text-gray-400">
+              No day schedules yet
+            </p>
+            <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">
+              Open a day with events in the Event Calendar and use &ldquo;Save as Day Schedule&rdquo;.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100 dark:divide-white/[0.05]">
+            {daySchedules.map((ds) => (
+              <div key={ds.id}>
+                <div className="flex items-center justify-between px-6 py-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800 dark:text-white/90">
+                      {ds.name}
+                    </p>
+                    <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {ds.entries.length} event{ds.entries.length !== 1 ? "s" : ""}
+                      {ds.entries.length > 0 && (
+                        <> · {ds.entries.map((e: { templateName: string }) => e.templateName).join(", ")}</>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a href={`/admin/events/templates?editSchedule=${ds.id}`}>
+                      <button className="rounded-lg border border-gray-300 bg-white p-2 text-gray-500 shadow-sm transition-colors hover:bg-gray-50 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:bg-gray-800">
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    </a>
+                    <form action={deleteDaySchedule}>
+                      <input type="hidden" name="id" value={ds.id} />
+                      <button type="submit" className="rounded-lg border border-gray-300 bg-white p-2 text-red-500 shadow-sm transition-colors hover:bg-red-50 dark:border-gray-700 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-950/30">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </form>
+                  </div>
+                </div>
+
+                {/* Expanded edit view */}
+                {editingDayScheduleId === ds.id && (
+                  <div className="border-t border-gray-100 bg-gray-50 px-6 py-4 dark:border-white/[0.05] dark:bg-white/[0.02]">
+                    {/* Rename */}
+                    <form action={renameDaySchedule} className="mb-4 flex items-end gap-2">
+                      <input type="hidden" name="id" value={ds.id} />
+                      <div className="flex-1">
+                        <label className={labelClass}>Schedule Name</label>
+                        <input
+                          name="name"
+                          defaultValue={ds.name}
+                          required
+                          className={inputClass + " mt-1"}
+                        />
+                      </div>
+                      <button type="submit" className="inline-flex h-10 items-center rounded-lg bg-blue-600 px-3 text-sm font-medium text-white shadow-sm hover:bg-blue-700">
+                        Rename
+                      </button>
+                    </form>
+
+                    {/* Entries */}
+                    <div className="space-y-2">
+                      <label className={labelClass}>Events</label>
+                      {ds.entries.map((entry: { id: string; event_template_id: string; start_time: string | null; end_time: string | null; templateName: string; templateColor: string }) => (
+                        <div key={entry.id} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+                          <span
+                            className="inline-block h-3 w-3 shrink-0 rounded-full"
+                            style={{ backgroundColor: entry.templateColor }}
+                          />
+                          <span className="min-w-0 flex-1 text-sm font-medium text-gray-700 dark:text-gray-300">
+                            {entry.templateName}
+                          </span>
+                          <form action={updateDayScheduleEntry} className="flex items-center gap-1.5">
+                            <input type="hidden" name="entry_id" value={entry.id} />
+                            <input type="hidden" name="schedule_id" value={ds.id} />
+                            <input
+                              name="start_time"
+                              type="time"
+                              defaultValue={entry.start_time || ""}
+                              required
+                              className="h-8 w-24 rounded border border-gray-300 px-2 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                            />
+                            <span className="text-xs text-gray-400">–</span>
+                            <input
+                              name="end_time"
+                              type="time"
+                              defaultValue={entry.end_time || ""}
+                              required
+                              className="h-8 w-24 rounded border border-gray-300 px-2 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                            />
+                            <button type="submit" className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700">
+                              Save
+                            </button>
+                          </form>
+                          <form action={deleteDayScheduleEntry}>
+                            <input type="hidden" name="entry_id" value={entry.id} />
+                            <input type="hidden" name="schedule_id" value={ds.id} />
+                            <button type="submit" className="rounded-md p-1.5 text-red-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </form>
+                        </div>
+                      ))}
+
+                      {/* Add entry */}
+                      {templates && templates.length > 0 && (
+                        <form action={addDayScheduleEntry} className="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white p-3 dark:border-gray-600 dark:bg-gray-900">
+                          <input type="hidden" name="schedule_id" value={ds.id} />
+                          <select
+                            name="template_id"
+                            required
+                            className="h-8 flex-1 rounded border border-gray-300 px-2 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                          >
+                            <option value="">Add event...</option>
+                            {templates.map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                          <input
+                            name="start_time"
+                            type="time"
+                            required
+                            className="h-8 w-24 rounded border border-gray-300 px-2 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                          />
+                          <span className="text-xs text-gray-400">–</span>
+                          <input
+                            name="end_time"
+                            type="time"
+                            required
+                            className="h-8 w-24 rounded border border-gray-300 px-2 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                          />
+                          <button type="submit" className="inline-flex h-8 items-center gap-1 rounded-md bg-blue-600 px-2.5 text-xs font-medium text-white hover:bg-blue-700">
+                            <Plus className="h-3 w-3" />
+                            Add
+                          </button>
+                        </form>
+                      )}
+                    </div>
+
+                    <div className="mt-3">
+                      <a href="/admin/events/templates" className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300">
+                        ← Done editing
+                      </a>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
