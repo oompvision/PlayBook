@@ -153,6 +153,9 @@ export function EventCalendarWrapper({
           onUnpublishEvent={onUnpublishEvent}
           onPublishAllEvents={onPublishAllEvents}
           onUnpublishAllEvents={onUnpublishAllEvents}
+          onDeleteEventsForDates={onDeleteEventsForDates}
+          onApplyDaySchedule={onApplyDaySchedule}
+          daySchedules={daySchedules}
         />
       )}
     </>

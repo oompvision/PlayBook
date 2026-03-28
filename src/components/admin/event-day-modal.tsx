@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  CalendarClock,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────
@@ -65,6 +66,17 @@ type EventDayModalProps = {
   onUnpublishAllEvents: (
     eventIds: string[]
   ) => Promise<{ success: boolean; unpublished: number; cancelledRegistrations: number; error?: string }>;
+  onDeleteEventsForDates: (
+    dates: string[],
+    confirm: boolean
+  ) => Promise<{ success: boolean; eventCount: number; registrationCount: number; deletedCount?: number; error?: string }>;
+  onApplyDaySchedule: (
+    dayScheduleId: string,
+    dates: string[],
+    status: "draft" | "published",
+    confirm?: boolean
+  ) => Promise<{ success: boolean; count: number; error?: string; needsConfirmation?: boolean; eventsToDelete?: number; registrationsToCancel?: number }>;
+  daySchedules: { id: string; name: string; entryCount: number }[];
 };
 
 type EventRow = {
@@ -136,6 +148,9 @@ export function EventDayModal({
   onUnpublishEvent,
   onPublishAllEvents,
   onUnpublishAllEvents,
+  onDeleteEventsForDates,
+  onApplyDaySchedule,
+  daySchedules,
 }: EventDayModalProps) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -176,6 +191,13 @@ export function EventDayModal({
   const [publishingEventId, setPublishingEventId] = useState<string | null>(null);
   const [publishingAll, setPublishingAll] = useState(false);
   const [unpublishingAll, setUnpublishingAll] = useState(false);
+
+  // Delete all events state
+  const [deletingAll, setDeletingAll] = useState(false);
+
+  // Apply day schedule state
+  const [showDayScheduleDropdown, setShowDayScheduleDropdown] = useState(false);
+  const [applyingDaySchedule, setApplyingDaySchedule] = useState(false);
 
   // Mount + animate in
   useEffect(() => {
@@ -466,6 +488,71 @@ export function EventDayModal({
     });
     await fetchEvents();
     setUnpublishingAll(false);
+  }
+
+  // ─── Delete all events on this day ──────────────────────────
+
+  async function handleDeleteAllEvents() {
+    if (events.length === 0) return;
+
+    // Preview first
+    const preview = await onDeleteEventsForDates([date], false);
+    if (preview.eventCount === 0) {
+      setMessage({ type: "success", text: "No events to delete" });
+      return;
+    }
+
+    let msg = `Delete ${preview.eventCount} event${preview.eventCount !== 1 ? "s" : ""} on this day?`;
+    if (preview.registrationCount > 0) {
+      msg += ` ${preview.registrationCount} registration${preview.registrationCount !== 1 ? "s" : ""} will be cancelled and registrants notified.`;
+    }
+    if (!window.confirm(msg)) return;
+
+    setDeletingAll(true);
+    setMessage(null);
+
+    const result = await onDeleteEventsForDates([date], true);
+
+    if (result.success) {
+      setMessage({ type: "success", text: `Deleted ${result.deletedCount} event${result.deletedCount !== 1 ? "s" : ""}` });
+      await fetchEvents();
+    } else {
+      setMessage({ type: "error", text: result.error || "Failed to delete events" });
+    }
+    setDeletingAll(false);
+  }
+
+  // ─── Apply day schedule to this day ───────────────────────────
+
+  async function handleApplyDaySchedule(scheduleId: string) {
+    setApplyingDaySchedule(true);
+    setMessage(null);
+    setShowDayScheduleDropdown(false);
+
+    // Preview first
+    const preview = await onApplyDaySchedule(scheduleId, [date], "draft", false);
+
+    if (preview.needsConfirmation) {
+      let msg = `This will replace ${preview.eventsToDelete} existing event${preview.eventsToDelete !== 1 ? "s" : ""}.`;
+      if ((preview.registrationsToCancel || 0) > 0) {
+        msg += ` ${preview.registrationsToCancel} registration${preview.registrationsToCancel !== 1 ? "s" : ""} will be cancelled.`;
+      }
+      msg += " Continue?";
+      if (!window.confirm(msg)) {
+        setApplyingDaySchedule(false);
+        return;
+      }
+    }
+
+    const result = await onApplyDaySchedule(scheduleId, [date], "draft", true);
+
+    if (result.success) {
+      setMessage({ type: "success", text: `Applied day schedule (${result.count} event${result.count !== 1 ? "s" : ""} created)` });
+      await fetchEvents();
+    } else {
+      setMessage({ type: "error", text: result.error || "Failed to apply day schedule" });
+    }
+    setApplyingDaySchedule(false);
   }
 
   // ─── Add from template handler ───────────────────────────────
@@ -952,6 +1039,68 @@ export function EventDayModal({
                 </div>
               )}
             </div>
+
+            {/* Apply Day Schedule */}
+            {daySchedules.length > 0 && (
+              <div className="relative">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setShowDayScheduleDropdown(!showDayScheduleDropdown);
+                    setShowTemplateDropdown(false);
+                    setShowSaveSchedule(false);
+                  }}
+                  disabled={applyingDaySchedule}
+                >
+                  {applyingDaySchedule ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  Apply Schedule
+                </Button>
+
+                {showDayScheduleDropdown && (
+                  <div className="absolute bottom-full left-0 z-10 mb-1 w-56 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                    <div className="px-3 py-1.5 text-xs font-medium text-gray-500">
+                      Select Day Schedule
+                    </div>
+                    {daySchedules.map((ds) => (
+                      <button
+                        key={ds.id}
+                        onClick={() => handleApplyDaySchedule(ds.id)}
+                        disabled={applyingDaySchedule}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {ds.name}
+                        <span className="ml-auto text-xs text-gray-400">
+                          {ds.entryCount} event{ds.entryCount !== 1 ? "s" : ""}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Delete All Events */}
+            {events.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDeleteAllEvents}
+                disabled={deletingAll}
+                className="gap-1.5 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+              >
+                {deletingAll ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+                Delete All
+              </Button>
+            )}
             </div>
 
             {/* Publish All / Unpublish All */}

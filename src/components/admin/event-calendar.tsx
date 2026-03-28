@@ -514,10 +514,24 @@ export function EventCalendar({
   }, [selectedDayScheduleId, selectedDates, applyStatus, onApplyDaySchedule]);
 
   // --- Mouse handlers ---
+  // Track state at mousedown time to decide behavior on click
+  const clickContextRef = useRef<{
+    shiftHeld: boolean;
+    hadSelection: boolean;
+    didDrag: boolean;
+  }>({ shiftHeld: false, hadSelection: false, didDrag: false });
+
   const handleMouseDown = useCallback(
     (dateStr: string, e: React.MouseEvent) => {
       if (isPast(dateStr, today)) return;
 
+      clickContextRef.current = {
+        shiftHeld: e.shiftKey,
+        hadSelection: selectedDates.size > 0,
+        didDrag: false,
+      };
+
+      // Shift+click: range select from last clicked date, no modal
       if (e.shiftKey && lastClickedDate) {
         const startIdx = allDatesFlat.indexOf(lastClickedDate);
         const endIdx = allDatesFlat.indexOf(dateStr);
@@ -534,6 +548,7 @@ export function EventCalendar({
         return;
       }
 
+      // Start drag for selection
       e.preventDefault();
       setIsDragging(true);
       setDragStart(dateStr);
@@ -546,14 +561,30 @@ export function EventCalendar({
 
   const handleMouseEnter = useCallback(
     (dateStr: string) => {
-      if (isDragging) setDragEnd(dateStr);
+      if (isDragging) {
+        setDragEnd(dateStr);
+        clickContextRef.current.didDrag = true;
+      }
     },
     [isDragging]
   );
 
   const handleDayClick = useCallback(
     (dateStr: string) => {
-      if (!isPast(dateStr, today)) onOpenDay(dateStr);
+      if (isPast(dateStr, today)) return;
+      const ctx = clickContextRef.current;
+
+      // Shift was held → range select handled in mouseDown, no modal
+      if (ctx.shiftHeld) return;
+      // User dragged across multiple cells → selection handled by drag, no modal
+      if (ctx.didDrag) return;
+      // Had existing selection → click adds/removes from selection (via drag), no modal
+      if (ctx.hadSelection) return;
+
+      // No prior selection, no shift, no drag → single click opens modal
+      // Undo the selection that the single-cell drag created
+      setSelectedDates(new Set());
+      onOpenDay(dateStr);
     },
     [today, onOpenDay]
   );
