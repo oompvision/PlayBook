@@ -1171,6 +1171,11 @@ export function DynamicAvailabilityWidget(
         recordBookingPayment(result.booking_id, paymentMethodId);
       }
 
+      // Capture values needed for confirmation modal before state is cleared
+      const confirmedDate = selectedDate;
+      const confirmedNotes = bookingNotes;
+      const confirmedDiscount = calcDiscount(selectedSlot.price_cents);
+
       // Reset state
       handleCancelSelection();
 
@@ -1183,12 +1188,24 @@ export function DynamicAvailabilityWidget(
         return;
       }
 
-      // Desktop: show toast, refresh availability, and highlight in sidebar
-      const bayInfo = result.bay_name ? ` — ${result.bay_name}` : "";
-      setToast({
-        message: "Booking confirmed!",
-        description: `Confirmation code: ${result.confirmation_code}${bayInfo}`,
+      // Desktop: open confirmation modal with booking details
+      setSidebarBooking({
+        id: result.booking_id,
+        date: confirmedDate,
+        start_time: result.start_time,
+        end_time: result.end_time,
+        total_price_cents: result.total_price_cents,
+        discount_cents: confirmedDiscount.discountCents || 0,
+        discount_description: confirmedDiscount.label || null,
+        status: "confirmed",
+        confirmation_code: result.confirmation_code,
+        notes: confirmedNotes || null,
+        created_at: new Date().toISOString(),
+        bayName: result.bay_name || "",
+        canCancel: true,
+        canModify: true,
       });
+      setSidebarModalOpen(true);
 
       // Highlight new booking in sidebar
       if (result.booking_id) {
