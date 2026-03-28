@@ -370,7 +370,8 @@ export default async function FacilityHomePage({
   let eventsOnlyIsMember = false;
   let eventsOnlyEventDiscount: { type: "percent" | "flat"; value: number } | null = null;
   if (isEventsOnly && auth) {
-    const { data: membership } = await serviceClient
+    const eventsServiceClient = createServiceClient();
+    const { data: membership } = await eventsServiceClient
       .from("user_memberships")
       .select("status, current_period_end, expires_at")
       .eq("org_id", org!.id)
@@ -390,7 +391,7 @@ export default async function FacilityHomePage({
       );
 
       if (eventsOnlyIsMember) {
-        const { data: tier } = await serviceClient
+        const { data: tier } = await eventsServiceClient
           .from("membership_tiers")
           .select("event_discount_type, event_discount_value")
           .eq("org_id", org!.id)
