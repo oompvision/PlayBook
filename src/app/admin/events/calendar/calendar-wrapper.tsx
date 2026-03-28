@@ -79,6 +79,10 @@ type EventCalendarWrapperProps = {
   onUnpublishEvent: (
     eventId: string
   ) => Promise<{ success: boolean; cancelledRegistrations?: number; error?: string }>;
+  onDeleteEventsForDates: (
+    dates: string[],
+    confirm: boolean
+  ) => Promise<{ success: boolean; eventCount: number; registrationCount: number; deletedCount?: number; error?: string }>;
 };
 
 export function EventCalendarWrapper({
@@ -97,6 +101,7 @@ export function EventCalendarWrapper({
   onSaveDaySchedule,
   onPublishEvent,
   onUnpublishEvent,
+  onDeleteEventsForDates,
 }: EventCalendarWrapperProps) {
   const [viewingDate, setViewingDate] = useState<string | null>(null);
   const router = useRouter();
@@ -114,6 +119,7 @@ export function EventCalendarWrapper({
         onApplyEventTemplate={onApplyEventTemplate}
         onApplyDaySchedule={onApplyDaySchedule}
         onOpenDay={setViewingDate}
+        onDeleteEventsForDates={onDeleteEventsForDates}
       />
 
       {viewingDate && (

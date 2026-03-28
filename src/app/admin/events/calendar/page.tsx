@@ -496,6 +496,135 @@ export default async function EventCalendarPage({
     return { success: true };
   }
 
+  // ─── Server Action: Bulk delete events for selected dates ───
+
+  async function deleteEventsForDatesAction(
+    dates: string[],
+    confirm: boolean
+  ): Promise<{
+    success: boolean;
+    eventCount: number;
+    registrationCount: number;
+    deletedCount?: number;
+    error?: string;
+  }> {
+    "use server";
+
+    const org = await getOrg();
+    if (!org) return { success: false, eventCount: 0, registrationCount: 0, error: "Organization not found" };
+
+    const supabase = await createClient();
+    const tz = org.timezone || "America/New_York";
+
+    // Find all events on these dates
+    const allEventIds: string[] = [];
+    for (const date of dates) {
+      const startTs = toTimestamp(date, "00:00", tz);
+      const endTs = toTimestamp(date, "23:59", tz);
+      const { data: events } = await supabase
+        .from("events")
+        .select("id, status")
+        .eq("org_id", org.id)
+        .gte("start_time", startTs)
+        .lte("start_time", endTs)
+        .in("status", ["draft", "published"]);
+
+      if (events) {
+        for (const e of events) allEventIds.push(e.id);
+      }
+    }
+
+    if (allEventIds.length === 0) {
+      return { success: true, eventCount: 0, registrationCount: 0, deletedCount: 0 };
+    }
+
+    // Count active registrations across all these events
+    const { count: regCount } = await supabase
+      .from("event_registrations")
+      .select("id", { count: "exact", head: true })
+      .in("event_id", allEventIds)
+      .in("status", ["confirmed", "waitlisted", "pending_payment"]);
+
+    const registrationCount = regCount || 0;
+
+    // If not confirmed, just return the preview counts
+    if (!confirm) {
+      return { success: true, eventCount: allEventIds.length, registrationCount };
+    }
+
+    // ── Confirmed: proceed with deletion ──
+
+    // Collect registrant info before cancelling (for notifications)
+    const serviceClient = createServiceClient();
+    let registrantsToNotify: { eventName: string; eventDate: string; profileId: string; email: string; fullName: string }[] = [];
+
+    if (registrationCount > 0) {
+      const { data: regs } = await serviceClient
+        .from("event_registrations")
+        .select("event_id, customer_id, events:event_id(name, start_time), profiles:customer_id(id, email, full_name)")
+        .in("event_id", allEventIds)
+        .in("status", ["confirmed", "waitlisted", "pending_payment"]);
+
+      if (regs) {
+        for (const reg of regs) {
+          const event = reg.events as unknown as { name: string; start_time: string } | null;
+          const profile = reg.profiles as unknown as { id: string; email: string; full_name: string } | null;
+          if (!event || !profile) continue;
+
+          const eventDate = new Date(event.start_time).toLocaleDateString("en-US", {
+            timeZone: tz,
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+          });
+          registrantsToNotify.push({
+            eventName: event.name,
+            eventDate,
+            profileId: profile.id,
+            email: profile.email,
+            fullName: profile.full_name,
+          });
+        }
+      }
+    }
+
+    // Unpublish published events first (release slots/blockouts)
+    for (const eventId of allEventIds) {
+      // cancel_event handles both published and draft: releases slots, cancels registrations
+      await supabase.rpc("cancel_event", { p_event_id: eventId });
+    }
+
+    // Delete the events
+    const { error: deleteError } = await supabase
+      .from("events")
+      .delete()
+      .in("id", allEventIds);
+
+    if (deleteError) {
+      return { success: false, eventCount: allEventIds.length, registrationCount, error: deleteError.message };
+    }
+
+    // Notify affected registrants
+    for (const r of registrantsToNotify) {
+      await createNotification({
+        orgId: org.id,
+        recipientId: r.profileId,
+        recipientType: "customer",
+        type: "event_cancelled",
+        title: "Event Cancelled",
+        message: `${r.eventName} on ${r.eventDate} has been cancelled. Your registration has been removed.`,
+        link: "/my-bookings",
+        recipientEmail: r.email,
+        recipientName: r.fullName,
+        orgName: org.name,
+      });
+    }
+
+    revalidatePath("/admin/events/calendar");
+    revalidatePath("/admin/events");
+    return { success: true, eventCount: allEventIds.length, registrationCount, deletedCount: allEventIds.length };
+  }
+
   // ─── Server Action: Publish an event ───
 
   async function publishEventAction(
@@ -607,6 +736,7 @@ export default async function EventCalendarPage({
       onSaveDaySchedule={saveDayScheduleAction}
       onPublishEvent={publishEventAction}
       onUnpublishEvent={unpublishEventAction}
+      onDeleteEventsForDates={deleteEventsForDatesAction}
     />
   );
 }

@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   AlertCircle,
   ListChecks,
+  Trash2,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────
@@ -93,6 +94,10 @@ type EventCalendarProps = {
     status: "draft" | "published"
   ) => Promise<ApplyResult>;
   onOpenDay: (dateStr: string | null) => void;
+  onDeleteEventsForDates: (
+    dates: string[],
+    confirm: boolean
+  ) => Promise<{ success: boolean; eventCount: number; registrationCount: number; deletedCount?: number; error?: string }>;
 };
 
 // ─── Constants ───────────────────────────────────────────────────
@@ -219,6 +224,7 @@ export function EventCalendar({
   onApplyEventTemplate,
   onApplyDaySchedule,
   onOpenDay,
+  onDeleteEventsForDates,
 }: EventCalendarProps) {
   const months = useMemo(() => generateMonths(today), [today]);
   const allDatesFlat = useMemo(() => months.flatMap((m) => m.days), [months]);
@@ -235,7 +241,7 @@ export function EventCalendar({
   const [mounted, setMounted] = useState(false);
 
   // --- Panel state ---
-  const [panelMode, setPanelMode] = useState<"template" | "daySchedule" | null>(null);
+  const [panelMode, setPanelMode] = useState<"template" | "daySchedule" | "delete" | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedBayIds, setSelectedBayIds] = useState<Set<string>>(new Set());
   const [selectedDayScheduleId, setSelectedDayScheduleId] = useState("");
@@ -244,6 +250,11 @@ export function EventCalendar({
   const [applyEndTime, setApplyEndTime] = useState("10:00");
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
+
+  // --- Delete panel state ---
+  const [deletePreview, setDeletePreview] = useState<{ eventCount: number; registrationCount: number } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteResult, setDeleteResult] = useState<{ success: boolean; deletedCount?: number; error?: string } | null>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -340,7 +351,41 @@ export function EventCalendar({
   const closePanel = useCallback(() => {
     setPanelMode(null);
     setApplyResult(null);
+    setDeletePreview(null);
+    setDeleteResult(null);
   }, []);
+
+  const openDeletePanel = useCallback(async () => {
+    setPanelMode("delete");
+    setDeletePreview(null);
+    setDeleteResult(null);
+    setDeleteLoading(true);
+    // Fetch preview counts
+    const result = await onDeleteEventsForDates(Array.from(selectedDates), false);
+    setDeletePreview({ eventCount: result.eventCount, registrationCount: result.registrationCount });
+    setDeleteLoading(false);
+  }, [selectedDates, onDeleteEventsForDates]);
+
+  const handleDeleteEvents = useCallback(async () => {
+    setDeleteLoading(true);
+    setDeleteResult(null);
+    try {
+      const result = await onDeleteEventsForDates(Array.from(selectedDates), true);
+      setDeleteResult(result);
+      if (result.success) {
+        setTimeout(() => {
+          setPanelMode(null);
+          setSelectedDates(new Set());
+          setDeletePreview(null);
+          setDeleteResult(null);
+        }, 1500);
+      }
+    } catch {
+      setDeleteResult({ success: false, error: "An unexpected error occurred" });
+    } finally {
+      setDeleteLoading(false);
+    }
+  }, [selectedDates, onDeleteEventsForDates]);
 
   const toggleBay = useCallback((bayId: string) => {
     setSelectedBayIds((prev) => {
@@ -1077,6 +1122,114 @@ export function EventCalendar({
                   </div>
                 </div>
               </div>
+            ) : panelMode === "delete" ? (
+              /* ── Delete Events Panel ── */
+              <div>
+                <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 md:px-6">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-100">
+                      <Trash2 className="h-4 w-4 text-red-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">
+                        Delete Events for {selectedCount}{" "}
+                        {selectedCount === 1 ? "date" : "dates"}
+                      </p>
+                      <p className="truncate text-xs text-gray-500">
+                        {formatDateRangeSummary(selectedArray)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={closePanel}
+                    className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="px-4 py-4 md:px-6">
+                  {deleteResult && (
+                    <div
+                      className={cn(
+                        "mb-4 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm",
+                        deleteResult.success
+                          ? "border-green-200 bg-green-50 text-green-700"
+                          : "border-red-200 bg-red-50 text-red-700"
+                      )}
+                    >
+                      {deleteResult.success ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      ) : (
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                      )}
+                      {deleteResult.success
+                        ? `Successfully deleted ${deleteResult.deletedCount} event${deleteResult.deletedCount !== 1 ? "s" : ""}.`
+                        : deleteResult.error || "Failed to delete events."}
+                    </div>
+                  )}
+
+                  {deleteLoading && !deletePreview && (
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading event details...
+                    </div>
+                  )}
+
+                  {deletePreview && !deleteResult && (
+                    <div className="space-y-3">
+                      <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                        <p className="text-sm font-medium text-red-800">
+                          {deletePreview.eventCount} event{deletePreview.eventCount !== 1 ? "s" : ""} will be permanently deleted.
+                        </p>
+                        {deletePreview.registrationCount > 0 && (
+                          <p className="mt-1 text-sm text-red-700">
+                            {deletePreview.registrationCount} active registration{deletePreview.registrationCount !== 1 ? "s" : ""} will be cancelled and registrants will be notified.
+                          </p>
+                        )}
+                        {deletePreview.eventCount === 0 && (
+                          <p className="mt-1 text-sm text-red-700">
+                            No events found on the selected dates.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 md:px-6">
+                  <div className="text-xs text-gray-500">
+                    {deletePreview
+                      ? deletePreview.eventCount === 0
+                        ? "Nothing to delete"
+                        : "This action cannot be undone"
+                      : "Checking events..."}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={closePanel} disabled={deleteLoading} className="rounded-lg border-gray-200">
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleDeleteEvents}
+                      disabled={deleteLoading || !deletePreview || deletePreview.eventCount === 0}
+                      className="gap-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700"
+                    >
+                      {deleteLoading ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Delete {deletePreview?.eventCount || 0} Event{(deletePreview?.eventCount || 0) !== 1 ? "s" : ""}
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
             ) : (
               /* ── Collapsed Bar ── */
               <div className="flex items-center justify-between gap-4 px-4 py-3 md:px-6">
@@ -1102,6 +1255,15 @@ export function EventCalendar({
                   >
                     <X className="h-3.5 w-3.5" />
                     Clear Selection
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={openDeletePanel}
+                    className="gap-1.5 rounded-lg border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete Events
                   </Button>
                   {daySchedules.length > 0 && (
                     <Button
