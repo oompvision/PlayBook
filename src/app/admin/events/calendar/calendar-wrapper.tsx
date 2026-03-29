@@ -17,8 +17,6 @@ type EventTemplateSummary = {
   id: string;
   name: string;
   color: string;
-  start_time: string | null;
-  end_time: string | null;
   bay_ids: string[];
 };
 
@@ -51,26 +49,47 @@ type EventCalendarWrapperProps = {
     templateId: string,
     bayIds: string[],
     dates: string[],
-    status: "draft" | "published"
+    status: "draft" | "published",
+    startTime: string,
+    endTime: string
   ) => Promise<ApplyResult>;
   onApplyDaySchedule: (
     dayScheduleId: string,
     dates: string[],
-    status: "draft" | "published"
-  ) => Promise<ApplyResult>;
+    status: "draft" | "published",
+    confirm?: boolean
+  ) => Promise<{ success: boolean; count: number; error?: string; needsConfirmation?: boolean; eventsToDelete?: number; registrationsToCancel?: number }>;
   onUpdateEvent: (
     eventId: string,
-    updates: { start_time?: string; end_time?: string; capacity?: number; price_cents?: number }
+    updates: { date?: string; start_time?: string; end_time?: string; capacity?: number; price_cents?: number }
   ) => Promise<{ success: boolean; error?: string }>;
   onDeleteEvent: (eventId: string) => Promise<{ success: boolean; error?: string }>;
   onAddEventFromTemplate: (
     templateId: string,
-    date: string
+    date: string,
+    startTime: string,
+    endTime: string
   ) => Promise<{ success: boolean; error?: string }>;
   onSaveDaySchedule: (
     date: string,
     name: string
   ) => Promise<{ success: boolean; error?: string }>;
+  onPublishEvent: (
+    eventId: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  onUnpublishEvent: (
+    eventId: string
+  ) => Promise<{ success: boolean; cancelledRegistrations?: number; error?: string }>;
+  onDeleteEventsForDates: (
+    dates: string[],
+    confirm: boolean
+  ) => Promise<{ success: boolean; eventCount: number; registrationCount: number; deletedCount?: number; error?: string }>;
+  onPublishAllEvents: (
+    eventIds: string[]
+  ) => Promise<{ success: boolean; published: number; error?: string }>;
+  onUnpublishAllEvents: (
+    eventIds: string[]
+  ) => Promise<{ success: boolean; unpublished: number; cancelledRegistrations: number; error?: string }>;
 };
 
 export function EventCalendarWrapper({
@@ -87,6 +106,11 @@ export function EventCalendarWrapper({
   onDeleteEvent,
   onAddEventFromTemplate,
   onSaveDaySchedule,
+  onPublishEvent,
+  onUnpublishEvent,
+  onDeleteEventsForDates,
+  onPublishAllEvents,
+  onUnpublishAllEvents,
 }: EventCalendarWrapperProps) {
   const [viewingDate, setViewingDate] = useState<string | null>(null);
   const router = useRouter();
@@ -104,6 +128,7 @@ export function EventCalendarWrapper({
         onApplyEventTemplate={onApplyEventTemplate}
         onApplyDaySchedule={onApplyDaySchedule}
         onOpenDay={setViewingDate}
+        onDeleteEventsForDates={onDeleteEventsForDates}
       />
 
       {viewingDate && (
@@ -115,8 +140,6 @@ export function EventCalendarWrapper({
             id: t.id,
             name: t.name,
             color: t.color,
-            start_time: t.start_time,
-            end_time: t.end_time,
           }))}
           onClose={() => {
             setViewingDate(null);
@@ -126,6 +149,13 @@ export function EventCalendarWrapper({
           onDeleteEvent={onDeleteEvent}
           onAddEventFromTemplate={onAddEventFromTemplate}
           onSaveDaySchedule={onSaveDaySchedule}
+          onPublishEvent={onPublishEvent}
+          onUnpublishEvent={onUnpublishEvent}
+          onPublishAllEvents={onPublishAllEvents}
+          onUnpublishAllEvents={onUnpublishAllEvents}
+          onDeleteEventsForDates={onDeleteEventsForDates}
+          onApplyDaySchedule={onApplyDaySchedule}
+          daySchedules={daySchedules}
         />
       )}
     </>

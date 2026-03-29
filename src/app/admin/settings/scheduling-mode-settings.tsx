@@ -5,7 +5,7 @@ import { AlertTriangle } from "lucide-react";
 import { StickyFooter } from "@/components/admin/sticky-footer";
 import { Toast } from "@/components/ui/toast";
 
-type SchedulingMode = "slot_based" | "dynamic";
+type SchedulingMode = "slot_based" | "dynamic" | "events_only";
 
 export function SchedulingModeSettings({
   initialMode,
@@ -81,7 +81,7 @@ export function SchedulingModeSettings({
     <>
       <div className="space-y-6">
         {/* Mode Selection */}
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-3">
           <button
             type="button"
             onClick={() => handleModeChange("slot_based")}
@@ -115,6 +115,23 @@ export function SchedulingModeSettings({
               Define operating hours, durations, and buffers per facility.
               Available times are calculated on the fly based on existing
               bookings.
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleModeChange("events_only")}
+            className={`rounded-xl border-2 p-4 text-left transition-colors ${
+              mode === "events_only"
+                ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/20"
+                : "border-gray-200 hover:border-gray-300 dark:border-white/10 dark:hover:border-white/20"
+            }`}
+          >
+            <div className="text-sm font-semibold text-gray-800 dark:text-white/90">
+              Events Only
+            </div>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Customers can only register for scheduled events. No regular
+              booking time slots — only events you create and publish.
             </p>
           </button>
         </div>
@@ -156,7 +173,9 @@ export function SchedulingModeSettings({
                 <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                   {pendingMode === "dynamic"
                     ? "Switching to Dynamic Scheduling will hide your existing templates and published schedules from customers. They won't be deleted — if you switch back, they'll still be there."
-                    : "Switching to Slot-Based Scheduling will stop using dynamic rules for availability. Your dynamic schedule rules will be preserved if you switch back."}
+                    : pendingMode === "events_only"
+                      ? "Switching to Events Only will disable regular booking. Customers will only be able to register for events you create and publish. Your existing schedules and templates will be preserved if you switch back."
+                      : "Switching to Slot-Based Scheduling will stop using dynamic rules for availability. Your dynamic schedule rules will be preserved if you switch back."}
                 </p>
                 <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                   All existing bookings remain valid regardless of which mode

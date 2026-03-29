@@ -26,7 +26,7 @@ export async function PUT(request: NextRequest) {
   const body = await request.json();
   const { scheduling_type, bookable_window_days } = body;
 
-  if (!["slot_based", "dynamic"].includes(scheduling_type)) {
+  if (!["slot_based", "dynamic", "events_only"].includes(scheduling_type)) {
     return NextResponse.json(
       { error: "Invalid scheduling_type" },
       { status: 400 }
@@ -52,7 +52,8 @@ export async function PUT(request: NextRequest) {
     .eq("id", org.id);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[admin/scheduling-mode] update error:", error.message);
+    return NextResponse.json({ error: "Failed to update scheduling mode" }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });

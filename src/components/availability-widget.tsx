@@ -1352,7 +1352,12 @@ export function AvailabilityWidget({
       return;
     }
 
-    // Desktop: close panel, clear selection, show toast, refresh data
+    // Capture values for confirmation modal before clearing state
+    const confirmedDate = selectedDate;
+    const confirmedNotes = notes;
+    const confirmedBayName = bays.find((b) => b.id === effectiveBayId)?.name || "";
+
+    // Desktop: close panel, clear selection, refresh data
     setPanelOpen(false);
     setSelectedTimeKeys(new Set());
     setSelectedBayIdForBooking("");
@@ -1362,11 +1367,31 @@ export function AvailabilityWidget({
     setPolicyAgreed(false);
     setPolicyAgreedAt(null);
 
-    // Show toast
-    setToastData({
-      message: "Booking Confirmed!",
-      description: `Confirmation ${codes.length > 1 ? "codes" : "code"}: ${codes.join(", ")}`,
+    // Open confirmation modal with the primary booking
+    const primary = bookingResults[0] as {
+      booking_id: string;
+      confirmation_code: string;
+      total_price_cents: number;
+      start_time: string;
+      end_time: string;
+    };
+    setSidebarBooking({
+      id: primary.booking_id,
+      date: confirmedDate,
+      start_time: primary.start_time,
+      end_time: primary.end_time,
+      total_price_cents: primary.total_price_cents,
+      discount_cents: bookingDiscountCents || 0,
+      discount_description: bookingDiscountLabel || null,
+      status: "confirmed",
+      confirmation_code: primary.confirmation_code,
+      notes: confirmedNotes || null,
+      created_at: new Date().toISOString(),
+      bayName: confirmedBayName,
+      canCancel: true,
+      canModify: true,
     });
+    setSidebarModalOpen(true);
 
     // Highlight new bookings in sidebar
     setHighlightedBookingIds(new Set(newBookingIds));

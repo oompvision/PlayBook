@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useMemo, useEffect, Fragment } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import {
   startOfMonth,
   endOfMonth,
@@ -16,12 +17,13 @@ import {
   X,
   CalendarDays,
   Check,
-  ChevronDown,
+  ChevronUp,
   LayoutTemplate,
   Loader2,
   CheckCircle2,
   AlertCircle,
   ListChecks,
+  Trash2,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────
@@ -50,8 +52,6 @@ type EventTemplateSummary = {
   id: string;
   name: string;
   color: string;
-  start_time: string | null;
-  end_time: string | null;
   bay_ids: string[];
 };
 
@@ -84,14 +84,21 @@ type EventCalendarProps = {
     templateId: string,
     bayIds: string[],
     dates: string[],
-    status: "draft" | "published"
+    status: "draft" | "published",
+    startTime: string,
+    endTime: string
   ) => Promise<ApplyResult>;
   onApplyDaySchedule: (
     dayScheduleId: string,
     dates: string[],
-    status: "draft" | "published"
-  ) => Promise<ApplyResult>;
-  onOpenDay: (date: string | null) => void;
+    status: "draft" | "published",
+    confirm?: boolean
+  ) => Promise<{ success: boolean; count: number; error?: string; needsConfirmation?: boolean; eventsToDelete?: number; registrationsToCancel?: number }>;
+  onOpenDay: (dateStr: string | null) => void;
+  onDeleteEventsForDates: (
+    dates: string[],
+    confirm: boolean
+  ) => Promise<{ success: boolean; eventCount: number; registrationCount: number; deletedCount?: number; error?: string }>;
 };
 
 // ─── Constants ───────────────────────────────────────────────────
@@ -168,10 +175,49 @@ function generateMonths(today: string): MonthData[] {
   return result;
 }
 
+function formatDateRangeSummary(dates: string[]): string {
+  if (dates.length === 0) return "";
+  const sorted = [...dates].sort();
+  const ranges: { start: string; end: string }[] = [];
+  let rangeStart = sorted[0];
+  let rangeEnd = sorted[0];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prevDate = new Date(rangeEnd + "T12:00:00");
+    prevDate.setDate(prevDate.getDate() + 1);
+    const expectedNext = format(prevDate, "yyyy-MM-dd");
+    if (sorted[i] === expectedNext) {
+      rangeEnd = sorted[i];
+    } else {
+      ranges.push({ start: rangeStart, end: rangeEnd });
+      rangeStart = sorted[i];
+      rangeEnd = sorted[i];
+    }
+  }
+  ranges.push({ start: rangeStart, end: rangeEnd });
+
+  const parts = ranges.slice(0, 5).map((r) => {
+    const s = new Date(r.start + "T12:00:00");
+    const e = new Date(r.end + "T12:00:00");
+    const sMonth = format(s, "MMM");
+    const sDay = s.getDate();
+    if (r.start === r.end) return `${sMonth} ${sDay}`;
+    const eMonth = format(e, "MMM");
+    const eDay = e.getDate();
+    if (sMonth === eMonth) return `${sMonth} ${sDay}–${eDay}`;
+    return `${sMonth} ${sDay} – ${eMonth} ${eDay}`;
+  });
+
+  if (ranges.length > 5) parts.push(`+${ranges.length - 5} more`);
+  return parts.join(", ");
+}
+
 // ─── Component ───────────────────────────────────────────────────
 
 export function EventCalendar({
   today,
+  timezone,
+  orgId,
   eventMap,
   eventTemplates,
   daySchedules,
@@ -179,9 +225,11 @@ export function EventCalendar({
   onApplyEventTemplate,
   onApplyDaySchedule,
   onOpenDay,
+  onDeleteEventsForDates,
 }: EventCalendarProps) {
   const months = useMemo(() => generateMonths(today), [today]);
   const allDatesFlat = useMemo(() => months.flatMap((m) => m.days), [months]);
+  const router = useRouter();
 
   // --- State ---
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
@@ -194,13 +242,20 @@ export function EventCalendar({
   const [mounted, setMounted] = useState(false);
 
   // --- Panel state ---
-  const [panelMode, setPanelMode] = useState<"template" | "schedule" | null>(null);
+  const [panelMode, setPanelMode] = useState<"template" | "daySchedule" | "delete" | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedBayIds, setSelectedBayIds] = useState<Set<string>>(new Set());
-  const [selectedScheduleId, setSelectedScheduleId] = useState("");
+  const [selectedDayScheduleId, setSelectedDayScheduleId] = useState("");
   const [applyStatus, setApplyStatus] = useState<"draft" | "published">("draft");
+  const [applyStartTime, setApplyStartTime] = useState("09:00");
+  const [applyEndTime, setApplyEndTime] = useState("10:00");
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
+
+  // --- Delete panel state ---
+  const [deletePreview, setDeletePreview] = useState<{ eventCount: number; registrationCount: number } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteResult, setDeleteResult] = useState<{ success: boolean; deletedCount?: number; error?: string } | null>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -259,9 +314,7 @@ export function EventCalendar({
     (dates: string[], forceMode?: "add" | "remove") => {
       setSelectedDates((prev) => {
         const next = new Set(prev);
-        const mode =
-          forceMode ||
-          (dates.length > 0 && dates.every((d) => prev.has(d)) ? "remove" : "add");
+        const mode = forceMode || (dates.length > 0 && dates.every((d) => prev.has(d)) ? "remove" : "add");
         for (const d of dates) {
           if (mode === "add") next.add(d);
           else next.delete(d);
@@ -278,10 +331,207 @@ export function EventCalendar({
     setApplyResult(null);
   }, []);
 
+  // --- Panel handlers ---
+  const openTemplatePanel = useCallback(() => {
+    setPanelMode("template");
+    setSelectedTemplateId("");
+    setSelectedBayIds(new Set(bays.map((b) => b.id)));
+    setApplyStatus("draft");
+    setApplyStartTime("09:00");
+    setApplyEndTime("10:00");
+    setApplyResult(null);
+  }, [bays]);
+
+  const openDaySchedulePanel = useCallback(() => {
+    setPanelMode("daySchedule");
+    setSelectedDayScheduleId("");
+    setApplyStatus("draft");
+    setApplyResult(null);
+    setDayScheduleConfirm(null);
+  }, []);
+
+  const closePanel = useCallback(() => {
+    setPanelMode(null);
+    setApplyResult(null);
+    setDeletePreview(null);
+    setDeleteResult(null);
+  }, []);
+
+  const openDeletePanel = useCallback(async () => {
+    setPanelMode("delete");
+    setDeletePreview(null);
+    setDeleteResult(null);
+    setDeleteLoading(true);
+    // Fetch preview counts
+    const result = await onDeleteEventsForDates(Array.from(selectedDates), false);
+    setDeletePreview({ eventCount: result.eventCount, registrationCount: result.registrationCount });
+    setDeleteLoading(false);
+  }, [selectedDates, onDeleteEventsForDates]);
+
+  const handleDeleteEvents = useCallback(async () => {
+    setDeleteLoading(true);
+    setDeleteResult(null);
+    try {
+      const result = await onDeleteEventsForDates(Array.from(selectedDates), true);
+      setDeleteResult(result);
+      if (result.success) {
+        setTimeout(() => {
+          setPanelMode(null);
+          setSelectedDates(new Set());
+          setDeletePreview(null);
+          setDeleteResult(null);
+        }, 1500);
+      }
+    } catch {
+      setDeleteResult({ success: false, error: "An unexpected error occurred" });
+    } finally {
+      setDeleteLoading(false);
+    }
+  }, [selectedDates, onDeleteEventsForDates]);
+
+  const toggleBay = useCallback((bayId: string) => {
+    setSelectedBayIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(bayId)) next.delete(bayId);
+      else next.add(bayId);
+      return next;
+    });
+  }, []);
+
+  const toggleAllBays = useCallback(() => {
+    setSelectedBayIds((prev) => {
+      if (prev.size === bays.length) return new Set();
+      return new Set(bays.map((b) => b.id));
+    });
+  }, [bays]);
+
+  const handleApplyTemplate = useCallback(async () => {
+    if (!selectedTemplateId || selectedBayIds.size === 0 || selectedDates.size === 0 || !applyStartTime || !applyEndTime) return;
+    setApplying(true);
+    setApplyResult(null);
+    try {
+      const result = await onApplyEventTemplate(
+        selectedTemplateId,
+        Array.from(selectedBayIds),
+        Array.from(selectedDates),
+        applyStatus,
+        applyStartTime,
+        applyEndTime
+      );
+      setApplyResult(result);
+      if (result.success) {
+        setTimeout(() => {
+          setPanelMode(null);
+          setSelectedDates(new Set());
+          setApplyResult(null);
+        }, 1500);
+      }
+    } catch {
+      setApplyResult({ success: false, count: 0, error: "An unexpected error occurred" });
+    } finally {
+      setApplying(false);
+    }
+  }, [selectedTemplateId, selectedBayIds, selectedDates, applyStatus, onApplyEventTemplate]);
+
+  // Day schedule overwrite confirmation state
+  const [dayScheduleConfirm, setDayScheduleConfirm] = useState<{
+    eventsToDelete: number;
+    registrationsToCancel: number;
+  } | null>(null);
+
+  const handleApplyDaySchedule = useCallback(async () => {
+    if (!selectedDayScheduleId || selectedDates.size === 0) return;
+    setApplying(true);
+    setApplyResult(null);
+    setDayScheduleConfirm(null);
+    try {
+      // First call: preview mode (confirm=false)
+      const preview = await onApplyDaySchedule(
+        selectedDayScheduleId,
+        Array.from(selectedDates),
+        applyStatus,
+        false
+      );
+
+      if (preview.needsConfirmation) {
+        // Show confirmation UI
+        setDayScheduleConfirm({
+          eventsToDelete: preview.eventsToDelete || 0,
+          registrationsToCancel: preview.registrationsToCancel || 0,
+        });
+        setApplying(false);
+        return;
+      }
+
+      // No conflicts — apply directly (confirm=true)
+      const result = await onApplyDaySchedule(
+        selectedDayScheduleId,
+        Array.from(selectedDates),
+        applyStatus,
+        true
+      );
+      setApplyResult(result);
+      if (result.success) {
+        setTimeout(() => {
+          setPanelMode(null);
+          setSelectedDates(new Set());
+          setApplyResult(null);
+          setDayScheduleConfirm(null);
+        }, 1500);
+      }
+    } catch {
+      setApplyResult({ success: false, count: 0, error: "An unexpected error occurred" });
+    } finally {
+      setApplying(false);
+    }
+  }, [selectedDayScheduleId, selectedDates, applyStatus, onApplyDaySchedule]);
+
+  const handleConfirmDaySchedule = useCallback(async () => {
+    if (!selectedDayScheduleId || selectedDates.size === 0) return;
+    setApplying(true);
+    setApplyResult(null);
+    try {
+      const result = await onApplyDaySchedule(
+        selectedDayScheduleId,
+        Array.from(selectedDates),
+        applyStatus,
+        true
+      );
+      setApplyResult(result);
+      setDayScheduleConfirm(null);
+      if (result.success) {
+        setTimeout(() => {
+          setPanelMode(null);
+          setSelectedDates(new Set());
+          setApplyResult(null);
+        }, 1500);
+      }
+    } catch {
+      setApplyResult({ success: false, count: 0, error: "An unexpected error occurred" });
+    } finally {
+      setApplying(false);
+    }
+  }, [selectedDayScheduleId, selectedDates, applyStatus, onApplyDaySchedule]);
+
   // --- Mouse handlers ---
+  // Track state at mousedown time to decide behavior on click
+  const clickContextRef = useRef<{
+    shiftHeld: boolean;
+    hadSelection: boolean;
+    didDrag: boolean;
+  }>({ shiftHeld: false, hadSelection: false, didDrag: false });
+
   const handleMouseDown = useCallback(
     (dateStr: string, e: React.MouseEvent) => {
       if (isPast(dateStr, today)) return;
+
+      clickContextRef.current = {
+        shiftHeld: e.shiftKey,
+        hadSelection: selectedDates.size > 0,
+        didDrag: false,
+      };
+
+      // Shift+click: range select from last clicked date, no modal
       if (e.shiftKey && lastClickedDate) {
         const startIdx = allDatesFlat.indexOf(lastClickedDate);
         const endIdx = allDatesFlat.indexOf(dateStr);
@@ -297,6 +547,8 @@ export function EventCalendar({
         setLastClickedDate(dateStr);
         return;
       }
+
+      // Start drag for selection
       e.preventDefault();
       setIsDragging(true);
       setDragStart(dateStr);
@@ -309,9 +561,32 @@ export function EventCalendar({
 
   const handleMouseEnter = useCallback(
     (dateStr: string) => {
-      if (isDragging) setDragEnd(dateStr);
+      if (isDragging) {
+        setDragEnd(dateStr);
+        clickContextRef.current.didDrag = true;
+      }
     },
     [isDragging]
+  );
+
+  const handleDayClick = useCallback(
+    (dateStr: string) => {
+      if (isPast(dateStr, today)) return;
+      const ctx = clickContextRef.current;
+
+      // Shift was held → range select handled in mouseDown, no modal
+      if (ctx.shiftHeld) return;
+      // User dragged across multiple cells → selection handled by drag, no modal
+      if (ctx.didDrag) return;
+      // Had existing selection → click adds/removes from selection (via drag), no modal
+      if (ctx.hadSelection) return;
+
+      // No prior selection, no shift, no drag → single click opens modal
+      // Undo the selection that the single-cell drag created
+      setSelectedDates(new Set());
+      onOpenDay(dateStr);
+    },
+    [today, onOpenDay]
   );
 
   const handleWeekRowSelect = useCallback(
@@ -332,7 +607,21 @@ export function EventCalendar({
     [toggleDates]
   );
 
-  // --- Month filter ---
+  const handleMonthSelectAll = useCallback(
+    (month: MonthData) => toggleDates(month.selectableDates),
+    [toggleDates]
+  );
+
+  const handleMonthWeekdays = useCallback(
+    (month: MonthData) => toggleDates(month.weekdayDates),
+    [toggleDates]
+  );
+
+  const handleMonthWeekends = useCallback(
+    (month: MonthData) => toggleDates(month.weekendDates),
+    [toggleDates]
+  );
+
   const handleMonthChipClick = useCallback((key: string) => {
     setVisibleMonths((prev) => {
       if (prev.size === 0) return new Set([key]);
@@ -346,114 +635,36 @@ export function EventCalendar({
 
   const showAllMonths = useCallback(() => setVisibleMonths(new Set()), []);
 
-  // --- Panel handlers ---
-  const openTemplatePanel = useCallback(() => {
-    setPanelMode("template");
-    setSelectedTemplateId("");
-    setSelectedBayIds(new Set(bays.map((b) => b.id)));
-    setApplyStatus("draft");
-    setApplyResult(null);
-  }, [bays]);
-
-  const openSchedulePanel = useCallback(() => {
-    setPanelMode("schedule");
-    setSelectedScheduleId("");
-    setApplyStatus("draft");
-    setApplyResult(null);
-  }, []);
-
-  const closePanel = useCallback(() => {
-    setPanelMode(null);
-    setApplyResult(null);
-  }, []);
-
-  const toggleBay = useCallback((bayId: string) => {
-    setSelectedBayIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(bayId)) next.delete(bayId);
-      else next.add(bayId);
-      return next;
-    });
-  }, []);
-
-  const toggleAllBays = useCallback(() => {
-    setSelectedBayIds((prev) => {
-      if (prev.size === bays.length) return new Set();
-      return new Set(bays.map((b) => b.id));
-    });
-  }, [bays]);
-
-  const handleApplyTemplate = useCallback(async () => {
-    if (!selectedTemplateId || selectedBayIds.size === 0 || selectedDates.size === 0) return;
-    setApplying(true);
-    setApplyResult(null);
-    try {
-      const result = await onApplyEventTemplate(
-        selectedTemplateId,
-        Array.from(selectedBayIds),
-        Array.from(selectedDates),
-        applyStatus
-      );
-      setApplyResult(result);
-      if (result.success) {
-        setTimeout(() => {
-          setPanelMode(null);
-          setSelectedDates(new Set());
-          setApplyResult(null);
-        }, 1500);
-      }
-    } catch {
-      setApplyResult({ success: false, count: 0, error: "An unexpected error occurred" });
-    } finally {
-      setApplying(false);
-    }
-  }, [selectedTemplateId, selectedBayIds, selectedDates, applyStatus, onApplyEventTemplate]);
-
-  const handleApplySchedule = useCallback(async () => {
-    if (!selectedScheduleId || selectedDates.size === 0) return;
-    setApplying(true);
-    setApplyResult(null);
-    try {
-      const result = await onApplyDaySchedule(
-        selectedScheduleId,
-        Array.from(selectedDates),
-        applyStatus
-      );
-      setApplyResult(result);
-      if (result.success) {
-        setTimeout(() => {
-          setPanelMode(null);
-          setSelectedDates(new Set());
-          setApplyResult(null);
-        }, 1500);
-      }
-    } catch {
-      setApplyResult({ success: false, count: 0, error: "An unexpected error occurred" });
-    } finally {
-      setApplying(false);
-    }
-  }, [selectedScheduleId, selectedDates, applyStatus, onApplyDaySchedule]);
-
   // --- Derived ---
   const filteredMonths = useMemo(
-    () =>
-      visibleMonths.size === 0
-        ? months
-        : months.filter((m) => visibleMonths.has(m.key)),
+    () => visibleMonths.size === 0 ? months : months.filter((m) => visibleMonths.has(m.key)),
     [months, visibleMonths]
   );
-
   const selectedCount = selectedDates.size;
+  const selectedArray = useMemo(() => Array.from(selectedDates).sort(), [selectedDates]);
 
-  function getWillBeSelected(
-    dateStr: string,
-    isSelected: boolean,
-    inPreview: boolean
-  ): boolean {
+  const selectedTemplate = eventTemplates.find((t) => t.id === selectedTemplateId);
+  const canApplyTemplate = selectedCount > 0 && selectedBayIds.size > 0 && !!selectedTemplateId && !!applyStartTime && !!applyEndTime;
+  const canApplyDaySchedule = selectedCount > 0 && !!selectedDayScheduleId;
+
+  function getWillBeSelected(dateStr: string, isSelected: boolean, inPreview: boolean): boolean {
     if (!isDragging) return isSelected;
     if (dragMode === "add") return isSelected || inPreview;
     return isSelected && !inPreview;
   }
+
+  // --- Unique event colors for legend ---
+  const legendColors = useMemo(() => {
+    const colorSet = new Map<string, string>();
+    for (const events of Object.values(eventMap)) {
+      for (const ev of events) {
+        if (ev.color && !colorSet.has(ev.color)) {
+          colorSet.set(ev.color, ev.name);
+        }
+      }
+    }
+    return Array.from(colorSet.entries()).slice(0, 6);
+  }, [eventMap]);
 
   return (
     <div className="relative">
@@ -463,7 +674,7 @@ export function EventCalendar({
           <div>
             <h1 className="text-2xl font-bold text-gray-800">Event Calendar</h1>
             <p className="mt-0.5 text-sm text-gray-500">
-              Select dates to create events from templates, or click a day to view its events.
+              Select dates to apply event templates or day schedules. Click a date to view events.
             </p>
           </div>
           {selectedCount > 0 && (
@@ -509,50 +720,43 @@ export function EventCalendar({
         </div>
 
         {/* Legend */}
-        <div className="mt-2 flex items-center gap-4 text-[11px] text-gray-400">
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 rounded-full bg-blue-500" />
-            Published
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
-            Draft
-          </span>
-        </div>
+        {legendColors.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-gray-400">
+            {legendColors.map(([color, name]) => (
+              <span key={color} className="flex items-center gap-1.5">
+                <span
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{ backgroundColor: color }}
+                />
+                {name}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ─── Month Calendars ─── */}
-      <div
-        className={cn(
-          "mt-6 space-y-8",
-          selectedCount > 0 ? "pb-28" : "pb-4"
-        )}
-      >
+      <div className={cn("mt-6 space-y-8", selectedCount > 0 ? "pb-28" : "pb-4")}>
         {filteredMonths.map((month) => (
-          <div
-            key={month.key}
-            className="rounded-2xl border border-gray-200 bg-white"
-          >
+          <div key={month.key} className="rounded-2xl border border-gray-200 bg-white">
             {/* Month header */}
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 md:px-6">
-              <h2 className="text-base font-semibold text-gray-800">
-                {month.label}
-              </h2>
+              <h2 className="text-base font-semibold text-gray-800">{month.label}</h2>
               <div className="flex flex-wrap items-center gap-1">
                 <button
-                  onClick={() => toggleDates(month.weekdayDates)}
+                  onClick={() => handleMonthWeekdays(month)}
                   className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
                 >
                   Weekdays
                 </button>
                 <button
-                  onClick={() => toggleDates(month.weekendDates)}
+                  onClick={() => handleMonthWeekends(month)}
                   className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
                 >
                   Weekends
                 </button>
                 <button
-                  onClick={() => toggleDates(month.selectableDates)}
+                  onClick={() => handleMonthSelectAll(month)}
                   className="rounded-md px-2.5 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50"
                 >
                   Select All
@@ -571,7 +775,6 @@ export function EventCalendar({
             {/* Calendar grid */}
             <div className="p-2 md:p-4">
               <div className="grid grid-cols-[2rem_repeat(7,1fr)]">
-                {/* Day-of-week headers */}
                 <div />
                 {DOW_LABELS.map((label, dow) => (
                   <button
@@ -584,11 +787,8 @@ export function EventCalendar({
                   </button>
                 ))}
 
-                {/* Week rows */}
                 {month.weeks.map((week, wi) => {
-                  const weekSelectableDates = week.filter(
-                    (d) => d !== "" && !isPast(d, today)
-                  );
+                  const weekSelectableDates = week.filter((d) => d !== "" && !isPast(d, today));
                   const weekHasSelectable = weekSelectableDates.length > 0;
 
                   return (
@@ -619,20 +819,13 @@ export function EventCalendar({
                         const willBeSelected = getWillBeSelected(dateStr, isSelected, inPreview);
                         const dayNum = parseInt(dateStr.split("-")[2], 10);
                         const dayEvents = eventMap[dateStr] || [];
-                        const hasPublished = dayEvents.some((e) => e.status === "published");
-                        const hasDraft = dayEvents.some((e) => e.status === "draft");
 
                         return (
                           <div
                             key={dateStr}
                             onMouseDown={(e) => handleMouseDown(dateStr, e)}
                             onMouseEnter={() => handleMouseEnter(dateStr)}
-                            onClick={(e) => {
-                              // Single click (not drag) on a date with events opens the day modal
-                              if (!isDragging && dayEvents.length > 0 && !e.shiftKey) {
-                                onOpenDay(dateStr);
-                              }
-                            }}
+                            onClick={() => handleDayClick(dateStr)}
                             className={cn(
                               "relative flex h-12 select-none flex-col items-center justify-center rounded-lg text-sm transition-colors md:h-14",
                               past && "pointer-events-none text-gray-300",
@@ -644,34 +837,29 @@ export function EventCalendar({
                               isToday && willBeSelected && "font-bold ring-2 ring-blue-300 ring-offset-1"
                             )}
                           >
-                            <span>{dayNum}</span>
-                            {/* Event indicators */}
+                            <span className="leading-none">{dayNum}</span>
+                            {/* Event dots */}
                             {!past && dayEvents.length > 0 && (
-                              <div className="flex items-center gap-0.5">
-                                {hasPublished && (
+                              <div className="mt-0.5 flex items-center gap-0.5">
+                                {dayEvents.slice(0, 3).map((ev) => (
                                   <span
-                                    className={cn(
-                                      "h-1.5 w-1.5 rounded-full",
-                                      willBeSelected ? "bg-blue-300" : "bg-blue-500"
-                                    )}
+                                    key={ev.id}
+                                    className="inline-block h-1.5 w-1.5 rounded-full"
+                                    style={{
+                                      backgroundColor: willBeSelected
+                                        ? `${ev.color}99`
+                                        : ev.color,
+                                    }}
                                   />
-                                )}
-                                {hasDraft && (
+                                ))}
+                                {dayEvents.length > 3 && (
                                   <span
                                     className={cn(
-                                      "h-1.5 w-1.5 rounded-full",
-                                      willBeSelected ? "bg-amber-300" : "bg-amber-500"
-                                    )}
-                                  />
-                                )}
-                                {dayEvents.length > 1 && (
-                                  <span
-                                    className={cn(
-                                      "text-[9px] font-medium leading-none",
+                                      "text-[9px] leading-none",
                                       willBeSelected ? "text-blue-200" : "text-gray-400"
                                     )}
                                   >
-                                    {dayEvents.length}
+                                    +{dayEvents.length - 3}
                                   </span>
                                 )}
                               </div>
@@ -694,6 +882,7 @@ export function EventCalendar({
         createPortal(
           <div className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.08)] lg:left-[280px]">
             {panelMode === "template" ? (
+              /* ── Apply Event Template Panel ── */
               <div>
                 <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 md:px-6">
                   <div className="flex items-center gap-3">
@@ -702,10 +891,11 @@ export function EventCalendar({
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-gray-800">
-                        Apply Event Template
+                        Apply Event Template to {selectedCount}{" "}
+                        {selectedCount === 1 ? "date" : "dates"}
                       </p>
-                      <p className="text-xs text-gray-500">
-                        {selectedCount} {selectedCount === 1 ? "date" : "dates"} selected
+                      <p className="truncate text-xs text-gray-500">
+                        {formatDateRangeSummary(selectedArray)}
                       </p>
                     </div>
                   </div>
@@ -717,126 +907,181 @@ export function EventCalendar({
                   </button>
                 </div>
 
-                <div className="space-y-4 px-4 py-4 md:px-6">
-                  {/* Template select */}
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-gray-600">
-                      Event Template
-                    </label>
-                    <select
-                      value={selectedTemplateId}
-                      onChange={(e) => setSelectedTemplateId(e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    >
-                      <option value="">Select a template...</option>
-                      {eventTemplates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                          {t.start_time ? ` (${t.start_time}–${t.end_time})` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Bay selection */}
-                  {bays.length > 0 && (
-                    <div>
-                      <div className="mb-1.5 flex items-center justify-between">
-                        <label className="text-xs font-medium text-gray-600">Bays</label>
-                        <button
-                          onClick={toggleAllBays}
-                          className="text-xs font-medium text-blue-600 hover:text-blue-700"
-                        >
-                          {selectedBayIds.size === bays.length ? "Deselect all" : "Select all"}
-                        </button>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {bays.map((bay) => (
-                          <button
-                            key={bay.id}
-                            onClick={() => toggleBay(bay.id)}
-                            className={cn(
-                              "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-                              selectedBayIds.has(bay.id)
-                                ? "border-blue-200 bg-blue-50 text-blue-700"
-                                : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
-                            )}
-                          >
-                            {bay.name}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Status */}
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-gray-600">
-                      Status
-                    </label>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setApplyStatus("draft")}
-                        className={cn(
-                          "rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-                          applyStatus === "draft"
-                            ? "border-amber-200 bg-amber-50 text-amber-700"
-                            : "border-gray-200 text-gray-500 hover:border-gray-300"
-                        )}
-                      >
-                        Draft
-                      </button>
-                      <button
-                        onClick={() => setApplyStatus("published")}
-                        className={cn(
-                          "rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-                          applyStatus === "published"
-                            ? "border-green-200 bg-green-50 text-green-700"
-                            : "border-gray-200 text-gray-500 hover:border-gray-300"
-                        )}
-                      >
-                        Published
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Result feedback */}
+                <div className="max-h-[50vh] overflow-y-auto px-4 py-4 md:px-6">
                   {applyResult && (
                     <div
                       className={cn(
-                        "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm",
+                        "mb-4 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm",
                         applyResult.success
                           ? "border-green-200 bg-green-50 text-green-700"
                           : "border-red-200 bg-red-50 text-red-700"
                       )}
                     >
                       {applyResult.success ? (
-                        <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
                       ) : (
-                        <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                        <AlertCircle className="h-4 w-4 shrink-0" />
                       )}
                       {applyResult.success
-                        ? `Created ${applyResult.count} event${applyResult.count !== 1 ? "s" : ""}`
-                        : applyResult.error}
+                        ? `Successfully created ${applyResult.count} event${applyResult.count !== 1 ? "s" : ""}.`
+                        : applyResult.error || "Failed to apply template."}
                     </div>
                   )}
 
-                  {/* Apply button */}
-                  <Button
-                    onClick={handleApplyTemplate}
-                    disabled={!selectedTemplateId || selectedBayIds.size === 0 || applying}
-                    className="w-full"
-                  >
-                    {applying ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <CalendarDays className="mr-2 h-4 w-4" />
-                    )}
-                    Apply to {selectedCount} {selectedCount === 1 ? "Date" : "Dates"}
-                  </Button>
+                  <div className="space-y-5">
+                    {/* Template picker */}
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Event Template
+                      </label>
+                      {eventTemplates.length === 0 ? (
+                        <p className="text-sm text-gray-400">
+                          No event templates found. Create one in{" "}
+                          <a href="/admin/events/templates" className="text-blue-600 underline">
+                            Event Templates
+                          </a>.
+                        </p>
+                      ) : (
+                        <select
+                          value={selectedTemplateId}
+                          onChange={(e) => setSelectedTemplateId(e.target.value)}
+                          className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10"
+                        >
+                          <option value="">Select a template...</option>
+                          {eventTemplates.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    {/* Time inputs */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                          Start Time
+                        </label>
+                        <input
+                          type="time"
+                          value={applyStartTime}
+                          onChange={(e) => setApplyStartTime(e.target.value)}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                          End Time
+                        </label>
+                        <input
+                          type="time"
+                          value={applyEndTime}
+                          onChange={(e) => setApplyEndTime(e.target.value)}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Bay selector */}
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Assign to Bays
+                      </label>
+                      <div className="rounded-lg border border-gray-200">
+                        <label className="flex cursor-pointer items-center gap-3 border-b border-gray-100 px-3 py-2.5 transition-colors hover:bg-gray-50">
+                          <input
+                            type="checkbox"
+                            checked={selectedBayIds.size === bays.length}
+                            onChange={toggleAllBays}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm font-medium text-gray-800">
+                            All bays ({bays.length})
+                          </span>
+                        </label>
+                        {bays.map((bay) => (
+                          <label
+                            key={bay.id}
+                            className="flex cursor-pointer items-center gap-3 px-3 py-2 pl-7 transition-colors hover:bg-gray-50"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedBayIds.has(bay.id)}
+                              onChange={() => toggleBay(bay.id)}
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">{bay.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Status toggle */}
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Status
+                      </label>
+                      <div className="flex rounded-lg border border-gray-200">
+                        <button
+                          onClick={() => setApplyStatus("draft")}
+                          className={cn(
+                            "flex-1 rounded-l-lg px-4 py-2 text-sm font-medium transition-colors",
+                            applyStatus === "draft"
+                              ? "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200"
+                              : "text-gray-500 hover:bg-gray-50"
+                          )}
+                        >
+                          Draft
+                        </button>
+                        <button
+                          onClick={() => setApplyStatus("published")}
+                          className={cn(
+                            "flex-1 rounded-r-lg px-4 py-2 text-sm font-medium transition-colors",
+                            applyStatus === "published"
+                              ? "bg-green-50 text-green-700 ring-1 ring-inset ring-green-200"
+                              : "text-gray-500 hover:bg-gray-50"
+                          )}
+                        >
+                          Published
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 md:px-6">
+                  <div className="text-xs text-gray-500">
+                    {canApplyTemplate
+                      ? `${selectedCount} event${selectedCount !== 1 ? "s" : ""} will be created as ${applyStatus}`
+                      : !selectedTemplateId
+                        ? "Select a template"
+                        : selectedBayIds.size === 0
+                          ? "Select at least one bay"
+                          : null}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={closePanel} disabled={applying} className="rounded-lg border-gray-200">
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={handleApplyTemplate} disabled={!canApplyTemplate || applying} className="gap-1.5 rounded-lg">
+                      {applying ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Applying...
+                        </>
+                      ) : (
+                        <>Apply to {selectedCount} {selectedCount === 1 ? "date" : "dates"}</>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
-            ) : panelMode === "schedule" ? (
+            ) : panelMode === "daySchedule" ? (
+              /* ── Apply Day Schedule Panel ── */
               <div>
                 <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 md:px-6">
                   <div className="flex items-center gap-3">
@@ -845,10 +1090,11 @@ export function EventCalendar({
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-gray-800">
-                        Apply Day Schedule
+                        Apply Day Schedule to {selectedCount}{" "}
+                        {selectedCount === 1 ? "date" : "dates"}
                       </p>
-                      <p className="text-xs text-gray-500">
-                        {selectedCount} {selectedCount === 1 ? "date" : "dates"} selected
+                      <p className="truncate text-xs text-gray-500">
+                        {formatDateRangeSummary(selectedArray)}
                       </p>
                     </div>
                   </div>
@@ -860,114 +1106,300 @@ export function EventCalendar({
                   </button>
                 </div>
 
-                <div className="space-y-4 px-4 py-4 md:px-6">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-gray-600">
-                      Day Schedule
-                    </label>
-                    <select
-                      value={selectedScheduleId}
-                      onChange={(e) => setSelectedScheduleId(e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    >
-                      <option value="">Select a day schedule...</option>
-                      {daySchedules.map((ds) => (
-                        <option key={ds.id} value={ds.id}>
-                          {ds.name} ({ds.entryCount} {ds.entryCount === 1 ? "event" : "events"})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Status */}
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-gray-600">
-                      Status
-                    </label>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setApplyStatus("draft")}
-                        className={cn(
-                          "rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-                          applyStatus === "draft"
-                            ? "border-amber-200 bg-amber-50 text-amber-700"
-                            : "border-gray-200 text-gray-500 hover:border-gray-300"
-                        )}
-                      >
-                        Draft
-                      </button>
-                      <button
-                        onClick={() => setApplyStatus("published")}
-                        className={cn(
-                          "rounded-md border px-3 py-1.5 text-xs font-medium transition-colors",
-                          applyStatus === "published"
-                            ? "border-green-200 bg-green-50 text-green-700"
-                            : "border-gray-200 text-gray-500 hover:border-gray-300"
-                        )}
-                      >
-                        Published
-                      </button>
-                    </div>
-                  </div>
-
+                <div className="max-h-[50vh] overflow-y-auto px-4 py-4 md:px-6">
                   {applyResult && (
                     <div
                       className={cn(
-                        "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm",
+                        "mb-4 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm",
                         applyResult.success
                           ? "border-green-200 bg-green-50 text-green-700"
                           : "border-red-200 bg-red-50 text-red-700"
                       )}
                     >
                       {applyResult.success ? (
-                        <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
                       ) : (
-                        <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                        <AlertCircle className="h-4 w-4 shrink-0" />
                       )}
                       {applyResult.success
-                        ? `Created ${applyResult.count} event${applyResult.count !== 1 ? "s" : ""}`
-                        : applyResult.error}
+                        ? `Successfully created ${applyResult.count} event${applyResult.count !== 1 ? "s" : ""}.`
+                        : applyResult.error || "Failed to apply day schedule."}
                     </div>
                   )}
 
-                  <Button
-                    onClick={handleApplySchedule}
-                    disabled={!selectedScheduleId || applying}
-                    className="w-full"
-                  >
-                    {applying ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <CalendarDays className="mr-2 h-4 w-4" />
+                  <div className="space-y-5">
+                    {/* Day schedule picker */}
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Day Schedule
+                      </label>
+                      {daySchedules.length === 0 ? (
+                        <p className="text-sm text-gray-400">
+                          No day schedules saved yet. Open a day with events and use &ldquo;Save as Day Schedule&rdquo;.
+                        </p>
+                      ) : (
+                        <select
+                          value={selectedDayScheduleId}
+                          onChange={(e) => setSelectedDayScheduleId(e.target.value)}
+                          className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-3 focus:ring-purple-500/10"
+                        >
+                          <option value="">Select a day schedule...</option>
+                          {daySchedules.map((ds) => (
+                            <option key={ds.id} value={ds.id}>
+                              {ds.name} ({ds.entryCount} event{ds.entryCount !== 1 ? "s" : ""})
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    {/* Status toggle */}
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Status
+                      </label>
+                      <div className="flex rounded-lg border border-gray-200">
+                        <button
+                          onClick={() => setApplyStatus("draft")}
+                          className={cn(
+                            "flex-1 rounded-l-lg px-4 py-2 text-sm font-medium transition-colors",
+                            applyStatus === "draft"
+                              ? "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200"
+                              : "text-gray-500 hover:bg-gray-50"
+                          )}
+                        >
+                          Draft
+                        </button>
+                        <button
+                          onClick={() => setApplyStatus("published")}
+                          className={cn(
+                            "flex-1 rounded-r-lg px-4 py-2 text-sm font-medium transition-colors",
+                            applyStatus === "published"
+                              ? "bg-green-50 text-green-700 ring-1 ring-inset ring-green-200"
+                              : "text-gray-500 hover:bg-gray-50"
+                          )}
+                        >
+                          Published
+                        </button>
+                      </div>
+                    </div>
+                    {/* Overwrite confirmation warning */}
+                    {dayScheduleConfirm && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <p className="text-sm font-medium text-amber-800">
+                          {dayScheduleConfirm.eventsToDelete} existing event{dayScheduleConfirm.eventsToDelete !== 1 ? "s" : ""} will be replaced.
+                        </p>
+                        {dayScheduleConfirm.registrationsToCancel > 0 && (
+                          <p className="mt-1 text-sm text-amber-700">
+                            {dayScheduleConfirm.registrationsToCancel} active registration{dayScheduleConfirm.registrationsToCancel !== 1 ? "s" : ""} will be cancelled and registrants notified.
+                          </p>
+                        )}
+                      </div>
                     )}
-                    Apply to {selectedCount} {selectedCount === 1 ? "Date" : "Dates"}
-                  </Button>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 md:px-6">
+                  <div className="text-xs text-gray-500">
+                    {dayScheduleConfirm
+                      ? "Existing events will be replaced"
+                      : canApplyDaySchedule
+                        ? `Events will be created on ${selectedCount} ${selectedCount === 1 ? "date" : "dates"} as ${applyStatus}`
+                        : "Select a day schedule"}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { closePanel(); setDayScheduleConfirm(null); }} disabled={applying} className="rounded-lg border-gray-200">
+                      Cancel
+                    </Button>
+                    {dayScheduleConfirm ? (
+                      <Button size="sm" onClick={handleConfirmDaySchedule} disabled={applying} className="gap-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700">
+                        {applying ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Replacing...
+                          </>
+                        ) : (
+                          <>Replace &amp; Apply</>
+                        )}
+                      </Button>
+                    ) : (
+                      <Button size="sm" onClick={handleApplyDaySchedule} disabled={!canApplyDaySchedule || applying} className="gap-1.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700">
+                        {applying ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Checking...
+                          </>
+                        ) : (
+                          <>Apply to {selectedCount} {selectedCount === 1 ? "date" : "dates"}</>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : panelMode === "delete" ? (
+              /* ── Delete Events Panel ── */
+              <div>
+                <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 md:px-6">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-100">
+                      <Trash2 className="h-4 w-4 text-red-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">
+                        Delete Events for {selectedCount}{" "}
+                        {selectedCount === 1 ? "date" : "dates"}
+                      </p>
+                      <p className="truncate text-xs text-gray-500">
+                        {formatDateRangeSummary(selectedArray)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={closePanel}
+                    className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="px-4 py-4 md:px-6">
+                  {deleteResult && (
+                    <div
+                      className={cn(
+                        "mb-4 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm",
+                        deleteResult.success
+                          ? "border-green-200 bg-green-50 text-green-700"
+                          : "border-red-200 bg-red-50 text-red-700"
+                      )}
+                    >
+                      {deleteResult.success ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      ) : (
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                      )}
+                      {deleteResult.success
+                        ? `Successfully deleted ${deleteResult.deletedCount} event${deleteResult.deletedCount !== 1 ? "s" : ""}.`
+                        : deleteResult.error || "Failed to delete events."}
+                    </div>
+                  )}
+
+                  {deleteLoading && !deletePreview && (
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading event details...
+                    </div>
+                  )}
+
+                  {deletePreview && !deleteResult && (
+                    <div className="space-y-3">
+                      <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                        <p className="text-sm font-medium text-red-800">
+                          {deletePreview.eventCount} event{deletePreview.eventCount !== 1 ? "s" : ""} will be permanently deleted.
+                        </p>
+                        {deletePreview.registrationCount > 0 && (
+                          <p className="mt-1 text-sm text-red-700">
+                            {deletePreview.registrationCount} active registration{deletePreview.registrationCount !== 1 ? "s" : ""} will be cancelled and registrants will be notified.
+                          </p>
+                        )}
+                        {deletePreview.eventCount === 0 && (
+                          <p className="mt-1 text-sm text-red-700">
+                            No events found on the selected dates.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 md:px-6">
+                  <div className="text-xs text-gray-500">
+                    {deletePreview
+                      ? deletePreview.eventCount === 0
+                        ? "Nothing to delete"
+                        : "This action cannot be undone"
+                      : "Checking events..."}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={closePanel} disabled={deleteLoading} className="rounded-lg border-gray-200">
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleDeleteEvents}
+                      disabled={deleteLoading || !deletePreview || deletePreview.eventCount === 0}
+                      className="gap-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700"
+                    >
+                      {deleteLoading ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Delete {deletePreview?.eventCount || 0} Event{(deletePreview?.eventCount || 0) !== 1 ? "s" : ""}
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             ) : (
-              /* ── Collapsed bar ── */
-              <div className="flex items-center justify-between px-4 py-3 md:px-6">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-100">
+              /* ── Collapsed Bar ── */
+              <div className="flex items-center justify-between gap-4 px-4 py-3 md:px-6">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100">
                     <CalendarDays className="h-4 w-4 text-blue-600" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-sm font-semibold text-gray-800">
                       {selectedCount} {selectedCount === 1 ? "date" : "dates"} selected
                     </p>
+                    <p className="truncate text-xs text-gray-500">
+                      {formatDateRangeSummary(selectedArray)}
+                    </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button size="sm" onClick={openTemplatePanel}>
-                    <LayoutTemplate className="mr-1.5 h-3.5 w-3.5" />
-                    Apply Template
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={clearSelection}
+                    className="gap-1.5 rounded-lg border-gray-200"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Clear Selection
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={openDeletePanel}
+                    className="gap-1.5 rounded-lg border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete Events
                   </Button>
                   {daySchedules.length > 0 && (
-                    <Button size="sm" variant="outline" onClick={openSchedulePanel}>
-                      <ListChecks className="mr-1.5 h-3.5 w-3.5" />
-                      Day Schedule
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={openDaySchedulePanel}
+                      className="gap-1.5 rounded-lg border-purple-200 text-purple-600 hover:bg-purple-50 hover:text-purple-700"
+                    >
+                      <ListChecks className="h-3.5 w-3.5" />
+                      Apply Day Schedule
                     </Button>
                   )}
+                  <Button
+                    size="sm"
+                    onClick={openTemplatePanel}
+                    className="gap-1.5 rounded-lg"
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" />
+                    Apply Template
+                  </Button>
                 </div>
               </div>
             )}

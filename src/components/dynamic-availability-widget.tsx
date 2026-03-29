@@ -175,6 +175,7 @@ type DynamicAvailabilityWidgetProps = {
   originalBooking?: DynamicOriginalBookingInfo;
   modifyRedirectBase?: string;
   demoMode?: boolean;
+  eventsOnly?: boolean;
 };
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -304,6 +305,7 @@ export function DynamicAvailabilityWidget(
     originalBooking,
     modifyRedirectBase,
     demoMode = false,
+    eventsOnly = false,
   } = props;
 
   // In demo mode, override auth state with simulated user
@@ -474,15 +476,6 @@ export function DynamicAvailabilityWidget(
       cancellationWindowHours * 60 * 60 * 1000
     : false;
 
-  // Show toast when user selects slots within the non-refundable window
-  const prevWithinWindow = useRef(false);
-  useEffect(() => {
-    if (isWithinCancellationWindow && !prevWithinWindow.current) {
-      setToast({ message: "This booking cannot be modified or refunded" });
-    }
-    prevWithinWindow.current = isWithinCancellationWindow;
-  }, [isWithinCancellationWindow]);
-
   // ─── Mounted guard for portal rendering ─────────────────
 
   useEffect(() => {
@@ -651,23 +644,28 @@ export function DynamicAvailabilityWidget(
   const fetchEvents = useCallback(async () => {
     if (!selectedDate) return;
 
+    // For events_only, skip bay filtering — show all events
+    const skipBayFilter = eventsOnly;
+
     // Determine which bay IDs to filter by
     let bayIdsToCheck: string[] = [];
-    if (selectedGroupId) {
-      const group = facilityGroups.find((g) => g.id === selectedGroupId);
-      if (group) bayIdsToCheck = group.bays.map((b) => b.id);
-    } else if (selectedBayId) {
-      bayIdsToCheck = [selectedBayId];
-    } else if (!hasMultipleOptions) {
-      bayIdsToCheck = bays.map((b) => b.id);
-    } else {
-      setDayEvents([]);
-      return;
-    }
+    if (!skipBayFilter) {
+      if (selectedGroupId) {
+        const group = facilityGroups.find((g) => g.id === selectedGroupId);
+        if (group) bayIdsToCheck = group.bays.map((b) => b.id);
+      } else if (selectedBayId) {
+        bayIdsToCheck = [selectedBayId];
+      } else if (!hasMultipleOptions) {
+        bayIdsToCheck = bays.map((b) => b.id);
+      } else {
+        setDayEvents([]);
+        return;
+      }
 
-    if (bayIdsToCheck.length === 0) {
-      setDayEvents([]);
-      return;
+      if (bayIdsToCheck.length === 0) {
+        setDayEvents([]);
+        return;
+      }
     }
 
     setLoadingEvents(true);
@@ -698,9 +696,10 @@ export function DynamicAvailabilityWidget(
     }
 
     // Filter to events that involve at least one bay in the selected group/bay
-    const bayIdSet = new Set(bayIdsToCheck);
+    // (skip for events_only — show all events regardless of bay)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const filtered = events.filter((evt: any) => {
+    const filtered = skipBayFilter ? events : events.filter((evt: any) => {
+      const bayIdSet = new Set(bayIdsToCheck);
       const eventBayIds = (evt.event_bays as { bay_id: string }[])?.map((eb) => eb.bay_id) || [];
       return eventBayIds.some((id) => bayIdSet.has(id));
     });
@@ -748,7 +747,7 @@ export function DynamicAvailabilityWidget(
 
     setDayEvents(result);
     setLoadingEvents(false);
-  }, [orgId, selectedDate, selectedGroupId, selectedBayId, facilityGroups, bays, hasMultipleOptions, timezone]);
+  }, [orgId, selectedDate, selectedGroupId, selectedBayId, facilityGroups, bays, hasMultipleOptions, timezone, eventsOnly]);
 
   useEffect(() => {
     fetchEvents();
@@ -1171,6 +1170,11 @@ export function DynamicAvailabilityWidget(
         recordBookingPayment(result.booking_id, paymentMethodId);
       }
 
+      // Capture values needed for confirmation modal before state is cleared
+      const confirmedDate = selectedDate;
+      const confirmedNotes = bookingNotes;
+      const confirmedDiscount = calcDiscount(selectedSlot.price_cents);
+
       // Reset state
       handleCancelSelection();
 
@@ -1183,12 +1187,24 @@ export function DynamicAvailabilityWidget(
         return;
       }
 
-      // Desktop: show toast, refresh availability, and highlight in sidebar
-      const bayInfo = result.bay_name ? ` — ${result.bay_name}` : "";
-      setToast({
-        message: "Booking confirmed!",
-        description: `Confirmation code: ${result.confirmation_code}${bayInfo}`,
+      // Desktop: open confirmation modal with booking details
+      setSidebarBooking({
+        id: result.booking_id,
+        date: confirmedDate,
+        start_time: result.start_time,
+        end_time: result.end_time,
+        total_price_cents: result.total_price_cents,
+        discount_cents: confirmedDiscount.discountCents || 0,
+        discount_description: confirmedDiscount.label || null,
+        status: "confirmed",
+        confirmation_code: result.confirmation_code,
+        notes: confirmedNotes || null,
+        created_at: new Date().toISOString(),
+        bayName: result.bay_name || "",
+        canCancel: true,
+        canModify: true,
       });
+      setSidebarModalOpen(true);
 
       // Highlight new booking in sidebar
       if (result.booking_id) {
@@ -1368,8 +1384,8 @@ export function DynamicAvailabilityWidget(
         </div>
       </div>
 
-      {/* Select Facility (if needed) */}
-      {hasMultipleOptions && (
+      {/* Select Facility (if needed) — hidden for events_only */}
+      {hasMultipleOptions && !eventsOnly && (
         <div className="surface-1 rounded-xl bg-card px-4 py-3">
           <p className="mb-2.5 text-sm font-medium text-foreground">
             2. Select Facility
@@ -1416,7 +1432,8 @@ export function DynamicAvailabilityWidget(
         </div>
       )}
 
-      {/* Play for [duration] */}
+      {/* Play for [duration] + Available Times — hidden for events_only */}
+      {!eventsOnly && <>
       <div className="surface-1 rounded-xl bg-card px-4 py-3">
         <p className="mb-2 text-sm font-medium text-foreground">
           {hasMultipleOptions ? "3" : "2"}. Play for {formatDuration(selectedDuration)}
@@ -1519,15 +1536,16 @@ export function DynamicAvailabilityWidget(
           </div>
         )}
       </div>
+      </>}
 
-      {/* Step 4: Events on this date for the selected facility */}
-      {(dayEvents.length > 0 || loadingEvents) && (
+      {/* Events on this date */}
+      {(dayEvents.length > 0 || loadingEvents || eventsOnly) && (
         <div className="surface-1 rounded-xl bg-card px-4 py-3">
           <div className="mb-2.5 flex items-center gap-2">
             <CalendarDays className="h-4 w-4 text-green-600 dark:text-green-400" />
             <h3 className="text-sm font-medium text-muted-foreground">
-              Events
-              {selectedOption && (
+              {eventsOnly ? "2. Events" : "Events"}
+              {!eventsOnly && selectedOption && (
                 <span className="ml-1.5">
                   &middot; {selectedOption}
                 </span>
@@ -1538,6 +1556,13 @@ export function DynamicAvailabilityWidget(
           {loadingEvents ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : dayEvents.length === 0 && eventsOnly ? (
+            <div className="py-8 text-center">
+              <CalendarDays className="mx-auto h-8 w-8 text-muted-foreground/50" />
+              <p className="mt-3 text-sm text-muted-foreground">
+                No events scheduled for this date
+              </p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -1946,6 +1971,11 @@ export function DynamicAvailabilityWidget(
               })()}
             </div>
 
+            {/* Within cancellation window warning */}
+            {isWithinCancellationWindow && (
+              <p className="text-center text-xs text-muted-foreground">Within {cancellationWindowHours} hours, no refunds or modifications</p>
+            )}
+
             {/* Error display */}
             {paymentValidationError && (
               <p className="text-xs text-red-600">{paymentValidationError}</p>
@@ -2299,19 +2329,10 @@ export function DynamicAvailabilityWidget(
                             })()}
                           </div>
 
-                          {/* Notes */}
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-medium text-muted-foreground">
-                              Notes (optional)
-                            </label>
-                            <textarea
-                              value={bookingNotes}
-                              onChange={(e) => setBookingNotes(e.target.value)}
-                              placeholder="Any special requests..."
-                              rows={2}
-                              className="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                            />
-                          </div>
+                          {/* Within cancellation window warning */}
+                          {isWithinCancellationWindow && (
+                            <p className="text-sm text-muted-foreground">Within {cancellationWindowHours} hours, no refunds or modifications</p>
+                          )}
 
                           {/* User info */}
                           <p className="text-sm text-muted-foreground">
