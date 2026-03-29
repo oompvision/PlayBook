@@ -78,7 +78,8 @@ export async function PUT(request: NextRequest) {
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[admin/events-settings] update error:", error.message);
+    return NextResponse.json({ error: "Failed to update events settings" }, { status: 500 });
   }
 
   if (!updated) {

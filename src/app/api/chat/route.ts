@@ -737,7 +737,8 @@ async function executeCreateBookingDynamic(
   });
 
   if (error) {
-    return { error: `Booking failed: ${error.message}` };
+    console.error("[chat] create_dynamic_booking error:", error.message);
+    return { error: "Booking could not be completed. Please try again." };
   }
 
   const confirmationCode = data?.confirmation_code || "Unknown";
@@ -939,7 +940,8 @@ async function executeCreateBookingSlotBased(
     });
 
     if (error) {
-      return { error: `Booking failed: ${error.message}` };
+      console.error("[chat] create_booking error:", error.message);
+      return { error: "Booking could not be completed. Please try again." };
     }
 
     // The RPC returns a JSON object or array
@@ -1034,7 +1036,8 @@ async function executeCancelBooking(
   });
 
   if (error) {
-    return { error: `Cancellation failed: ${error.message}` };
+    console.error("[chat] cancel_booking error:", error.message);
+    return { error: "Cancellation could not be completed. Please try again." };
   }
 
   // Fire cancellation notifications (non-blocking)
@@ -1305,7 +1308,8 @@ async function executeRegisterForEvent(
   });
 
   if (error) {
-    return { error: `Registration failed: ${error.message}` };
+    console.error("[chat] register_for_event error:", error.message);
+    return { error: "Registration could not be completed. Please try again." };
   }
 
   const reg = result as { registration_id: string; status: string; waitlist_position: number | null; event_name: string };
@@ -1630,14 +1634,29 @@ Quick reply buttons:
 
     // Tool call loop — up to 5 rounds to prevent infinite loops
     for (let i = 0; i < 5; i++) {
-      const response = await getGenAI().models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: currentMessages,
-        config: {
-          systemInstruction,
-          tools: [{ functionDeclarations: activeToolDeclarations }],
-        },
-      });
+      // Add timeout to Gemini API calls to prevent hanging requests
+      const abortController = new AbortController();
+      const timeout = setTimeout(() => abortController.abort(), 30_000);
+      let response;
+      try {
+        response = await getGenAI().models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: currentMessages,
+          config: {
+            systemInstruction,
+            tools: [{ functionDeclarations: activeToolDeclarations }],
+            abortSignal: abortController.signal,
+          },
+        });
+      } catch (err) {
+        clearTimeout(timeout);
+        if (err instanceof Error && err.name === "AbortError") {
+          finalText = "I'm taking too long to respond. Please try again.";
+          break;
+        }
+        throw err;
+      }
+      clearTimeout(timeout);
 
       const candidate = response.candidates?.[0];
       if (!candidate) {
@@ -1844,15 +1863,15 @@ Quick reply buttons:
     console.error("Chat API error:", error);
     const message =
       error instanceof Error ? error.message : "Unknown error";
-    // Surface specific Gemini errors to help debugging
+    // Log the full error server-side but return generic message to client
     if (message.includes("API key")) {
       return Response.json(
-        { error: "Invalid Gemini API key. Please check your GEMINI_API_KEY." },
-        { status: 401 }
+        { error: "Chat service is temporarily unavailable." },
+        { status: 503 }
       );
     }
     return Response.json(
-      { error: `Chat error: ${message}` },
+      { error: "Something went wrong. Please try again." },
       { status: 500 }
     );
   }

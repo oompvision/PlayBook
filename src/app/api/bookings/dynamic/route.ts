@@ -11,22 +11,27 @@ import {
 } from "@/lib/availability-engine";
 import { createNotification, notifyOrgAdmins } from "@/lib/notifications";
 import { formatTimeInZone } from "@/lib/utils";
+import { z } from "zod/v4";
+
+const bookingSchema = z.object({
+  org_id: z.string().uuid(),
+  bay_id: z.string().uuid().optional(),
+  group_id: z.string().uuid().optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  start_time: z.string().min(1),
+  end_time: z.string().min(1),
+  price_cents: z.number().int().min(0),
+  notes: z.string().max(1000).nullish(),
+  location_id: z.string().uuid().nullish(),
+  discount_cents: z.number().int().min(0).nullish(),
+  discount_description: z.string().max(200).nullish(),
+});
 
 /**
  * POST /api/bookings/dynamic
  *
  * Creates a dynamic booking. For group bookings, performs server-side
  * consolidation to pick the best bay.
- *
- * Body:
- *   org_id       — required
- *   bay_id       — optional (specific bay, for standalone bookings)
- *   group_id     — optional (facility group, triggers consolidation)
- *   date         — required (YYYY-MM-DD)
- *   start_time   — required (ISO timestamp)
- *   end_time     — required (ISO timestamp)
- *   price_cents  — required
- *   notes        — optional
  */
 export async function POST(request: NextRequest) {
   const auth = await getAuthUser();
@@ -35,15 +40,17 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { org_id, bay_id, group_id, date, start_time, end_time, price_cents, notes, location_id, discount_cents, discount_description } =
-    body;
+  const parsed = bookingSchema.safeParse(body);
 
-  if (!org_id || !date || !start_time || !end_time || price_cents == null) {
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: "Missing required fields" },
+      { error: "Invalid booking data" },
       { status: 400 }
     );
   }
+
+  const { org_id, bay_id, group_id, date, start_time, end_time, price_cents, notes, location_id, discount_cents, discount_description } =
+    parsed.data;
 
   if (!bay_id && !group_id) {
     return NextResponse.json(
@@ -65,7 +72,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Org not found" }, { status: 404 });
   }
 
-  let targetBayId = bay_id;
+  let targetBayId: string | undefined = bay_id;
 
   // If group booking, use consolidation to pick the best bay
   if (group_id && !bay_id) {
@@ -142,7 +149,7 @@ export async function POST(request: NextRequest) {
       timezone: org.timezone,
       bookingsMap,
       blockOutsMap,
-    });
+    }) ?? undefined;
 
     if (!targetBayId) {
       return NextResponse.json(
@@ -168,7 +175,8 @@ export async function POST(request: NextRequest) {
   });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 409 });
+    console.error("[bookings/dynamic] create_dynamic_booking error:", error.message);
+    return NextResponse.json({ error: "Booking could not be completed. Please try again." }, { status: 409 });
   }
 
   // Get the bay name for the response
