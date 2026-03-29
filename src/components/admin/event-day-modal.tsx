@@ -228,8 +228,11 @@ export function EventDayModal({
     const eventRows: EventRow[] = [];
     for (const ev of eventsData || []) {
       const bayNames = (ev.event_bays || []).map(
-        (eb: { bay_id: string; bays: { name: string } | null }) =>
-          eb.bays?.name || "Unknown"
+        (eb: { bay_id: string; bays: { name: string }[] | { name: string } | null }) => {
+          const b = eb.bays;
+          if (Array.isArray(b)) return b[0]?.name || "Unknown";
+          return b?.name || "Unknown";
+        }
       );
 
       eventRows.push({
