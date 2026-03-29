@@ -13,7 +13,7 @@ import {
   Gift,
   BarChart3,
 } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
 
 type NotificationRow = {
   id: string;
@@ -70,7 +70,7 @@ export function NotificationPanel({
   const hasUnread = notifications.some((n) => !n.is_read);
 
   return (
-    <div className="flex max-h-[min(24rem,var(--radix-popover-content-available-height,24rem))] flex-col">
+    <div className="flex max-h-[min(32rem,var(--radix-popover-content-available-height,32rem))] flex-col">
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between border-b px-4 py-3">
         <h3 className="text-sm font-semibold text-gray-800">Notifications</h3>
@@ -85,7 +85,7 @@ export function NotificationPanel({
       </div>
 
       {/* List */}
-      <ScrollArea className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {notifications.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <Bell className="mb-2 h-8 w-8 text-gray-300" />
@@ -132,7 +132,7 @@ export function NotificationPanel({
             })}
           </div>
         )}
-      </ScrollArea>
+      </div>
 
       {/* Footer */}
       <div className="shrink-0 border-t px-4 py-2">
