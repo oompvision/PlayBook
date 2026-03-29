@@ -14,6 +14,9 @@ import {
   ChevronDown,
   Save,
   ExternalLink,
+  Eye,
+  EyeOff,
+  CalendarClock,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────
@@ -26,13 +29,12 @@ type EventDayModalProps = {
     id: string;
     name: string;
     color: string;
-    start_time: string | null;
-    end_time: string | null;
   }[];
   onClose: () => void;
   onUpdateEvent: (
     eventId: string,
     updates: {
+      date?: string;
       start_time?: string;
       end_time?: string;
       capacity?: number;
@@ -44,12 +46,37 @@ type EventDayModalProps = {
   ) => Promise<{ success: boolean; error?: string }>;
   onAddEventFromTemplate: (
     templateId: string,
-    date: string
+    date: string,
+    startTime: string,
+    endTime: string
   ) => Promise<{ success: boolean; error?: string }>;
   onSaveDaySchedule: (
     date: string,
     name: string
   ) => Promise<{ success: boolean; error?: string }>;
+  onPublishEvent: (
+    eventId: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  onUnpublishEvent: (
+    eventId: string
+  ) => Promise<{ success: boolean; cancelledRegistrations?: number; error?: string }>;
+  onPublishAllEvents: (
+    eventIds: string[]
+  ) => Promise<{ success: boolean; published: number; error?: string }>;
+  onUnpublishAllEvents: (
+    eventIds: string[]
+  ) => Promise<{ success: boolean; unpublished: number; cancelledRegistrations: number; error?: string }>;
+  onDeleteEventsForDates: (
+    dates: string[],
+    confirm: boolean
+  ) => Promise<{ success: boolean; eventCount: number; registrationCount: number; deletedCount?: number; error?: string }>;
+  onApplyDaySchedule: (
+    dayScheduleId: string,
+    dates: string[],
+    status: "draft" | "published",
+    confirm?: boolean
+  ) => Promise<{ success: boolean; count: number; error?: string; needsConfirmation?: boolean; eventsToDelete?: number; registrationsToCancel?: number }>;
+  daySchedules: { id: string; name: string; entryCount: number }[];
 };
 
 type EventRow = {
@@ -117,6 +144,13 @@ export function EventDayModal({
   onDeleteEvent,
   onAddEventFromTemplate,
   onSaveDaySchedule,
+  onPublishEvent,
+  onUnpublishEvent,
+  onPublishAllEvents,
+  onUnpublishAllEvents,
+  onDeleteEventsForDates,
+  onApplyDaySchedule,
+  daySchedules,
 }: EventDayModalProps) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -136,6 +170,8 @@ export function EventDayModal({
   // Add from template state
   const [showTemplateDropdown, setShowTemplateDropdown] = useState(false);
   const [addingFromTemplate, setAddingFromTemplate] = useState(false);
+  const [addStartTime, setAddStartTime] = useState("09:00");
+  const [addEndTime, setAddEndTime] = useState("10:00");
 
   // Save as day schedule state
   const [showSaveSchedule, setShowSaveSchedule] = useState(false);
@@ -150,6 +186,18 @@ export function EventDayModal({
 
   // Deleting state
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
+
+  // Publish/unpublish state
+  const [publishingEventId, setPublishingEventId] = useState<string | null>(null);
+  const [publishingAll, setPublishingAll] = useState(false);
+  const [unpublishingAll, setUnpublishingAll] = useState(false);
+
+  // Delete all events state
+  const [deletingAll, setDeletingAll] = useState(false);
+
+  // Apply day schedule state
+  const [showDayScheduleDropdown, setShowDayScheduleDropdown] = useState(false);
+  const [applyingDaySchedule, setApplyingDaySchedule] = useState(false);
 
   // Mount + animate in
   useEffect(() => {
@@ -228,11 +276,10 @@ export function EventDayModal({
     const eventRows: EventRow[] = [];
     for (const ev of eventsData || []) {
       const bayNames = (ev.event_bays || []).map(
-        // Supabase returns bays as { name } (single join) or array — handle both
-        (eb: { bay_id: string; bays: { name: string } | { name: string }[] | null }) => {
-          if (!eb.bays) return "Unknown";
-          if (Array.isArray(eb.bays)) return eb.bays[0]?.name || "Unknown";
-          return eb.bays.name || "Unknown";
+        (eb: { bay_id: string; bays: { name: string }[] | { name: string } | null }) => {
+          const b = eb.bays;
+          if (Array.isArray(b)) return b[0]?.name || "Unknown";
+          return b?.name || "Unknown";
         }
       );
 
@@ -294,13 +341,15 @@ export function EventDayModal({
     setMessage(null);
 
     const updates: {
+      date?: string;
       start_time?: string;
       end_time?: string;
       capacity?: number;
       price_cents?: number;
     } = {
-      start_time: `${date}T${editForm.start_time}:00`,
-      end_time: `${date}T${editForm.end_time}:00`,
+      date,
+      start_time: editForm.start_time,
+      end_time: editForm.end_time,
       capacity: editForm.capacity,
       price_cents: editForm.price_cents,
     };
@@ -347,17 +396,182 @@ export function EventDayModal({
     setDeletingEventId(null);
   }
 
+  // ─── Publish / Unpublish handlers ────────────────────────────
+
+  async function handlePublish(eventId: string) {
+    setPublishingEventId(eventId);
+    setMessage(null);
+
+    const result = await onPublishEvent(eventId);
+
+    if (result.success) {
+      setMessage({ type: "success", text: "Event published" });
+      await fetchEvents();
+    } else {
+      setMessage({ type: "error", text: result.error || "Failed to publish event" });
+    }
+
+    setPublishingEventId(null);
+  }
+
+  async function handleUnpublish(eventId: string) {
+    // Find the event to check registration count
+    const event = events.find((e) => e.id === eventId);
+    if (event && event.registration_count > 0) {
+      const confirmed = window.confirm(
+        `This event has ${event.registration_count} registration${event.registration_count !== 1 ? "s" : ""}. Unpublishing will cancel all registrations and notify registrants. Continue?`
+      );
+      if (!confirmed) return;
+    }
+
+    setPublishingEventId(eventId);
+    setMessage(null);
+
+    const result = await onUnpublishEvent(eventId);
+
+    if (result.success) {
+      const extra = result.cancelledRegistrations
+        ? ` (${result.cancelledRegistrations} registration${result.cancelledRegistrations !== 1 ? "s" : ""} cancelled)`
+        : "";
+      setMessage({ type: "success", text: `Event unpublished${extra}` });
+      await fetchEvents();
+    } else {
+      setMessage({ type: "error", text: result.error || "Failed to unpublish event" });
+    }
+
+    setPublishingEventId(null);
+  }
+
+  async function handlePublishAll() {
+    const draftEvents = events.filter((e) => e.status === "draft");
+    if (draftEvents.length === 0) return;
+
+    setPublishingAll(true);
+    setMessage(null);
+
+    const result = await onPublishAllEvents(draftEvents.map((e) => e.id));
+
+    setMessage({
+      type: result.success ? "success" : "error",
+      text: result.success
+        ? `Published ${result.published} event${result.published !== 1 ? "s" : ""}`
+        : result.error || "Failed to publish events",
+    });
+    await fetchEvents();
+    setPublishingAll(false);
+  }
+
+  async function handleUnpublishAll() {
+    const publishedEvents = events.filter((e) => e.status === "published");
+    if (publishedEvents.length === 0) return;
+
+    const totalRegs = publishedEvents.reduce((sum, e) => sum + e.registration_count, 0);
+    let confirmMsg = `Unpublish ${publishedEvents.length} event${publishedEvents.length !== 1 ? "s" : ""}?`;
+    if (totalRegs > 0) {
+      confirmMsg += ` This will cancel ${totalRegs} registration${totalRegs !== 1 ? "s" : ""} and notify registrants.`;
+    }
+    if (!window.confirm(confirmMsg)) return;
+
+    setUnpublishingAll(true);
+    setMessage(null);
+
+    const result = await onUnpublishAllEvents(publishedEvents.map((e) => e.id));
+
+    const extra = result.cancelledRegistrations > 0
+      ? ` (${result.cancelledRegistrations} registration${result.cancelledRegistrations !== 1 ? "s" : ""} cancelled)`
+      : "";
+    setMessage({
+      type: result.success ? "success" : "error",
+      text: result.success
+        ? `Unpublished ${result.unpublished} event${result.unpublished !== 1 ? "s" : ""}${extra}`
+        : result.error || "Failed to unpublish events",
+    });
+    await fetchEvents();
+    setUnpublishingAll(false);
+  }
+
+  // ─── Delete all events on this day ──────────────────────────
+
+  async function handleDeleteAllEvents() {
+    if (events.length === 0) return;
+
+    // Preview first
+    const preview = await onDeleteEventsForDates([date], false);
+    if (preview.eventCount === 0) {
+      setMessage({ type: "success", text: "No events to delete" });
+      return;
+    }
+
+    let msg = `Delete ${preview.eventCount} event${preview.eventCount !== 1 ? "s" : ""} on this day?`;
+    if (preview.registrationCount > 0) {
+      msg += ` ${preview.registrationCount} registration${preview.registrationCount !== 1 ? "s" : ""} will be cancelled and registrants notified.`;
+    }
+    if (!window.confirm(msg)) return;
+
+    setDeletingAll(true);
+    setMessage(null);
+
+    const result = await onDeleteEventsForDates([date], true);
+
+    if (result.success) {
+      setMessage({ type: "success", text: `Deleted ${result.deletedCount} event${result.deletedCount !== 1 ? "s" : ""}` });
+      await fetchEvents();
+    } else {
+      setMessage({ type: "error", text: result.error || "Failed to delete events" });
+    }
+    setDeletingAll(false);
+  }
+
+  // ─── Apply day schedule to this day ───────────────────────────
+
+  async function handleApplyDaySchedule(scheduleId: string) {
+    setApplyingDaySchedule(true);
+    setMessage(null);
+    setShowDayScheduleDropdown(false);
+
+    // Preview first
+    const preview = await onApplyDaySchedule(scheduleId, [date], "draft", false);
+
+    if (preview.needsConfirmation) {
+      let msg = `This will replace ${preview.eventsToDelete} existing event${preview.eventsToDelete !== 1 ? "s" : ""}.`;
+      if ((preview.registrationsToCancel || 0) > 0) {
+        msg += ` ${preview.registrationsToCancel} registration${preview.registrationsToCancel !== 1 ? "s" : ""} will be cancelled.`;
+      }
+      msg += " Continue?";
+      if (!window.confirm(msg)) {
+        setApplyingDaySchedule(false);
+        return;
+      }
+    }
+
+    const result = await onApplyDaySchedule(scheduleId, [date], "draft", true);
+
+    if (result.success) {
+      setMessage({ type: "success", text: `Applied day schedule (${result.count} event${result.count !== 1 ? "s" : ""} created)` });
+      await fetchEvents();
+    } else {
+      setMessage({ type: "error", text: result.error || "Failed to apply day schedule" });
+    }
+    setApplyingDaySchedule(false);
+  }
+
   // ─── Add from template handler ───────────────────────────────
 
   async function handleAddFromTemplate(templateId: string) {
+    if (!addStartTime || !addEndTime) {
+      setMessage({ type: "error", text: "Please set start and end times" });
+      return;
+    }
     setAddingFromTemplate(true);
     setMessage(null);
 
-    const result = await onAddEventFromTemplate(templateId, date);
+    const result = await onAddEventFromTemplate(templateId, date, addStartTime, addEndTime);
 
     if (result.success) {
       setMessage({ type: "success", text: "Event created from template" });
       setShowTemplateDropdown(false);
+      setAddStartTime("09:00");
+      setAddEndTime("10:00");
       await fetchEvents();
     } else {
       setMessage({
@@ -551,6 +765,38 @@ export function EventDayModal({
 
                         {event.status === "draft" && (
                           <button
+                            onClick={() => handlePublish(event.id)}
+                            disabled={publishingEventId === event.id}
+                            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-green-50 hover:text-green-600 disabled:opacity-50"
+                            title="Publish event"
+                          >
+                            {publishingEventId === event.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Eye className="h-4 w-4" />
+                            )}
+                          </button>
+                        )}
+
+                        {event.status === "published" && (
+                          <button
+                            onClick={() => handleUnpublish(event.id)}
+                            disabled={publishingEventId === event.id}
+                            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-amber-50 hover:text-amber-600 disabled:opacity-50"
+                            title={event.registration_count > 0
+                              ? `Unpublish (${event.registration_count} registration${event.registration_count !== 1 ? "s" : ""} will be cancelled)`
+                              : "Unpublish event"}
+                          >
+                            {publishingEventId === event.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <EyeOff className="h-4 w-4" />
+                            )}
+                          </button>
+                        )}
+
+                        {event.status === "draft" && (
+                          <button
                             onClick={() => handleDelete(event.id)}
                             disabled={deletingEventId === event.id}
                             className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
@@ -583,6 +829,7 @@ export function EventDayModal({
                                   start_time: e.target.value,
                                 }))
                               }
+                              onKeyDown={(e) => e.stopPropagation()}
                               className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                             />
                           </div>
@@ -599,6 +846,7 @@ export function EventDayModal({
                                   end_time: e.target.value,
                                 }))
                               }
+                              onKeyDown={(e) => e.stopPropagation()}
                               className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                             />
                           </div>
@@ -673,7 +921,8 @@ export function EventDayModal({
 
         {/* Footer actions */}
         <div className="border-t border-gray-200 px-4 py-3 md:px-6">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
             {/* Add Event from Template */}
             <div className="relative">
               <Button
@@ -695,8 +944,27 @@ export function EventDayModal({
               </Button>
 
               {showTemplateDropdown && (
-                <div className="absolute bottom-full left-0 z-10 mb-1 w-56 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                <div className="absolute bottom-full left-0 z-10 mb-1 w-72 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
                   <div className="px-3 py-1.5 text-xs font-medium text-gray-500">
+                    Set Time
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 px-3 pb-2">
+                    <input
+                      type="time"
+                      value={addStartTime}
+                      onChange={(e) => setAddStartTime(e.target.value)}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      className="h-8 w-full rounded border border-gray-300 px-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none"
+                    />
+                    <input
+                      type="time"
+                      value={addEndTime}
+                      onChange={(e) => setAddEndTime(e.target.value)}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      className="h-8 w-full rounded border border-gray-300 px-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="border-t border-gray-100 px-3 py-1.5 text-xs font-medium text-gray-500">
                     Select Template
                   </div>
                   {eventTemplates.map((template) => (
@@ -771,6 +1039,104 @@ export function EventDayModal({
                 </div>
               )}
             </div>
+
+            {/* Apply Day Schedule */}
+            {daySchedules.length > 0 && (
+              <div className="relative">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setShowDayScheduleDropdown(!showDayScheduleDropdown);
+                    setShowTemplateDropdown(false);
+                    setShowSaveSchedule(false);
+                  }}
+                  disabled={applyingDaySchedule}
+                >
+                  {applyingDaySchedule ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  Apply Schedule
+                </Button>
+
+                {showDayScheduleDropdown && (
+                  <div className="absolute bottom-full left-0 z-10 mb-1 w-56 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                    <div className="px-3 py-1.5 text-xs font-medium text-gray-500">
+                      Select Day Schedule
+                    </div>
+                    {daySchedules.map((ds) => (
+                      <button
+                        key={ds.id}
+                        onClick={() => handleApplyDaySchedule(ds.id)}
+                        disabled={applyingDaySchedule}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {ds.name}
+                        <span className="ml-auto text-xs text-gray-400">
+                          {ds.entryCount} event{ds.entryCount !== 1 ? "s" : ""}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Delete All Events */}
+            {events.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDeleteAllEvents}
+                disabled={deletingAll}
+                className="gap-1.5 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+              >
+                {deletingAll ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+                Delete All
+              </Button>
+            )}
+            </div>
+
+            {/* Publish All / Unpublish All */}
+            <div className="flex shrink-0 items-center gap-2">
+              {events.some((e) => e.status === "draft") && (
+                <Button
+                  size="sm"
+                  onClick={handlePublishAll}
+                  disabled={publishingAll || unpublishingAll}
+                  className="gap-1.5 bg-green-600 text-white hover:bg-green-700"
+                >
+                  {publishingAll ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Eye className="h-3.5 w-3.5" />
+                  )}
+                  Publish All
+                </Button>
+              )}
+              {events.some((e) => e.status === "published") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleUnpublishAll}
+                  disabled={publishingAll || unpublishingAll}
+                  className="gap-1.5 border-amber-200 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+                >
+                  {unpublishingAll ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <EyeOff className="h-3.5 w-3.5" />
+                  )}
+                  Unpublish All
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -778,3 +1144,4 @@ export function EventDayModal({
     document.body
   );
 }
+

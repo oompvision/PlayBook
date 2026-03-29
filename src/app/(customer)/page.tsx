@@ -363,6 +363,8 @@ export default async function FacilityHomePage({
   }
 
   const isDynamic = schedulingType === "dynamic";
+  const isEventsOnly = schedulingType === "events_only";
+
 
   return (
     <div className="flex flex-1 flex-col">
@@ -382,10 +384,35 @@ export default async function FacilityHomePage({
           </div>
         )}
 
-        {/* Availability Widget */}
+        {/* Availability Widget / Events Feed */}
         <div className="flex-1 py-6">
           <div className="mx-auto max-w-6xl px-6">
-            {org && bays && bays.length > 0 ? (
+            {org && isEventsOnly ? (
+              <DynamicAvailabilityWidget
+                orgId={org.id}
+                orgName={orgName}
+                timezone={timezone}
+                bays={bays || []}
+                facilityGroups={[]}
+                standaloneBays={[]}
+                defaultDurations={[60]}
+                todayStr={todayStr}
+                minBookingLeadMinutes={minBookingLeadMinutes}
+                bookableWindowDays={membershipContext.effectiveWindowDays}
+                facilitySlug={slug}
+                isAuthenticated={!!auth}
+                userEmail={auth?.profile.email}
+                userFullName={auth?.profile.full_name}
+                userProfileId={auth?.profile.id}
+                paymentMode={paymentMode}
+                cancellationWindowHours={cancellationWindowHours}
+                locationId={activeLocationId}
+                locations={locations}
+                locationsEnabled={locationsEnabled}
+                membership={membershipContext}
+                eventsOnly
+              />
+            ) : org && bays && bays.length > 0 ? (
               isDynamic ? (
                 <DynamicAvailabilityWidget
                   orgId={org.id}
@@ -447,8 +474,30 @@ export default async function FacilityHomePage({
       <div className="flex flex-1 flex-col lg:hidden">
         <div className="flex flex-1 flex-col p-6">
 
-          {/* Mobile availability widget with embedded chat */}
-          {org && bays && bays.length > 0 ? (
+          {/* Mobile availability widget / events feed */}
+          {org && isEventsOnly ? (
+            <DynamicAvailabilityWidget
+              orgId={org.id}
+              orgName={orgName}
+              timezone={timezone}
+              bays={bays || []}
+              facilityGroups={[]}
+              standaloneBays={[]}
+              defaultDurations={[60]}
+              todayStr={todayStr}
+              minBookingLeadMinutes={minBookingLeadMinutes}
+              bookableWindowDays={membershipContext.effectiveWindowDays}
+              facilitySlug={slug}
+              isAuthenticated={!!auth}
+              paymentMode={paymentMode}
+              cancellationWindowHours={cancellationWindowHours}
+              locationId={activeLocationId}
+              locations={locations}
+              locationsEnabled={locationsEnabled}
+              membership={membershipContext}
+              eventsOnly
+            />
+          ) : org && bays && bays.length > 0 ? (
             isDynamic ? (
               <DynamicAvailabilityWidget
                 orgId={org.id}

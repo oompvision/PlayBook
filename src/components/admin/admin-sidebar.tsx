@@ -232,22 +232,25 @@ export function AdminSidebar({
 
   // Build schedule dropdown config based on scheduling type
   const isDynamic = schedulingType === "dynamic";
+  const isEventsOnly = schedulingType === "events_only";
 
-  const scheduleParent: NavItem = isDynamic
-    ? { label: "Schedule Rules", href: "/admin/schedule/rules", icon: CalendarCog }
-    : { label: "Schedule", href: "/admin/schedule", icon: Calendar };
+  const eventsItems: NavItem[] = [
+    { label: "Events", href: "/admin/events", icon: CalendarDays },
+    { label: "Event Calendar", href: "/admin/events/calendar", icon: Calendar },
+    { label: "Event Templates", href: "/admin/events/templates", icon: LayoutTemplate },
+  ];
 
-  const eventsItems: NavItem[] = eventsEnabled
-    ? [
-        { label: "Events", href: "/admin/events", icon: CalendarDays },
-        { label: "Event Calendar", href: "/admin/events/calendar", icon: Calendar },
-        { label: "Event Templates", href: "/admin/events/templates", icon: LayoutTemplate },
-      ]
-    : [];
+  const scheduleParent: NavItem = isEventsOnly
+    ? { label: "Events", href: "/admin/events", icon: CalendarDays }
+    : isDynamic
+      ? { label: "Schedule Rules", href: "/admin/schedule/rules", icon: CalendarCog }
+      : { label: "Schedule", href: "/admin/schedule", icon: Calendar };
 
-  const scheduleChildren: NavItem[] = isDynamic
-    ? [...dynamicScheduleSubItems, ...eventsItems]
-    : [...slotBasedScheduleSubItems, ...eventsItems];
+  const scheduleChildren: NavItem[] = isEventsOnly
+    ? eventsItems
+    : isDynamic
+      ? [...dynamicScheduleSubItems, ...(eventsEnabled ? eventsItems : [])]
+      : [...slotBasedScheduleSubItems, ...(eventsEnabled ? eventsItems : [])];
 
   // All hrefs that count as "schedule section" for auto-open
   const allScheduleHrefs = [scheduleParent.href, ...scheduleChildren.map((c) => c.href)];
@@ -290,7 +293,7 @@ export function AdminSidebar({
   ];
 
   const postScheduleItems: NavItem[] = [
-    ...commonNavItems.slice(0, 1), // Bookings
+    ...(isEventsOnly ? [] : commonNavItems.slice(0, 1)), // Bookings (hidden for events_only)
     ...(membershipEnabled
       ? [{ label: "Members", href: "/admin/members", icon: Crown } as NavItem]
       : []),

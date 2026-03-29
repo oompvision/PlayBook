@@ -26,6 +26,8 @@ interface FacilityState {
   hasMultipleLocations: boolean;
   /** Whether the org uses dynamic scheduling */
   isDynamic: boolean;
+  /** Whether the org uses events-only scheduling */
+  isEventsOnly: boolean;
   selectLocation: (location: Location) => Promise<void>;
   refreshBays: () => Promise<void>;
 }
@@ -225,6 +227,7 @@ export function FacilityProvider({ profile, children }: FacilityProviderProps) {
 
   const hasMultipleLocations = locations.length > 1;
   const isDynamic = organization?.scheduling_type === 'dynamic';
+  const isEventsOnly = organization?.scheduling_type === 'events_only';
 
   return (
     <FacilityContext.Provider
@@ -240,6 +243,7 @@ export function FacilityProvider({ profile, children }: FacilityProviderProps) {
         isSwitchingLocation,
         hasMultipleLocations,
         isDynamic,
+        isEventsOnly,
         selectLocation,
         refreshBays,
       }}

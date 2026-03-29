@@ -56,7 +56,16 @@ export async function EventsFeed({
 
   const { data: events } = await query;
 
-  if (!events || events.length === 0) return null;
+  if (!events || events.length === 0) {
+    return (
+      <div className="rounded-xl border bg-card p-12 text-center">
+        <p className="text-lg font-medium text-gray-800">No upcoming events</p>
+        <p className="mt-1 text-muted-foreground">
+          Check back soon for new events and classes.
+        </p>
+      </div>
+    );
+  }
 
   // Get registration counts using SECURITY DEFINER RPC (bypasses RLS so
   // customers can see total count, not just their own registrations)
@@ -86,13 +95,20 @@ export async function EventsFeed({
     }
   }
 
-  // Filter: hide members-only events from non-members
-  const visibleEvents = events.filter((e) => {
-    if (e.members_only && !isMember) return false;
-    return true;
-  });
+  // Show all events — members-only events are visible to everyone
+  // but registration is restricted in the EventCard component
+  const visibleEvents = events;
 
-  if (visibleEvents.length === 0) return null;
+  if (visibleEvents.length === 0) {
+    return (
+      <div className="rounded-xl border bg-card p-12 text-center">
+        <p className="text-lg font-medium text-gray-800">No upcoming events</p>
+        <p className="mt-1 text-muted-foreground">
+          Check back soon for new events and classes.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div>

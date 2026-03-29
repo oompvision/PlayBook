@@ -1,17 +1,44 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useRef, useCallback, useMemo, useEffect, Fragment } from "react";
+import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
+import {
+  startOfMonth,
+  endOfMonth,
+  addMonths,
+  eachDayOfInterval,
+  getDay,
+  format,
+} from "date-fns";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
-  ChevronLeft,
-  ChevronRight,
-  Calendar as CalendarIcon,
-  Loader2,
+  X,
+  CalendarDays,
   Check,
+  ChevronUp,
+  LayoutTemplate,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  ListChecks,
+  Trash2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────
+
+type MonthData = {
+  key: string;
+  label: string;
+  shortLabel: string;
+  days: string[];
+  weeks: string[][];
+  selectableDates: string[];
+  weekdayDates: string[];
+  weekendDates: string[];
+  dayOfWeekDates: Record<number, string[]>;
+};
 
 type EventDaySummary = {
   id: string;
@@ -25,8 +52,6 @@ type EventTemplateSummary = {
   id: string;
   name: string;
   color: string;
-  start_time: string | null;
-  end_time: string | null;
   bay_ids: string[];
 };
 
@@ -59,41 +84,140 @@ type EventCalendarProps = {
     templateId: string,
     bayIds: string[],
     dates: string[],
-    status: "draft" | "published"
+    status: "draft" | "published",
+    startTime: string,
+    endTime: string
   ) => Promise<ApplyResult>;
   onApplyDaySchedule: (
     dayScheduleId: string,
     dates: string[],
-    status: "draft" | "published"
-  ) => Promise<ApplyResult>;
-  onOpenDay: (date: string) => void;
+    status: "draft" | "published",
+    confirm?: boolean
+  ) => Promise<{ success: boolean; count: number; error?: string; needsConfirmation?: boolean; eventsToDelete?: number; registrationsToCancel?: number }>;
+  onOpenDay: (dateStr: string | null) => void;
+  onDeleteEventsForDates: (
+    dates: string[],
+    confirm: boolean
+  ) => Promise<{ success: boolean; eventCount: number; registrationCount: number; deletedCount?: number; error?: string }>;
 };
+
+// ─── Constants ───────────────────────────────────────────────────
+
+const DOW_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
-function getDaysInMonth(year: number, month: number) {
-  return new Date(year, month + 1, 0).getDate();
+function isPast(dateStr: string, today: string): boolean {
+  return dateStr < today;
 }
 
-function getFirstDayOfWeek(year: number, month: number) {
-  return new Date(year, month, 1).getDay();
+function generateMonths(today: string): MonthData[] {
+  const todayDate = new Date(today + "T12:00:00");
+  const baseYear = todayDate.getFullYear();
+  const result: MonthData[] = [];
+
+  for (let i = 0; i < 13; i++) {
+    const monthStart = startOfMonth(addMonths(todayDate, i));
+    const monthEnd = endOfMonth(monthStart);
+    const allDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
+    const days = allDays.map((d) => format(d, "yyyy-MM-dd"));
+    const startDow = getDay(monthStart);
+
+    const weeks: string[][] = [];
+    let currentWeek: string[] = Array(startDow).fill("");
+    for (const day of days) {
+      currentWeek.push(day);
+      if (currentWeek.length === 7) {
+        weeks.push(currentWeek);
+        currentWeek = [];
+      }
+    }
+    if (currentWeek.length > 0) {
+      while (currentWeek.length < 7) currentWeek.push("");
+      weeks.push(currentWeek);
+    }
+
+    const selectableDates = days.filter((d) => d >= today);
+    const weekdayDates = selectableDates.filter((d) => {
+      const dow = getDay(new Date(d + "T12:00:00"));
+      return dow >= 1 && dow <= 5;
+    });
+    const weekendDates = selectableDates.filter((d) => {
+      const dow = getDay(new Date(d + "T12:00:00"));
+      return dow === 0 || dow === 6;
+    });
+    const dayOfWeekDates: Record<number, string[]> = {};
+    for (let dow = 0; dow < 7; dow++) {
+      dayOfWeekDates[dow] = selectableDates.filter(
+        (d) => getDay(new Date(d + "T12:00:00")) === dow
+      );
+    }
+
+    const year = monthStart.getFullYear();
+    const shortLabel =
+      year !== baseYear
+        ? format(monthStart, "MMM ''yy")
+        : format(monthStart, "MMM");
+
+    result.push({
+      key: format(monthStart, "yyyy-MM"),
+      label: format(monthStart, "MMMM yyyy"),
+      shortLabel,
+      days,
+      weeks,
+      selectableDates,
+      weekdayDates,
+      weekendDates,
+      dayOfWeekDates,
+    });
+  }
+
+  return result;
 }
 
-function formatDateStr(year: number, month: number, day: number) {
-  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+function formatDateRangeSummary(dates: string[]): string {
+  if (dates.length === 0) return "";
+  const sorted = [...dates].sort();
+  const ranges: { start: string; end: string }[] = [];
+  let rangeStart = sorted[0];
+  let rangeEnd = sorted[0];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prevDate = new Date(rangeEnd + "T12:00:00");
+    prevDate.setDate(prevDate.getDate() + 1);
+    const expectedNext = format(prevDate, "yyyy-MM-dd");
+    if (sorted[i] === expectedNext) {
+      rangeEnd = sorted[i];
+    } else {
+      ranges.push({ start: rangeStart, end: rangeEnd });
+      rangeStart = sorted[i];
+      rangeEnd = sorted[i];
+    }
+  }
+  ranges.push({ start: rangeStart, end: rangeEnd });
+
+  const parts = ranges.slice(0, 5).map((r) => {
+    const s = new Date(r.start + "T12:00:00");
+    const e = new Date(r.end + "T12:00:00");
+    const sMonth = format(s, "MMM");
+    const sDay = s.getDate();
+    if (r.start === r.end) return `${sMonth} ${sDay}`;
+    const eMonth = format(e, "MMM");
+    const eDay = e.getDate();
+    if (sMonth === eMonth) return `${sMonth} ${sDay}–${eDay}`;
+    return `${sMonth} ${sDay} – ${eMonth} ${eDay}`;
+  });
+
+  if (ranges.length > 5) parts.push(`+${ranges.length - 5} more`);
+  return parts.join(", ");
 }
 
-const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-
-const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-// ─── Component ──────────────────────────────────────────────────
+// ─── Component ───────────────────────────────────────────────────
 
 export function EventCalendar({
   today,
+  timezone,
+  orgId,
   eventMap,
   eventTemplates,
   daySchedules,
@@ -101,280 +225,1187 @@ export function EventCalendar({
   onApplyEventTemplate,
   onApplyDaySchedule,
   onOpenDay,
+  onDeleteEventsForDates,
 }: EventCalendarProps) {
-  const todayDate = new Date(today + "T12:00:00");
-  const [year, setYear] = useState(todayDate.getFullYear());
-  const [month, setMonth] = useState(todayDate.getMonth());
+  const months = useMemo(() => generateMonths(today), [today]);
+  const allDatesFlat = useMemo(() => months.flatMap((m) => m.days), [months]);
+  const router = useRouter();
+
+  // --- State ---
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
-  const [applyMode, setApplyMode] = useState<"template" | "schedule" | null>(null);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
-  const [selectedScheduleId, setSelectedScheduleId] = useState<string>("");
-  const [selectedBayIds, setSelectedBayIds] = useState<string[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState<string | null>(null);
+  const [dragEnd, setDragEnd] = useState<string | null>(null);
+  const [dragMode, setDragMode] = useState<"add" | "remove">("add");
+  const [lastClickedDate, setLastClickedDate] = useState<string | null>(null);
+  const [visibleMonths, setVisibleMonths] = useState<Set<string>>(new Set());
+  const [mounted, setMounted] = useState(false);
+
+  // --- Panel state ---
+  const [panelMode, setPanelMode] = useState<"template" | "daySchedule" | "delete" | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [selectedBayIds, setSelectedBayIds] = useState<Set<string>>(new Set());
+  const [selectedDayScheduleId, setSelectedDayScheduleId] = useState("");
+  const [applyStatus, setApplyStatus] = useState<"draft" | "published">("draft");
+  const [applyStartTime, setApplyStartTime] = useState("09:00");
+  const [applyEndTime, setApplyEndTime] = useState("10:00");
   const [applying, setApplying] = useState(false);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
 
-  const daysInMonth = useMemo(() => getDaysInMonth(year, month), [year, month]);
-  const firstDayOfWeek = useMemo(() => getFirstDayOfWeek(year, month), [year, month]);
+  // --- Delete panel state ---
+  const [deletePreview, setDeletePreview] = useState<{ eventCount: number; registrationCount: number } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteResult, setDeleteResult] = useState<{ success: boolean; deletedCount?: number; error?: string } | null>(null);
 
-  function prevMonth() {
-    if (month === 0) { setYear(year - 1); setMonth(11); }
-    else setMonth(month - 1);
+  useEffect(() => setMounted(true), []);
+
+  // --- Drag preview ---
+  const dragPreviewDates = useMemo(() => {
+    if (!isDragging || !dragStart || !dragEnd) return new Set<string>();
+    const startIdx = allDatesFlat.indexOf(dragStart);
+    const endIdx = allDatesFlat.indexOf(dragEnd);
+    if (startIdx === -1 || endIdx === -1) return new Set<string>();
+    const lo = Math.min(startIdx, endIdx);
+    const hi = Math.max(startIdx, endIdx);
+    const result = new Set<string>();
+    for (let i = lo; i <= hi; i++) {
+      if (!isPast(allDatesFlat[i], today)) result.add(allDatesFlat[i]);
+    }
+    return result;
+  }, [isDragging, dragStart, dragEnd, allDatesFlat, today]);
+
+  const dragStateRef = useRef({ isDragging, dragPreviewDates, dragMode });
+  useEffect(() => {
+    dragStateRef.current = { isDragging, dragPreviewDates, dragMode };
+  });
+
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      const { isDragging: dragging, dragPreviewDates: preview, dragMode: mode } =
+        dragStateRef.current;
+      if (!dragging) return;
+      setSelectedDates((prev) => {
+        const next = new Set(prev);
+        for (const d of preview) {
+          if (mode === "add") next.add(d);
+          else next.delete(d);
+        }
+        return next;
+      });
+      setIsDragging(false);
+      setDragStart(null);
+      setDragEnd(null);
+    };
+    window.addEventListener("mouseup", handleGlobalMouseUp);
+    return () => window.removeEventListener("mouseup", handleGlobalMouseUp);
+  }, []);
+
+  useEffect(() => {
+    if (isDragging) {
+      document.body.style.userSelect = "none";
+    } else {
+      document.body.style.userSelect = "";
+    }
+    return () => { document.body.style.userSelect = ""; };
+  }, [isDragging]);
+
+  // --- Selection helpers ---
+  const toggleDates = useCallback(
+    (dates: string[], forceMode?: "add" | "remove") => {
+      setSelectedDates((prev) => {
+        const next = new Set(prev);
+        const mode = forceMode || (dates.length > 0 && dates.every((d) => prev.has(d)) ? "remove" : "add");
+        for (const d of dates) {
+          if (mode === "add") next.add(d);
+          else next.delete(d);
+        }
+        return next;
+      });
+    },
+    []
+  );
+
+  const clearSelection = useCallback(() => {
     setSelectedDates(new Set());
-  }
+    setPanelMode(null);
+    setApplyResult(null);
+  }, []);
 
-  function nextMonth() {
-    if (month === 11) { setYear(year + 1); setMonth(0); }
-    else setMonth(month + 1);
-    setSelectedDates(new Set());
-  }
+  // --- Panel handlers ---
+  const openTemplatePanel = useCallback(() => {
+    setPanelMode("template");
+    setSelectedTemplateId("");
+    setSelectedBayIds(new Set(bays.map((b) => b.id)));
+    setApplyStatus("draft");
+    setApplyStartTime("09:00");
+    setApplyEndTime("10:00");
+    setApplyResult(null);
+  }, [bays]);
 
-  function toggleDate(dateStr: string) {
-    setSelectedDates((prev) => {
+  const openDaySchedulePanel = useCallback(() => {
+    setPanelMode("daySchedule");
+    setSelectedDayScheduleId("");
+    setApplyStatus("draft");
+    setApplyResult(null);
+    setDayScheduleConfirm(null);
+  }, []);
+
+  const closePanel = useCallback(() => {
+    setPanelMode(null);
+    setApplyResult(null);
+    setDeletePreview(null);
+    setDeleteResult(null);
+  }, []);
+
+  const openDeletePanel = useCallback(async () => {
+    setPanelMode("delete");
+    setDeletePreview(null);
+    setDeleteResult(null);
+    setDeleteLoading(true);
+    // Fetch preview counts
+    const result = await onDeleteEventsForDates(Array.from(selectedDates), false);
+    setDeletePreview({ eventCount: result.eventCount, registrationCount: result.registrationCount });
+    setDeleteLoading(false);
+  }, [selectedDates, onDeleteEventsForDates]);
+
+  const handleDeleteEvents = useCallback(async () => {
+    setDeleteLoading(true);
+    setDeleteResult(null);
+    try {
+      const result = await onDeleteEventsForDates(Array.from(selectedDates), true);
+      setDeleteResult(result);
+      if (result.success) {
+        setTimeout(() => {
+          setPanelMode(null);
+          setSelectedDates(new Set());
+          setDeletePreview(null);
+          setDeleteResult(null);
+        }, 1500);
+      }
+    } catch {
+      setDeleteResult({ success: false, error: "An unexpected error occurred" });
+    } finally {
+      setDeleteLoading(false);
+    }
+  }, [selectedDates, onDeleteEventsForDates]);
+
+  const toggleBay = useCallback((bayId: string) => {
+    setSelectedBayIds((prev) => {
       const next = new Set(prev);
-      if (next.has(dateStr)) next.delete(dateStr);
-      else next.add(dateStr);
+      if (next.has(bayId)) next.delete(bayId);
+      else next.add(bayId);
       return next;
     });
-  }
+  }, []);
 
-  async function handleApply(status: "draft" | "published") {
-    if (selectedDates.size === 0) return;
-    const dates = Array.from(selectedDates).sort();
+  const toggleAllBays = useCallback(() => {
+    setSelectedBayIds((prev) => {
+      if (prev.size === bays.length) return new Set();
+      return new Set(bays.map((b) => b.id));
+    });
+  }, [bays]);
+
+  const handleApplyTemplate = useCallback(async () => {
+    if (!selectedTemplateId || selectedBayIds.size === 0 || selectedDates.size === 0 || !applyStartTime || !applyEndTime) return;
     setApplying(true);
-    setMessage(null);
-
+    setApplyResult(null);
     try {
-      let result: ApplyResult;
-      if (applyMode === "template" && selectedTemplateId) {
-        result = await onApplyEventTemplate(selectedTemplateId, selectedBayIds, dates, status);
-      } else if (applyMode === "schedule" && selectedScheduleId) {
-        result = await onApplyDaySchedule(selectedScheduleId, dates, status);
-      } else {
+      const result = await onApplyEventTemplate(
+        selectedTemplateId,
+        Array.from(selectedBayIds),
+        Array.from(selectedDates),
+        applyStatus,
+        applyStartTime,
+        applyEndTime
+      );
+      setApplyResult(result);
+      if (result.success) {
+        setTimeout(() => {
+          setPanelMode(null);
+          setSelectedDates(new Set());
+          setApplyResult(null);
+        }, 1500);
+      }
+    } catch {
+      setApplyResult({ success: false, count: 0, error: "An unexpected error occurred" });
+    } finally {
+      setApplying(false);
+    }
+  }, [selectedTemplateId, selectedBayIds, selectedDates, applyStatus, onApplyEventTemplate]);
+
+  // Day schedule overwrite confirmation state
+  const [dayScheduleConfirm, setDayScheduleConfirm] = useState<{
+    eventsToDelete: number;
+    registrationsToCancel: number;
+  } | null>(null);
+
+  const handleApplyDaySchedule = useCallback(async () => {
+    if (!selectedDayScheduleId || selectedDates.size === 0) return;
+    setApplying(true);
+    setApplyResult(null);
+    setDayScheduleConfirm(null);
+    try {
+      // First call: preview mode (confirm=false)
+      const preview = await onApplyDaySchedule(
+        selectedDayScheduleId,
+        Array.from(selectedDates),
+        applyStatus,
+        false
+      );
+
+      if (preview.needsConfirmation) {
+        // Show confirmation UI
+        setDayScheduleConfirm({
+          eventsToDelete: preview.eventsToDelete || 0,
+          registrationsToCancel: preview.registrationsToCancel || 0,
+        });
         setApplying(false);
         return;
       }
 
+      // No conflicts — apply directly (confirm=true)
+      const result = await onApplyDaySchedule(
+        selectedDayScheduleId,
+        Array.from(selectedDates),
+        applyStatus,
+        true
+      );
+      setApplyResult(result);
       if (result.success) {
-        setMessage({ type: "success", text: `Created ${result.count} event${result.count !== 1 ? "s" : ""} as ${status}` });
-        setSelectedDates(new Set());
-      } else {
-        setMessage({ type: "error", text: result.error || "Failed to apply" });
+        setTimeout(() => {
+          setPanelMode(null);
+          setSelectedDates(new Set());
+          setApplyResult(null);
+          setDayScheduleConfirm(null);
+        }, 1500);
       }
     } catch {
-      setMessage({ type: "error", text: "An error occurred" });
+      setApplyResult({ success: false, count: 0, error: "An unexpected error occurred" });
     } finally {
       setApplying(false);
     }
+  }, [selectedDayScheduleId, selectedDates, applyStatus, onApplyDaySchedule]);
+
+  const handleConfirmDaySchedule = useCallback(async () => {
+    if (!selectedDayScheduleId || selectedDates.size === 0) return;
+    setApplying(true);
+    setApplyResult(null);
+    try {
+      const result = await onApplyDaySchedule(
+        selectedDayScheduleId,
+        Array.from(selectedDates),
+        applyStatus,
+        true
+      );
+      setApplyResult(result);
+      setDayScheduleConfirm(null);
+      if (result.success) {
+        setTimeout(() => {
+          setPanelMode(null);
+          setSelectedDates(new Set());
+          setApplyResult(null);
+        }, 1500);
+      }
+    } catch {
+      setApplyResult({ success: false, count: 0, error: "An unexpected error occurred" });
+    } finally {
+      setApplying(false);
+    }
+  }, [selectedDayScheduleId, selectedDates, applyStatus, onApplyDaySchedule]);
+
+  // --- Mouse handlers ---
+  // Track state at mousedown time to decide behavior on click
+  const clickContextRef = useRef<{
+    shiftHeld: boolean;
+    hadSelection: boolean;
+    didDrag: boolean;
+  }>({ shiftHeld: false, hadSelection: false, didDrag: false });
+
+  const handleMouseDown = useCallback(
+    (dateStr: string, e: React.MouseEvent) => {
+      if (isPast(dateStr, today)) return;
+
+      clickContextRef.current = {
+        shiftHeld: e.shiftKey,
+        hadSelection: selectedDates.size > 0,
+        didDrag: false,
+      };
+
+      // Shift+click: range select from last clicked date, no modal
+      if (e.shiftKey && lastClickedDate) {
+        const startIdx = allDatesFlat.indexOf(lastClickedDate);
+        const endIdx = allDatesFlat.indexOf(dateStr);
+        if (startIdx !== -1 && endIdx !== -1) {
+          const lo = Math.min(startIdx, endIdx);
+          const hi = Math.max(startIdx, endIdx);
+          const rangeDates: string[] = [];
+          for (let i = lo; i <= hi; i++) {
+            if (!isPast(allDatesFlat[i], today)) rangeDates.push(allDatesFlat[i]);
+          }
+          toggleDates(rangeDates, "add");
+        }
+        setLastClickedDate(dateStr);
+        return;
+      }
+
+      // Start drag for selection
+      e.preventDefault();
+      setIsDragging(true);
+      setDragStart(dateStr);
+      setDragEnd(dateStr);
+      setDragMode(selectedDates.has(dateStr) ? "remove" : "add");
+      setLastClickedDate(dateStr);
+    },
+    [today, lastClickedDate, allDatesFlat, toggleDates, selectedDates]
+  );
+
+  const handleMouseEnter = useCallback(
+    (dateStr: string) => {
+      if (isDragging) {
+        setDragEnd(dateStr);
+        clickContextRef.current.didDrag = true;
+      }
+    },
+    [isDragging]
+  );
+
+  const handleDayClick = useCallback(
+    (dateStr: string) => {
+      if (isPast(dateStr, today)) return;
+      const ctx = clickContextRef.current;
+
+      // Shift was held → range select handled in mouseDown, no modal
+      if (ctx.shiftHeld) return;
+      // User dragged across multiple cells → selection handled by drag, no modal
+      if (ctx.didDrag) return;
+      // Had existing selection → click adds/removes from selection (via drag), no modal
+      if (ctx.hadSelection) return;
+
+      // No prior selection, no shift, no drag → single click opens modal
+      // Undo the selection that the single-cell drag created
+      setSelectedDates(new Set());
+      onOpenDay(dateStr);
+    },
+    [today, onOpenDay]
+  );
+
+  const handleWeekRowSelect = useCallback(
+    (weekDates: string[]) => {
+      const selectable = weekDates.filter((d) => d !== "" && !isPast(d, today));
+      if (selectable.length === 0) return;
+      toggleDates(selectable);
+    },
+    [today, toggleDates]
+  );
+
+  const handleDowSelect = useCallback(
+    (month: MonthData, dowIndex: number) => {
+      const dates = month.dayOfWeekDates[dowIndex];
+      if (dates.length === 0) return;
+      toggleDates(dates);
+    },
+    [toggleDates]
+  );
+
+  const handleMonthSelectAll = useCallback(
+    (month: MonthData) => toggleDates(month.selectableDates),
+    [toggleDates]
+  );
+
+  const handleMonthWeekdays = useCallback(
+    (month: MonthData) => toggleDates(month.weekdayDates),
+    [toggleDates]
+  );
+
+  const handleMonthWeekends = useCallback(
+    (month: MonthData) => toggleDates(month.weekendDates),
+    [toggleDates]
+  );
+
+  const handleMonthChipClick = useCallback((key: string) => {
+    setVisibleMonths((prev) => {
+      if (prev.size === 0) return new Set([key]);
+      if (prev.size === 1 && prev.has(key)) return new Set();
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const showAllMonths = useCallback(() => setVisibleMonths(new Set()), []);
+
+  // --- Derived ---
+  const filteredMonths = useMemo(
+    () => visibleMonths.size === 0 ? months : months.filter((m) => visibleMonths.has(m.key)),
+    [months, visibleMonths]
+  );
+  const selectedCount = selectedDates.size;
+  const selectedArray = useMemo(() => Array.from(selectedDates).sort(), [selectedDates]);
+
+  const selectedTemplate = eventTemplates.find((t) => t.id === selectedTemplateId);
+  const canApplyTemplate = selectedCount > 0 && selectedBayIds.size > 0 && !!selectedTemplateId && !!applyStartTime && !!applyEndTime;
+  const canApplyDaySchedule = selectedCount > 0 && !!selectedDayScheduleId;
+
+  function getWillBeSelected(dateStr: string, isSelected: boolean, inPreview: boolean): boolean {
+    if (!isDragging) return isSelected;
+    if (dragMode === "add") return isSelected || inPreview;
+    return isSelected && !inPreview;
   }
 
-  // Build calendar grid
-  const cells: (number | null)[] = [];
-  for (let i = 0; i < firstDayOfWeek; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
+  // --- Unique event colors for legend ---
+  const legendColors = useMemo(() => {
+    const colorSet = new Map<string, string>();
+    for (const events of Object.values(eventMap)) {
+      for (const ev of events) {
+        if (ev.color && !colorSet.has(ev.color)) {
+          colorSet.set(ev.color, ev.name);
+        }
+      }
+    }
+    return Array.from(colorSet.entries()).slice(0, 6);
+  }, [eventMap]);
 
   return (
-    <div className="space-y-4">
-      {/* Month navigation */}
-      <div className="flex items-center justify-between">
-        <Button variant="outline" size="sm" onClick={prevMonth}>
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <h2 className="text-lg font-semibold">
-          {MONTH_NAMES[month]} {year}
-        </h2>
-        <Button variant="outline" size="sm" onClick={nextMonth}>
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      </div>
-
-      {/* Calendar grid */}
-      <div className="rounded-lg border bg-card">
-        <div className="grid grid-cols-7">
-          {DAY_NAMES.map((d) => (
-            <div key={d} className="px-2 py-1.5 text-center text-xs font-medium text-muted-foreground border-b">
-              {d}
-            </div>
-          ))}
-
-          {cells.map((day, i) => {
-            if (day === null) {
-              return <div key={`empty-${i}`} className="min-h-[80px] border-b border-r last:border-r-0 bg-muted/30" />;
-            }
-
-            const dateStr = formatDateStr(year, month, day);
-            const events = eventMap[dateStr] || [];
-            const isToday = dateStr === today;
-            const isSelected = selectedDates.has(dateStr);
-            const isPast = dateStr < today;
-
-            return (
-              <div
-                key={dateStr}
-                className={cn(
-                  "min-h-[80px] border-b border-r last:border-r-0 p-1 cursor-pointer transition-colors",
-                  isToday && "bg-blue-50 dark:bg-blue-950/30",
-                  isSelected && "bg-blue-100 dark:bg-blue-900/40 ring-2 ring-inset ring-blue-500",
-                  isPast && "opacity-50",
-                  !isPast && !isSelected && "hover:bg-muted/50"
-                )}
-                onClick={() => {
-                  if (!isPast) toggleDate(dateStr);
-                }}
-                onDoubleClick={() => onOpenDay(dateStr)}
-              >
-                <div className="flex items-center justify-between">
-                  <span
-                    className={cn(
-                      "text-xs font-medium",
-                      isToday && "bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center"
-                    )}
-                  >
-                    {day}
-                  </span>
-                  {isSelected && (
-                    <Check className="h-3 w-3 text-blue-600" />
-                  )}
-                </div>
-                {events.length > 0 && (
-                  <div className="mt-1 space-y-0.5">
-                    {events.slice(0, 3).map((e) => (
-                      <div
-                        key={e.id}
-                        className="text-[10px] leading-tight truncate rounded px-1 py-0.5 text-white"
-                        style={{ backgroundColor: e.color }}
-                        title={`${e.name} (${e.status})`}
-                      >
-                        {e.name}
-                      </div>
-                    ))}
-                    {events.length > 3 && (
-                      <div className="text-[10px] text-muted-foreground px-1">
-                        +{events.length - 3} more
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Apply toolbar */}
-      <div className="rounded-lg border bg-card p-4 space-y-3">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <CalendarIcon className="h-4 w-4" />
-          Apply to Selected Dates ({selectedDates.size})
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant={applyMode === "template" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setApplyMode(applyMode === "template" ? null : "template")}
-          >
-            Event Template
-          </Button>
-          {daySchedules.length > 0 && (
-            <Button
-              variant={applyMode === "schedule" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setApplyMode(applyMode === "schedule" ? null : "schedule")}
+    <div className="relative">
+      {/* ─── Sticky Header ─── */}
+      <div className="sticky top-16 z-30 -mx-4 border-b border-gray-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur-sm md:-mx-6 md:px-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">Event Calendar</h1>
+            <p className="mt-0.5 text-sm text-gray-500">
+              Select dates to apply event templates or day schedules. Click a date to view events.
+            </p>
+          </div>
+          {selectedCount > 0 && (
+            <button
+              onClick={clearSelection}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 transition-colors hover:bg-gray-50"
             >
-              Day Schedule
-            </Button>
+              <X className="h-3.5 w-3.5" />
+              Clear
+            </button>
           )}
         </div>
 
-        {applyMode === "template" && (
-          <div className="space-y-2">
-            <select
-              className="w-full rounded-md border px-3 py-2 text-sm bg-background"
-              value={selectedTemplateId}
-              onChange={(e) => {
-                setSelectedTemplateId(e.target.value);
-                const tpl = eventTemplates.find((t) => t.id === e.target.value);
-                setSelectedBayIds(tpl?.bay_ids || []);
-              }}
+        {/* Month chips */}
+        <div className="mt-3 flex items-center gap-1.5 overflow-x-auto pb-1">
+          <button
+            onClick={showAllMonths}
+            className={cn(
+              "shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors",
+              visibleMonths.size === 0
+                ? "bg-gray-900 text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            )}
+          >
+            All
+          </button>
+          {months.map((m) => (
+            <button
+              key={m.key}
+              onClick={() => handleMonthChipClick(m.key)}
+              className={cn(
+                "shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                visibleMonths.size > 0 && visibleMonths.has(m.key)
+                  ? "bg-blue-600 text-white"
+                  : visibleMonths.size === 0
+                    ? "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    : "bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+              )}
             >
-              <option value="">Select a template...</option>
-              {eventTemplates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} {t.start_time && t.end_time ? `(${t.start_time}–${t.end_time})` : ""}
-                </option>
-              ))}
-            </select>
+              {m.shortLabel}
+            </button>
+          ))}
+        </div>
 
-            {selectedTemplateId && bays.length > 0 && (
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Assign to bays:</label>
-                <div className="flex flex-wrap gap-2">
-                  {bays.map((bay) => (
-                    <label key={bay.id} className="flex items-center gap-1.5 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={selectedBayIds.includes(bay.id)}
-                        onChange={(e) => {
-                          setSelectedBayIds((prev) =>
-                            e.target.checked
-                              ? [...prev, bay.id]
-                              : prev.filter((id) => id !== bay.id)
-                          );
-                        }}
-                      />
-                      {bay.name}
-                    </label>
-                  ))}
+        {/* Legend */}
+        {legendColors.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-gray-400">
+            {legendColors.map(([color, name]) => (
+              <span key={color} className="flex items-center gap-1.5">
+                <span
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{ backgroundColor: color }}
+                />
+                {name}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ─── Month Calendars ─── */}
+      <div className={cn("mt-6 space-y-8", selectedCount > 0 ? "pb-28" : "pb-4")}>
+        {filteredMonths.map((month) => (
+          <div key={month.key} className="rounded-2xl border border-gray-200 bg-white">
+            {/* Month header */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3 md:px-6">
+              <h2 className="text-base font-semibold text-gray-800">{month.label}</h2>
+              <div className="flex flex-wrap items-center gap-1">
+                <button
+                  onClick={() => handleMonthWeekdays(month)}
+                  className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                >
+                  Weekdays
+                </button>
+                <button
+                  onClick={() => handleMonthWeekends(month)}
+                  className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                >
+                  Weekends
+                </button>
+                <button
+                  onClick={() => handleMonthSelectAll(month)}
+                  className="rounded-md px-2.5 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50"
+                >
+                  Select All
+                </button>
+                {month.selectableDates.some((d) => selectedDates.has(d)) && (
+                  <button
+                    onClick={() => toggleDates(month.selectableDates, "remove")}
+                    className="rounded-md px-2.5 py-1 text-xs font-medium text-red-500 transition-colors hover:bg-red-50"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Calendar grid */}
+            <div className="p-2 md:p-4">
+              <div className="grid grid-cols-[2rem_repeat(7,1fr)]">
+                <div />
+                {DOW_LABELS.map((label, dow) => (
+                  <button
+                    key={dow}
+                    onClick={() => handleDowSelect(month, dow)}
+                    className="py-2 text-center text-xs font-medium uppercase tracking-wide text-gray-400 transition-colors hover:text-blue-600"
+                    title={`Select all ${label}s in ${month.label}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+
+                {month.weeks.map((week, wi) => {
+                  const weekSelectableDates = week.filter((d) => d !== "" && !isPast(d, today));
+                  const weekHasSelectable = weekSelectableDates.length > 0;
+
+                  return (
+                    <Fragment key={wi}>
+                      <button
+                        onClick={() => handleWeekRowSelect(week)}
+                        disabled={!weekHasSelectable}
+                        className={cn(
+                          "flex items-center justify-center rounded-l-md transition-colors",
+                          weekHasSelectable
+                            ? "text-gray-300 hover:bg-gray-100 hover:text-gray-500"
+                            : "cursor-default text-gray-100"
+                        )}
+                        title={weekHasSelectable ? "Select this week" : undefined}
+                      >
+                        <Check className="h-3 w-3" />
+                      </button>
+
+                      {week.map((dateStr, di) => {
+                        if (dateStr === "") {
+                          return <div key={`empty-${wi}-${di}`} className="h-12 md:h-14" />;
+                        }
+
+                        const past = isPast(dateStr, today);
+                        const isToday = dateStr === today;
+                        const isSelected = selectedDates.has(dateStr);
+                        const inPreview = dragPreviewDates.has(dateStr);
+                        const willBeSelected = getWillBeSelected(dateStr, isSelected, inPreview);
+                        const dayNum = parseInt(dateStr.split("-")[2], 10);
+                        const dayEvents = eventMap[dateStr] || [];
+
+                        return (
+                          <div
+                            key={dateStr}
+                            onMouseDown={(e) => handleMouseDown(dateStr, e)}
+                            onMouseEnter={() => handleMouseEnter(dateStr)}
+                            onClick={() => handleDayClick(dateStr)}
+                            className={cn(
+                              "relative flex h-12 select-none flex-col items-center justify-center rounded-lg text-sm transition-colors md:h-14",
+                              past && "pointer-events-none text-gray-300",
+                              !past && !willBeSelected && "cursor-pointer text-gray-700 hover:bg-gray-50",
+                              willBeSelected && "bg-blue-600 text-white",
+                              !past && isDragging && dragMode === "add" && inPreview && !isSelected && "bg-blue-100 text-blue-700",
+                              !past && isDragging && dragMode === "remove" && inPreview && isSelected && "bg-red-100 text-red-700",
+                              isToday && !willBeSelected && "font-bold ring-2 ring-blue-400 ring-offset-1",
+                              isToday && willBeSelected && "font-bold ring-2 ring-blue-300 ring-offset-1"
+                            )}
+                          >
+                            <span className="leading-none">{dayNum}</span>
+                            {/* Event dots */}
+                            {!past && dayEvents.length > 0 && (
+                              <div className="mt-0.5 flex items-center gap-0.5">
+                                {dayEvents.slice(0, 3).map((ev) => (
+                                  <span
+                                    key={ev.id}
+                                    className="inline-block h-1.5 w-1.5 rounded-full"
+                                    style={{
+                                      backgroundColor: willBeSelected
+                                        ? `${ev.color}99`
+                                        : ev.color,
+                                    }}
+                                  />
+                                ))}
+                                {dayEvents.length > 3 && (
+                                  <span
+                                    className={cn(
+                                      "text-[9px] leading-none",
+                                      willBeSelected ? "text-blue-200" : "text-gray-400"
+                                    )}
+                                  >
+                                    +{dayEvents.length - 3}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </Fragment>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ─── Sticky Bottom Panel ─── */}
+      {selectedCount > 0 &&
+        mounted &&
+        createPortal(
+          <div className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.08)] lg:left-[280px]">
+            {panelMode === "template" ? (
+              /* ── Apply Event Template Panel ── */
+              <div>
+                <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 md:px-6">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100">
+                      <LayoutTemplate className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">
+                        Apply Event Template to {selectedCount}{" "}
+                        {selectedCount === 1 ? "date" : "dates"}
+                      </p>
+                      <p className="truncate text-xs text-gray-500">
+                        {formatDateRangeSummary(selectedArray)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={closePanel}
+                    className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="max-h-[50vh] overflow-y-auto px-4 py-4 md:px-6">
+                  {applyResult && (
+                    <div
+                      className={cn(
+                        "mb-4 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm",
+                        applyResult.success
+                          ? "border-green-200 bg-green-50 text-green-700"
+                          : "border-red-200 bg-red-50 text-red-700"
+                      )}
+                    >
+                      {applyResult.success ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      ) : (
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                      )}
+                      {applyResult.success
+                        ? `Successfully created ${applyResult.count} event${applyResult.count !== 1 ? "s" : ""}.`
+                        : applyResult.error || "Failed to apply template."}
+                    </div>
+                  )}
+
+                  <div className="space-y-5">
+                    {/* Template picker */}
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Event Template
+                      </label>
+                      {eventTemplates.length === 0 ? (
+                        <p className="text-sm text-gray-400">
+                          No event templates found. Create one in{" "}
+                          <a href="/admin/events/templates" className="text-blue-600 underline">
+                            Event Templates
+                          </a>.
+                        </p>
+                      ) : (
+                        <select
+                          value={selectedTemplateId}
+                          onChange={(e) => setSelectedTemplateId(e.target.value)}
+                          className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10"
+                        >
+                          <option value="">Select a template...</option>
+                          {eventTemplates.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    {/* Time inputs */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                          Start Time
+                        </label>
+                        <input
+                          type="time"
+                          value={applyStartTime}
+                          onChange={(e) => setApplyStartTime(e.target.value)}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                          End Time
+                        </label>
+                        <input
+                          type="time"
+                          value={applyEndTime}
+                          onChange={(e) => setApplyEndTime(e.target.value)}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Bay selector */}
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Assign to Bays
+                      </label>
+                      <div className="rounded-lg border border-gray-200">
+                        <label className="flex cursor-pointer items-center gap-3 border-b border-gray-100 px-3 py-2.5 transition-colors hover:bg-gray-50">
+                          <input
+                            type="checkbox"
+                            checked={selectedBayIds.size === bays.length}
+                            onChange={toggleAllBays}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm font-medium text-gray-800">
+                            All bays ({bays.length})
+                          </span>
+                        </label>
+                        {bays.map((bay) => (
+                          <label
+                            key={bay.id}
+                            className="flex cursor-pointer items-center gap-3 px-3 py-2 pl-7 transition-colors hover:bg-gray-50"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedBayIds.has(bay.id)}
+                              onChange={() => toggleBay(bay.id)}
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">{bay.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Status toggle */}
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Status
+                      </label>
+                      <div className="flex rounded-lg border border-gray-200">
+                        <button
+                          onClick={() => setApplyStatus("draft")}
+                          className={cn(
+                            "flex-1 rounded-l-lg px-4 py-2 text-sm font-medium transition-colors",
+                            applyStatus === "draft"
+                              ? "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200"
+                              : "text-gray-500 hover:bg-gray-50"
+                          )}
+                        >
+                          Draft
+                        </button>
+                        <button
+                          onClick={() => setApplyStatus("published")}
+                          className={cn(
+                            "flex-1 rounded-r-lg px-4 py-2 text-sm font-medium transition-colors",
+                            applyStatus === "published"
+                              ? "bg-green-50 text-green-700 ring-1 ring-inset ring-green-200"
+                              : "text-gray-500 hover:bg-gray-50"
+                          )}
+                        >
+                          Published
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 md:px-6">
+                  <div className="text-xs text-gray-500">
+                    {canApplyTemplate
+                      ? `${selectedCount} event${selectedCount !== 1 ? "s" : ""} will be created as ${applyStatus}`
+                      : !selectedTemplateId
+                        ? "Select a template"
+                        : selectedBayIds.size === 0
+                          ? "Select at least one bay"
+                          : null}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={closePanel} disabled={applying} className="rounded-lg border-gray-200">
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={handleApplyTemplate} disabled={!canApplyTemplate || applying} className="gap-1.5 rounded-lg">
+                      {applying ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Applying...
+                        </>
+                      ) : (
+                        <>Apply to {selectedCount} {selectedCount === 1 ? "date" : "dates"}</>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : panelMode === "daySchedule" ? (
+              /* ── Apply Day Schedule Panel ── */
+              <div>
+                <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 md:px-6">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-purple-100">
+                      <ListChecks className="h-4 w-4 text-purple-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">
+                        Apply Day Schedule to {selectedCount}{" "}
+                        {selectedCount === 1 ? "date" : "dates"}
+                      </p>
+                      <p className="truncate text-xs text-gray-500">
+                        {formatDateRangeSummary(selectedArray)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={closePanel}
+                    className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="max-h-[50vh] overflow-y-auto px-4 py-4 md:px-6">
+                  {applyResult && (
+                    <div
+                      className={cn(
+                        "mb-4 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm",
+                        applyResult.success
+                          ? "border-green-200 bg-green-50 text-green-700"
+                          : "border-red-200 bg-red-50 text-red-700"
+                      )}
+                    >
+                      {applyResult.success ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      ) : (
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                      )}
+                      {applyResult.success
+                        ? `Successfully created ${applyResult.count} event${applyResult.count !== 1 ? "s" : ""}.`
+                        : applyResult.error || "Failed to apply day schedule."}
+                    </div>
+                  )}
+
+                  <div className="space-y-5">
+                    {/* Day schedule picker */}
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Day Schedule
+                      </label>
+                      {daySchedules.length === 0 ? (
+                        <p className="text-sm text-gray-400">
+                          No day schedules saved yet. Open a day with events and use &ldquo;Save as Day Schedule&rdquo;.
+                        </p>
+                      ) : (
+                        <select
+                          value={selectedDayScheduleId}
+                          onChange={(e) => setSelectedDayScheduleId(e.target.value)}
+                          className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-3 focus:ring-purple-500/10"
+                        >
+                          <option value="">Select a day schedule...</option>
+                          {daySchedules.map((ds) => (
+                            <option key={ds.id} value={ds.id}>
+                              {ds.name} ({ds.entryCount} event{ds.entryCount !== 1 ? "s" : ""})
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    {/* Status toggle */}
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Status
+                      </label>
+                      <div className="flex rounded-lg border border-gray-200">
+                        <button
+                          onClick={() => setApplyStatus("draft")}
+                          className={cn(
+                            "flex-1 rounded-l-lg px-4 py-2 text-sm font-medium transition-colors",
+                            applyStatus === "draft"
+                              ? "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200"
+                              : "text-gray-500 hover:bg-gray-50"
+                          )}
+                        >
+                          Draft
+                        </button>
+                        <button
+                          onClick={() => setApplyStatus("published")}
+                          className={cn(
+                            "flex-1 rounded-r-lg px-4 py-2 text-sm font-medium transition-colors",
+                            applyStatus === "published"
+                              ? "bg-green-50 text-green-700 ring-1 ring-inset ring-green-200"
+                              : "text-gray-500 hover:bg-gray-50"
+                          )}
+                        >
+                          Published
+                        </button>
+                      </div>
+                    </div>
+                    {/* Overwrite confirmation warning */}
+                    {dayScheduleConfirm && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <p className="text-sm font-medium text-amber-800">
+                          {dayScheduleConfirm.eventsToDelete} existing event{dayScheduleConfirm.eventsToDelete !== 1 ? "s" : ""} will be replaced.
+                        </p>
+                        {dayScheduleConfirm.registrationsToCancel > 0 && (
+                          <p className="mt-1 text-sm text-amber-700">
+                            {dayScheduleConfirm.registrationsToCancel} active registration{dayScheduleConfirm.registrationsToCancel !== 1 ? "s" : ""} will be cancelled and registrants notified.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 md:px-6">
+                  <div className="text-xs text-gray-500">
+                    {dayScheduleConfirm
+                      ? "Existing events will be replaced"
+                      : canApplyDaySchedule
+                        ? `Events will be created on ${selectedCount} ${selectedCount === 1 ? "date" : "dates"} as ${applyStatus}`
+                        : "Select a day schedule"}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { closePanel(); setDayScheduleConfirm(null); }} disabled={applying} className="rounded-lg border-gray-200">
+                      Cancel
+                    </Button>
+                    {dayScheduleConfirm ? (
+                      <Button size="sm" onClick={handleConfirmDaySchedule} disabled={applying} className="gap-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700">
+                        {applying ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Replacing...
+                          </>
+                        ) : (
+                          <>Replace &amp; Apply</>
+                        )}
+                      </Button>
+                    ) : (
+                      <Button size="sm" onClick={handleApplyDaySchedule} disabled={!canApplyDaySchedule || applying} className="gap-1.5 rounded-lg bg-purple-600 text-white hover:bg-purple-700">
+                        {applying ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Checking...
+                          </>
+                        ) : (
+                          <>Apply to {selectedCount} {selectedCount === 1 ? "date" : "dates"}</>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : panelMode === "delete" ? (
+              /* ── Delete Events Panel ── */
+              <div>
+                <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 md:px-6">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-100">
+                      <Trash2 className="h-4 w-4 text-red-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">
+                        Delete Events for {selectedCount}{" "}
+                        {selectedCount === 1 ? "date" : "dates"}
+                      </p>
+                      <p className="truncate text-xs text-gray-500">
+                        {formatDateRangeSummary(selectedArray)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={closePanel}
+                    className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="px-4 py-4 md:px-6">
+                  {deleteResult && (
+                    <div
+                      className={cn(
+                        "mb-4 flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm",
+                        deleteResult.success
+                          ? "border-green-200 bg-green-50 text-green-700"
+                          : "border-red-200 bg-red-50 text-red-700"
+                      )}
+                    >
+                      {deleteResult.success ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      ) : (
+                        <AlertCircle className="h-4 w-4 shrink-0" />
+                      )}
+                      {deleteResult.success
+                        ? `Successfully deleted ${deleteResult.deletedCount} event${deleteResult.deletedCount !== 1 ? "s" : ""}.`
+                        : deleteResult.error || "Failed to delete events."}
+                    </div>
+                  )}
+
+                  {deleteLoading && !deletePreview && (
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading event details...
+                    </div>
+                  )}
+
+                  {deletePreview && !deleteResult && (
+                    <div className="space-y-3">
+                      <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                        <p className="text-sm font-medium text-red-800">
+                          {deletePreview.eventCount} event{deletePreview.eventCount !== 1 ? "s" : ""} will be permanently deleted.
+                        </p>
+                        {deletePreview.registrationCount > 0 && (
+                          <p className="mt-1 text-sm text-red-700">
+                            {deletePreview.registrationCount} active registration{deletePreview.registrationCount !== 1 ? "s" : ""} will be cancelled and registrants will be notified.
+                          </p>
+                        )}
+                        {deletePreview.eventCount === 0 && (
+                          <p className="mt-1 text-sm text-red-700">
+                            No events found on the selected dates.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 md:px-6">
+                  <div className="text-xs text-gray-500">
+                    {deletePreview
+                      ? deletePreview.eventCount === 0
+                        ? "Nothing to delete"
+                        : "This action cannot be undone"
+                      : "Checking events..."}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={closePanel} disabled={deleteLoading} className="rounded-lg border-gray-200">
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleDeleteEvents}
+                      disabled={deleteLoading || !deletePreview || deletePreview.eventCount === 0}
+                      className="gap-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700"
+                    >
+                      {deleteLoading ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Delete {deletePreview?.eventCount || 0} Event{(deletePreview?.eventCount || 0) !== 1 ? "s" : ""}
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* ── Collapsed Bar ── */
+              <div className="flex items-center justify-between gap-4 px-4 py-3 md:px-6">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100">
+                    <CalendarDays className="h-4 w-4 text-blue-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-800">
+                      {selectedCount} {selectedCount === 1 ? "date" : "dates"} selected
+                    </p>
+                    <p className="truncate text-xs text-gray-500">
+                      {formatDateRangeSummary(selectedArray)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={clearSelection}
+                    className="gap-1.5 rounded-lg border-gray-200"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Clear Selection
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={openDeletePanel}
+                    className="gap-1.5 rounded-lg border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete Events
+                  </Button>
+                  {daySchedules.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={openDaySchedulePanel}
+                      className="gap-1.5 rounded-lg border-purple-200 text-purple-600 hover:bg-purple-50 hover:text-purple-700"
+                    >
+                      <ListChecks className="h-3.5 w-3.5" />
+                      Apply Day Schedule
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    onClick={openTemplatePanel}
+                    className="gap-1.5 rounded-lg"
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" />
+                    Apply Template
+                  </Button>
                 </div>
               </div>
             )}
-          </div>
+          </div>,
+          document.body
         )}
-
-        {applyMode === "schedule" && (
-          <select
-            className="w-full rounded-md border px-3 py-2 text-sm bg-background"
-            value={selectedScheduleId}
-            onChange={(e) => setSelectedScheduleId(e.target.value)}
-          >
-            <option value="">Select a day schedule...</option>
-            {daySchedules.map((ds) => (
-              <option key={ds.id} value={ds.id}>
-                {ds.name} ({ds.entryCount} event{ds.entryCount !== 1 ? "s" : ""})
-              </option>
-            ))}
-          </select>
-        )}
-
-        {applyMode && selectedDates.size > 0 && (
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={applying || (!selectedTemplateId && !selectedScheduleId)}
-              onClick={() => handleApply("draft")}
-            >
-              {applying ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-              Apply as Draft
-            </Button>
-            <Button
-              size="sm"
-              disabled={applying || (!selectedTemplateId && !selectedScheduleId)}
-              onClick={() => handleApply("published")}
-            >
-              {applying ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-              Apply & Publish
-            </Button>
-          </div>
-        )}
-
-        {message && (
-          <p className={cn("text-sm", message.type === "success" ? "text-green-600" : "text-red-600")}>
-            {message.text}
-          </p>
-        )}
-      </div>
     </div>
   );
 }

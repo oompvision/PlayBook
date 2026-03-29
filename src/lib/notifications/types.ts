@@ -8,6 +8,7 @@ export const NOTIFICATION_TYPES = [
   "cancellation_window_closed",
   "guest_booking_created",
   "admin_daily_digest",
+  "event_cancelled",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -56,4 +57,5 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   cancellation_window_closed: "Cancellation Window Closed",
   guest_booking_created: "Guest Booking Created",
   admin_daily_digest: "Daily Digest",
+  event_cancelled: "Event Cancelled",
 };
