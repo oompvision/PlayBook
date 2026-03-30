@@ -53,26 +53,32 @@ BEGIN
     v_new := v_new - ARRAY['guest_email', 'guest_phone', 'ip_address'];
   END IF;
 
-  -- Insert the audit record
-  INSERT INTO public.audit_logs (
-    org_id,
-    user_id,
-    action,
-    resource_type,
-    resource_id,
-    old_value,
-    new_value,
-    metadata
-  ) VALUES (
-    v_org_id,
-    v_user_id,
-    v_action,
-    TG_TABLE_NAME,
-    v_resource_id,
-    v_old,
-    v_new,
-    jsonb_build_object('trigger', true, 'operation', TG_OP)
-  );
+  -- Insert the audit record (wrapped in exception handler so audit
+  -- failures never roll back the original operation)
+  BEGIN
+    INSERT INTO public.audit_logs (
+      org_id,
+      user_id,
+      action,
+      resource_type,
+      resource_id,
+      old_value,
+      new_value,
+      metadata
+    ) VALUES (
+      v_org_id,
+      v_user_id,
+      v_action,
+      TG_TABLE_NAME,
+      v_resource_id,
+      v_old,
+      v_new,
+      jsonb_build_object('trigger', true, 'operation', TG_OP)
+    );
+  EXCEPTION WHEN OTHERS THEN
+    -- Silently ignore audit failures to avoid breaking the original operation
+    NULL;
+  END;
 
   IF TG_OP = 'DELETE' THEN
     RETURN OLD;
