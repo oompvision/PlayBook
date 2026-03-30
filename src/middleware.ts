@@ -56,15 +56,96 @@ function applySecurityHeaders(response: NextResponse): void {
     "Strict-Transport-Security",
     "max-age=63072000; includeSubDomains; preload"
   );
+  response.headers.set(
+    "Content-Security-Policy",
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com",
+      "img-src 'self' data: blob:",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.stripe.com https://generativelanguage.googleapis.com",
+      "frame-src https://js.stripe.com https://hooks.stripe.com",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join("; ")
+  );
 }
 
 // Rate limit config per path prefix: [maxRequests, windowMs]
 const RATE_LIMITS: Record<string, [number, number]> = {
-  "/api/chat":  [20, 60_000],   // 20 req/min
-  "/api/lead":  [5,  60_000],   // 5 req/min
-  "/auth/login": [10, 60_000],  // 10 req/min
-  "/auth/signup": [5, 60_000],  // 5 req/min
+  "/api/chat":         [20, 60_000],  // 20 req/min
+  "/api/lead":         [5,  60_000],  // 5 req/min
+  "/api/availability": [10, 60_000],  // 10 req/min (public endpoint — prevent scraping)
+  "/auth/login":       [10, 60_000],  // 10 req/min
+  "/auth/signup":      [5,  60_000],  // 5 req/min
 };
+
+// Paths exempt from CSRF origin validation (external webhooks / cron)
+const CSRF_EXEMPT_PATHS = [
+  "/api/stripe/webhooks",
+  "/api/auth/email-hook",
+  "/api/cron/",
+];
+
+/**
+ * CSRF protection: validate Origin/Referer header on state-changing requests.
+ * Returns a 403 response if the origin doesn't match, or null if valid.
+ */
+function validateCsrfOrigin(request: NextRequest): NextResponse | null {
+  const method = request.method;
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return null;
+
+  const { pathname } = request.nextUrl;
+  if (!pathname.startsWith("/api/")) return null;
+
+  // Exempt webhook and cron paths
+  if (CSRF_EXEMPT_PATHS.some((p) => pathname.startsWith(p))) return null;
+
+  const origin = request.headers.get("origin");
+  const referer = request.headers.get("referer");
+  const host = request.headers.get("host");
+
+  if (!host) return null; // Can't validate without host
+
+  // Extract origin host from Origin or Referer header
+  let requestOriginHost: string | null = null;
+  if (origin) {
+    try {
+      requestOriginHost = new URL(origin).host;
+    } catch {
+      // Malformed origin
+    }
+  } else if (referer) {
+    try {
+      requestOriginHost = new URL(referer).host;
+    } catch {
+      // Malformed referer
+    }
+  }
+
+  // If neither Origin nor Referer is present, block the request
+  // (legitimate browsers always send one of these on POST)
+  if (!requestOriginHost) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Allow if the origin matches the host (exact or subdomain)
+  const hostBase = host.split(":")[0];
+  const originBase = requestOriginHost.split(":")[0];
+  if (originBase === hostBase || originBase.endsWith("." + hostBase) || hostBase.endsWith("." + originBase)) {
+    return null;
+  }
+
+  // Allow localhost ↔ localhost (dev)
+  const localhosts = ["localhost", "127.0.0.1"];
+  if (localhosts.includes(hostBase) && localhosts.includes(originBase)) {
+    return null;
+  }
+
+  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+}
 
 function getClientIp(request: NextRequest): string {
   return (
@@ -94,6 +175,13 @@ export async function middleware(request: NextRequest) {
       }
       break;
     }
+  }
+
+  // CSRF origin validation for state-changing API requests
+  const csrfBlock = validateCsrfOrigin(request);
+  if (csrfBlock) {
+    applySecurityHeaders(csrfBlock);
+    return csrfBlock;
   }
 
   // Extract facility slug from subdomain

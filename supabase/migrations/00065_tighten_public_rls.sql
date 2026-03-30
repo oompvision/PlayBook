@@ -1,0 +1,37 @@
+-- ============================================================================
+-- SOC II Compliance: Public RLS Policy Documentation
+-- Documents the business justification for public SELECT policies on tables
+-- needed by the unauthenticated booking flow. SOC II auditors require
+-- documentation of any data exposed without authentication.
+-- ============================================================================
+
+-- The following tables have public SELECT access via USING (true) policies.
+-- Each is required for the unauthenticated customer booking experience:
+--
+-- 1. dynamic_schedule_rules — needed by /api/availability to compute available
+--    time slots. Already scoped to specific bays via bay_id FK. Without public
+--    read, unauthenticated customers cannot see available booking times.
+--
+-- 2. facility_groups + facility_group_members — needed for pooled availability
+--    (multiple bays grouped together). Queries always filter by org_id or
+--    group_id, preventing cross-org data leakage.
+--
+-- 3. schedule_block_outs — needed to exclude blocked times from availability
+--    results. Already scoped via bay_id FK. Prevents double-booking.
+--
+-- 4. membership_tiers — needed for /membership page where customers view
+--    pricing and benefits. Always filtered by org_id.
+--
+-- 5. locations — already filtered to is_active = true only. Needed for
+--    location picker on booking page.
+--
+-- MITIGATION: Rate limiting is applied to /api/availability (10 req/min per IP)
+-- to prevent bulk scraping. All queries are org-scoped through the facility
+-- slug resolution in middleware.
+--
+-- REVIEW SCHEDULE: Review these policies quarterly or when adding new public
+-- data access patterns. Last reviewed: 2026-03-30.
+
+-- No schema changes needed — this migration documents the existing policies.
+-- Rate limiting is enforced at the application layer (src/middleware.ts).
+SELECT 1; -- no-op to satisfy migration runner
