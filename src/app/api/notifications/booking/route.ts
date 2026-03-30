@@ -7,8 +7,8 @@ import {
 } from "@/lib/notifications";
 import { formatTimeInZone } from "@/lib/utils";
 import { logger } from "@/lib/logger";
-
-type BookingAction = "confirmed" | "canceled" | "modified";
+import { validateBody } from "@/lib/validation";
+import { bookingNotificationSchema } from "@/lib/schemas/notifications";
 
 /**
  * POST /api/notifications/booking
@@ -17,20 +17,10 @@ type BookingAction = "confirmed" | "canceled" | "modified";
  */
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as {
-      action: BookingAction;
-      bookingId?: string;
-      confirmationCode?: string;
-      orgId: string;
-      oldConfirmationCode?: string;
-    };
-
+    const parsed = await validateBody(request, bookingNotificationSchema);
+    if (parsed.error) return parsed.error;
     const { action, bookingId, confirmationCode, orgId, oldConfirmationCode } =
-      body;
-
-    if (!action || !orgId) {
-      return NextResponse.json({ error: "Missing action or orgId" }, { status: 400 });
-    }
+      parsed.data;
 
     const supabase = createServiceClient();
 

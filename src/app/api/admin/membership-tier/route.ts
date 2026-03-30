@@ -4,6 +4,8 @@ import { getFacilitySlug } from "@/lib/facility";
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { membershipTierSchema } from "@/lib/schemas/admin";
 
 async function resolveOrg() {
   const slug = await getFacilitySlug();
@@ -94,7 +96,8 @@ export async function PUT(request: NextRequest) {
 
     await requireAdmin(org.id);
 
-    const body = await request.json();
+    const parsed = await validateBody(request, membershipTierSchema);
+    if (parsed.error) return parsed.error;
     const {
       enabled,
       tier_name,
@@ -107,7 +110,7 @@ export async function PUT(request: NextRequest) {
       price_yearly_cents,
       guest_booking_window_days,
       member_booking_window_days,
-    } = body;
+    } = parsed.data;
 
     const supabase = await createClient();
 
@@ -153,27 +156,6 @@ export async function PUT(request: NextRequest) {
     if (!price_monthly_cents && !price_yearly_cents) {
       return NextResponse.json(
         { error: "At least one subscription price is required." },
-        { status: 400 }
-      );
-    }
-
-    if (!["flat", "percent"].includes(discount_type)) {
-      return NextResponse.json(
-        { error: "Invalid discount type." },
-        { status: 400 }
-      );
-    }
-
-    if (typeof discount_value !== "number" || discount_value < 0) {
-      return NextResponse.json(
-        { error: "Discount value must be a non-negative number." },
-        { status: 400 }
-      );
-    }
-
-    if (discount_type === "percent" && discount_value > 100) {
-      return NextResponse.json(
-        { error: "Percentage discount cannot exceed 100%." },
         { status: 400 }
       );
     }

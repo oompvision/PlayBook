@@ -5,6 +5,8 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
 import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { cancelIntentSchema } from "@/lib/schemas/stripe";
 
 /**
  * POST /api/stripe/cancel-intent
@@ -18,17 +20,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { intent_id, intent_type } = (await request.json()) as {
-      intent_id: string;
-      intent_type: "payment" | "setup";
-    };
-
-    if (!intent_id || !intent_type) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
-    }
+    const parsed = await validateBody(request, cancelIntentSchema);
+    if (parsed.error) return parsed.error;
+    const { intent_id, intent_type } = parsed.data;
 
     // Resolve org → get stripe_account_id
     const slug = await getFacilitySlug();

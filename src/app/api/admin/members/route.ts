@@ -3,6 +3,8 @@ import { requireAdmin } from "@/lib/auth";
 import { getStripe } from "@/lib/stripe";
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { grantMembershipSchema, revokeMembershipSchema } from "@/lib/schemas/admin";
 
 /**
  * POST /api/admin/members
@@ -11,15 +13,9 @@ import { logger } from "@/lib/logger";
  * Body: { org_id, user_id }
  */
 export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const { org_id, user_id } = body;
-
-  if (!org_id || !user_id) {
-    return NextResponse.json(
-      { error: "org_id and user_id are required" },
-      { status: 400 }
-    );
-  }
+  const parsed = await validateBody(request, grantMembershipSchema);
+  if (parsed.error) return parsed.error;
+  const { org_id, user_id } = parsed.data;
 
   await requireAdmin(org_id);
 
@@ -99,15 +95,9 @@ export async function POST(request: NextRequest) {
  * Body: { membership_id, org_id }
  */
 export async function DELETE(request: NextRequest) {
-  const body = await request.json();
-  const { membership_id, org_id } = body;
-
-  if (!membership_id || !org_id) {
-    return NextResponse.json(
-      { error: "membership_id and org_id are required" },
-      { status: 400 }
-    );
-  }
+  const parsed = await validateBody(request, revokeMembershipSchema);
+  if (parsed.error) return parsed.error;
+  const { membership_id, org_id } = parsed.data;
 
   await requireAdmin(org_id);
 

@@ -6,6 +6,8 @@ import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
 import { logAudit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { checkoutIntentSchema } from "@/lib/schemas/stripe";
 
 /**
  * POST /api/stripe/create-checkout-intent
@@ -20,18 +22,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { slot_ids, location_id, discount_cents: rawDiscount } = (await request.json()) as {
-      slot_ids: string[];
-      location_id?: string | null;
-      discount_cents?: number;
-    };
-
-    if (!slot_ids || slot_ids.length === 0) {
-      return NextResponse.json(
-        { error: "slot_ids is required" },
-        { status: 400 }
-      );
-    }
+    const parsed = await validateBody(request, checkoutIntentSchema);
+    if (parsed.error) return parsed.error;
+    const { slot_ids, location_id, discount_cents: rawDiscount } = parsed.data;
 
     // 2. Resolve org from facility slug
     const slug = await getFacilitySlug();

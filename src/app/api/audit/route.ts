@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { logAudit, type AuditAction } from "@/lib/audit";
+import { validateBody } from "@/lib/validation";
+import { z } from "zod/v4";
+
+const auditSchema = z.object({
+  action: z.enum(["login", "login_failed", "logout"]),
+  resourceType: z.string().min(1).max(100),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
 
 /**
  * POST /api/audit
@@ -8,29 +16,17 @@ import { logAudit, type AuditAction } from "@/lib/audit";
  * Used by login/signup pages to record authentication events.
  */
 export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const { action, resourceType, metadata } = body as {
-    action: AuditAction;
-    resourceType: string;
-    metadata?: Record<string, unknown>;
-  };
+  const parsed = await validateBody(request, auditSchema);
+  if (parsed.error) return parsed.error;
 
-  if (!action || !resourceType) {
-    return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-  }
-
-  // Only allow auth-related audit events from this endpoint
-  const allowedActions: AuditAction[] = ["login", "login_failed", "logout"];
-  if (!allowedActions.includes(action)) {
-    return NextResponse.json({ error: "Action not allowed" }, { status: 403 });
-  }
+  const { action, resourceType, metadata } = parsed.data;
 
   const auth = await getAuthUser();
 
   await logAudit({
     userId: auth?.profile.id || null,
     orgId: auth?.profile.org_id || null,
-    action,
+    action: action as AuditAction,
     resourceType,
     metadata,
   });

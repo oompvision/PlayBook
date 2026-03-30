@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { validatePassword, getPasswordStrength } from "@/lib/password-validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -114,12 +115,20 @@ export default function AdminProfilePage() {
     }
   }
 
+  const pwResult = validatePassword(newPassword);
+  const pwStrength = getPasswordStrength(newPassword);
+
   async function handlePasswordChange(e: React.FormEvent) {
     e.preventDefault();
     setPasswordError(null);
 
-    if (newPassword.length < 6) {
-      setPasswordError("New password must be at least 6 characters.");
+    if (!currentPassword) {
+      setPasswordError("Please enter your current password.");
+      return;
+    }
+
+    if (!pwResult.valid) {
+      setPasswordError("Password does not meet requirements: " + pwResult.errors.join(", "));
       return;
     }
 
@@ -132,6 +141,25 @@ export default function AdminProfilePage() {
 
     try {
       const supabase = createClient();
+
+      // Verify current password by re-authenticating
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.email) {
+        setPasswordError("Unable to verify identity.");
+        setSavingPassword(false);
+        return;
+      }
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      });
+
+      if (signInError) {
+        setPasswordError("Current password is incorrect.");
+        setSavingPassword(false);
+        return;
+      }
 
       const { error } = await supabase.auth.updateUser({
         password: newPassword,
@@ -283,8 +311,35 @@ export default function AdminProfilePage() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
-                minLength={6}
+                minLength={8}
               />
+              {newPassword.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          pwStrength === "strong"
+                            ? "w-full bg-green-500"
+                            : pwStrength === "fair"
+                              ? "w-2/3 bg-yellow-500"
+                              : "w-1/3 bg-red-500"
+                        }`}
+                      />
+                    </div>
+                    <span className="text-xs text-muted-foreground capitalize">
+                      {pwStrength}
+                    </span>
+                  </div>
+                  {!pwResult.valid && (
+                    <ul className="text-xs text-muted-foreground space-y-0.5">
+                      {pwResult.errors.map((err) => (
+                        <li key={err}>• {err}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm New Password</Label>

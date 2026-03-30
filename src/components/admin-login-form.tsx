@@ -25,6 +25,7 @@ export function AdminLoginForm() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [lockoutMessage, setLockoutMessage] = useState("");
 
   function switchMode(newMode: Mode) {
     setMode(newMode);
@@ -36,8 +37,29 @@ export function AdminLoginForm() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setLockoutMessage("");
 
     const supabase = createClient();
+
+    // Check lockout before attempting login
+    const { data: lockCheck } = await supabase.rpc("check_login_allowed", {
+      p_email: email,
+    });
+
+    if (lockCheck && !lockCheck.allowed) {
+      const lockedUntil = lockCheck.locked_until
+        ? new Date(lockCheck.locked_until)
+        : null;
+      const minutesLeft = lockedUntil
+        ? Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 60000))
+        : 15;
+      setLockoutMessage(
+        `Too many failed login attempts. Please try again in ${minutesLeft} minute${minutesLeft !== 1 ? "s" : ""}.`
+      );
+      setLoading(false);
+      return;
+    }
+
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -46,8 +68,21 @@ export function AdminLoginForm() {
     if (signInError) {
       setError(signInError.message);
       setLoading(false);
+      // Record failed attempt
+      supabase.rpc("record_login_attempt", {
+        p_email: email,
+        p_ip: null,
+        p_success: false,
+      }).then(() => {});
       return;
     }
+
+    // Record successful login
+    supabase.rpc("record_login_attempt", {
+      p_email: email,
+      p_ip: null,
+      p_success: true,
+    }).then(() => {});
 
     // Check role
     const { data: profile } = await supabase.rpc("get_my_profile");
@@ -170,6 +205,11 @@ export function AdminLoginForm() {
           {message && (
             <div className="rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
               {message}
+            </div>
+          )}
+          {lockoutMessage && (
+            <div className="rounded-md bg-yellow-50 p-3 text-sm text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400">
+              {lockoutMessage}
             </div>
           )}
           {error && (

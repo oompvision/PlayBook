@@ -4,6 +4,8 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
 import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { mobilePaymentIntentSchema } from "@/lib/schemas/mobile";
 
 /**
  * POST /api/mobile/create-payment-intent
@@ -23,23 +25,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = (await request.json()) as {
-      org_id: string;
-      type: "slot_booking" | "dynamic_booking" | "event";
-      slot_ids?: string[];
-      price_cents?: number;
-      event_id?: string;
-      registration_id?: string;
-      location_id?: string | null;
-      discount_cents?: number;
-    };
-
-    if (!body.org_id || !body.type) {
-      return NextResponse.json(
-        { error: "org_id and type are required" },
-        { status: 400 }
-      );
-    }
+    const parsed = await validateBody(request, mobilePaymentIntentSchema);
+    if (parsed.error) return parsed.error;
+    const body = parsed.data;
 
     const supabase = createServiceClient();
 

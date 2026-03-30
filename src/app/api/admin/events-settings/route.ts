@@ -3,6 +3,8 @@ import { getAdminAuth } from "@/lib/auth";
 import { getFacilitySlug } from "@/lib/facility";
 import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { eventsSettingsSchema } from "@/lib/schemas/admin";
 
 export async function PUT(request: NextRequest) {
   const slug = await getFacilitySlug();
@@ -31,15 +33,9 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
-  const { events_enabled } = body;
-
-  if (typeof events_enabled !== "boolean") {
-    return NextResponse.json(
-      { error: "events_enabled must be a boolean" },
-      { status: 400 }
-    );
-  }
+  const parsed = await validateBody(request, eventsSettingsSchema);
+  if (parsed.error) return parsed.error;
+  const { events_enabled } = parsed.data;
 
   // If disabling, check for published events with active registrations
   if (!events_enabled) {
