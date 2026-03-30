@@ -24,6 +24,10 @@ ALTER TABLE public.admin_invitations
 
 -- bookings.customer_id: currently CASCADE → destroys booking history
 -- Already nullable since migration 00019; just change cascade behavior
+-- Must also drop the CHECK constraint that requires customer_id NOT NULL for
+-- non-guest bookings, since anonymized bookings have customer_id = NULL
+ALTER TABLE public.bookings
+  DROP CONSTRAINT IF EXISTS bookings_customer_or_guest;
 ALTER TABLE public.bookings
   DROP CONSTRAINT IF EXISTS bookings_customer_id_fkey;
 ALTER TABLE public.bookings
@@ -63,12 +67,14 @@ BEGIN
   v_uuid_prefix := substring(p_user_id::text from 1 for 8);
 
   -- 1. Detach bookings from user (preserves booking + payment records)
+  -- Mark as guest with anonymized name so they remain valid records
   UPDATE public.bookings
   SET customer_id = NULL,
-      notes = NULL,
-      guest_name = NULL,
+      is_guest = true,
+      guest_name = '[Deleted User]',
       guest_email = NULL,
-      guest_phone = NULL
+      guest_phone = NULL,
+      notes = NULL
   WHERE customer_id = p_user_id;
 
   -- 2. Cancel active memberships
