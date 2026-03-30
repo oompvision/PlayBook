@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/stripe/create-event-checkout-intent
@@ -247,7 +248,7 @@ export async function POST(request: NextRequest) {
       });
     }
   } catch (err) {
-    console.error("[create-event-checkout-intent] error:", err);
+    logger.error("[create-event-checkout-intent] error", err);
 
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

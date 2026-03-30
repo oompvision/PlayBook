@@ -6,6 +6,7 @@ import {
   sendGuestEmail,
 } from "@/lib/notifications";
 import { formatTimeInZone } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 
 type BookingAction = "confirmed" | "canceled" | "modified";
 
@@ -260,7 +261,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error("[notifications/booking] Error:", err);
+    logger.error("[notifications/booking] Error", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

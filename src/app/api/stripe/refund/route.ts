@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/stripe/refund
@@ -194,7 +195,7 @@ export async function POST(request: NextRequest) {
       status: isFullyRefunded ? "refunded" : "partially_refunded",
     });
   } catch (err) {
-    console.error("[refund] error:", err);
+    logger.error("[refund] error", err);
 
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

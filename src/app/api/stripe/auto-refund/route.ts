@@ -3,6 +3,7 @@ import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/stripe/auto-refund
@@ -148,7 +149,7 @@ export async function POST(request: NextRequest) {
       refunded_amount_cents: refundAmount,
     });
   } catch (err) {
-    console.error("[auto-refund] error:", err);
+    logger.error("[auto-refund] error", err);
 
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

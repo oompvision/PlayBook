@@ -2,6 +2,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { requireAdmin } from "@/lib/auth";
 import { getStripe } from "@/lib/stripe";
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/admin/members
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
       .eq("id", existing.id);
 
     if (error) {
-      console.error("[admin/members] update membership error:", error.message);
+      logger.error("[admin/members] update membership error", { message: error.message });
       return NextResponse.json({ error: "Failed to grant membership" }, { status: 500 });
     }
   } else {
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
-      console.error("[admin/members] insert membership error:", error.message);
+      logger.error("[admin/members] insert membership error", { message: error.message });
       return NextResponse.json({ error: "Failed to grant membership" }, { status: 500 });
     }
   }
@@ -144,7 +145,7 @@ export async function DELETE(request: NextRequest) {
           : {}),
       });
     } catch (stripeError) {
-      console.error("Failed to cancel Stripe subscription:", stripeError);
+      logger.error("Failed to cancel Stripe subscription", stripeError);
       // Continue with local revocation even if Stripe cancel fails
       // The webhook will eventually reconcile
     }
@@ -157,7 +158,7 @@ export async function DELETE(request: NextRequest) {
     .eq("id", membership_id);
 
   if (error) {
-    console.error("[admin/members] delete membership error:", error.message);
+    logger.error("[admin/members] delete membership error", { message: error.message });
     return NextResponse.json({ error: "Failed to revoke membership" }, { status: 500 });
   }
 

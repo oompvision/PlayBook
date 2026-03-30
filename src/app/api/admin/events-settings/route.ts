@@ -2,6 +2,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { getAdminAuth } from "@/lib/auth";
 import { getFacilitySlug } from "@/lib/facility";
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 
 export async function PUT(request: NextRequest) {
   const slug = await getFacilitySlug();
@@ -78,7 +79,7 @@ export async function PUT(request: NextRequest) {
     .single();
 
   if (error) {
-    console.error("[admin/events-settings] update error:", error.message);
+    logger.error("[admin/events-settings] update error", { message: error.message });
     return NextResponse.json({ error: "Failed to update events settings" }, { status: 500 });
   }
 

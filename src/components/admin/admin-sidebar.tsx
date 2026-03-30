@@ -23,6 +23,7 @@ import {
   CreditCard,
   Bell,
   CalendarClock,
+  ShieldCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -45,6 +46,7 @@ const settingsSubItems: NavItem[] = [
   { label: "Payment Settings", href: "/admin/settings/payments", icon: CreditCard },
   { label: "Membership Management", href: "/admin/settings/membership", icon: Crown },
   { label: "Notifications", href: "/admin/settings/notifications", icon: Bell },
+  { label: "Audit Log", href: "/admin/audit-log", icon: ShieldCheck },
 ];
 
 // Slot-based schedule sub-items (Templates is always shown, Events is conditional)

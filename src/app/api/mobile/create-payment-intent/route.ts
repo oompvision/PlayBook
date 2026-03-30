@@ -3,6 +3,7 @@ import { getMobileAuth } from "@/lib/mobile-auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/mobile/create-payment-intent
@@ -308,7 +309,7 @@ export async function POST(request: NextRequest) {
       });
     }
   } catch (err) {
-    console.error("[mobile/create-payment-intent] error:", err);
+    logger.error("[mobile/create-payment-intent] error", err);
 
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

@@ -3,6 +3,7 @@ import { getFacilitySlug } from "@/lib/facility";
 import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
+import { logger } from "@/lib/logger";
 
 /**
  * GET /api/stripe/card-details?pm=pm_xxx
@@ -70,7 +71,7 @@ export async function GET(request: NextRequest) {
       last4: pm.card?.last4 || null,
     });
   } catch (err) {
-    console.error("[card-details] error:", err);
+    logger.error("[card-details] error", err);
     return NextResponse.json({ error: "Failed to retrieve card details" }, { status: 500 });
   }
 }

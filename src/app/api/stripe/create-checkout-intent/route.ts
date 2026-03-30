@@ -4,6 +4,8 @@ import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
+import { logAudit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/stripe/create-checkout-intent
@@ -179,7 +181,7 @@ export async function POST(request: NextRequest) {
       customerSessionClientSecret = customerSession.client_secret;
     } catch (csErr) {
       // Non-fatal — fall back to no saved cards
-      console.warn("[create-checkout-intent] CustomerSession creation failed:", csErr);
+      logger.warn("[create-checkout-intent] CustomerSession creation failed", csErr);
     }
 
     // 8. Create intent based on payment mode
@@ -216,6 +218,16 @@ export async function POST(request: NextRequest) {
         },
         { stripeAccount: stripeAccountId }
       );
+
+      // Audit log: payment intent created
+      logAudit({
+        orgId: org.id,
+        userId: auth.profile.id,
+        action: "create",
+        resourceType: "payment_intent",
+        resourceId: paymentIntent.id,
+        metadata: { amount_cents: totalCents, slot_count: slot_ids.length },
+      });
 
       return NextResponse.json({
         client_secret: paymentIntent.client_secret,
@@ -267,7 +279,7 @@ export async function POST(request: NextRequest) {
       });
     }
   } catch (err) {
-    console.error("[create-checkout-intent] error:", err);
+    logger.error("[create-checkout-intent] error", err);
 
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

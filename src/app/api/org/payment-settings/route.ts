@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { getAdminAuth } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 
 const VALID_PAYMENT_MODES = [
   "none",
@@ -76,7 +77,7 @@ export async function GET(_request: NextRequest) {
             .single();
           settings = existing;
         } else {
-          console.error("[payment-settings] insert error:", error.message);
+          logger.error("[payment-settings] insert error", { message: error.message });
           return NextResponse.json(
             { error: "Failed to create payment settings" },
             { status: 500 }
@@ -89,7 +90,7 @@ export async function GET(_request: NextRequest) {
 
     return NextResponse.json(settings);
   } catch (err) {
-    console.error("[payment-settings] GET error:", err);
+    logger.error("[payment-settings] GET error", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }
@@ -216,7 +217,7 @@ export async function PUT(request: NextRequest) {
       .single();
 
     if (error) {
-      console.error("[payment-settings] update error:", error.message);
+      logger.error("[payment-settings] update error", { message: error.message });
       return NextResponse.json(
         { error: "Failed to update payment settings" },
         { status: 500 }
@@ -225,7 +226,7 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json(updated);
   } catch (err) {
-    console.error("[payment-settings] PUT error:", err);
+    logger.error("[payment-settings] PUT error", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

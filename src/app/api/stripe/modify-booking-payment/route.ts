@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/stripe/modify-booking-payment
@@ -140,7 +141,7 @@ export async function POST(request: NextRequest) {
       });
     }
   } catch (err) {
-    console.error("[modify-booking-payment] error:", err);
+    logger.error("[modify-booking-payment] error", err);
 
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

@@ -7,6 +7,7 @@ import { magicLinkEmail } from "@/lib/emails/templates/magic-link";
 import { resetPasswordEmail } from "@/lib/emails/templates/reset-password";
 import { emailChangeEmail } from "@/lib/emails/templates/email-change";
 import type { OrgBranding } from "@/lib/emails/types";
+import { logger } from "@/lib/logger";
 
 type EmailHookPayload = {
   user: {
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
   // 1. Verify webhook signature
   const hookSecret = process.env.SUPABASE_AUTH_HOOK_SECRET;
   if (!hookSecret) {
-    console.error("[email-hook] SUPABASE_AUTH_HOOK_SECRET not configured");
+    logger.error("[email-hook] SUPABASE_AUTH_HOOK_SECRET not configured");
     return NextResponse.json({ error: "Hook secret not configured" }, { status: 500 });
   }
 
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
     const wh = new Webhook(secret);
     wh.verify(rawBody, headers);
   } catch (err) {
-    console.error("[email-hook] Webhook signature verification failed:", err);
+    logger.error("[email-hook] Webhook signature verification failed", err);
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
       emailContent = emailChangeEmail(orgBranding, actionUrl);
       break;
     default:
-      console.warn(`[email-hook] Unknown email_action_type: ${email_action_type}`);
+      logger.warn("[email-hook] Unknown email_action_type", { email_action_type });
       emailContent = confirmSignupEmail(orgBranding, actionUrl);
   }
 

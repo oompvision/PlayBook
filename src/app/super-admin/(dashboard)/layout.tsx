@@ -9,6 +9,7 @@ const superAdminNav = [
   { label: "Dashboard", href: "/super-admin" },
   { label: "Organizations", href: "/super-admin/orgs" },
   { label: "Admin Users", href: "/super-admin/admins" },
+  { label: "Audit Log", href: "/super-admin/audit-log" },
   { label: "Settings", href: "/super-admin/settings" },
 ];
 

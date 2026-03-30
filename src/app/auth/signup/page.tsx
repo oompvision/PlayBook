@@ -52,6 +52,13 @@ export default function SignUpPage() {
       return;
     }
 
+    // Audit: account created
+    fetch("/api/audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "login", resourceType: "auth", metadata: { method: "signup" } }),
+    }).catch(() => {});
+
     router.push("/auth/login?message=Check your email to confirm your account");
     router.refresh();
   }

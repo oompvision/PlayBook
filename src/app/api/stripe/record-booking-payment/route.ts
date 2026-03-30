@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/stripe/record-booking-payment
@@ -188,7 +189,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (insertError) {
-      console.error("[record-booking-payment] insert error:", insertError);
+      logger.error("[record-booking-payment] insert error", insertError);
       return NextResponse.json(
         { error: `Failed to record payment: ${insertError.message}` },
         { status: 500 }
@@ -205,7 +206,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(payment);
   } catch (err) {
-    console.error("[record-booking-payment] error:", err);
+    logger.error("[record-booking-payment] error", err);
 
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

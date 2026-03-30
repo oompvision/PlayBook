@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { requireAdmin } from "@/lib/auth";
 import { getFacilitySlug } from "@/lib/facility";
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 
 export async function PUT(request: NextRequest) {
   const slug = await getFacilitySlug();
@@ -52,7 +53,7 @@ export async function PUT(request: NextRequest) {
     .eq("id", org.id);
 
   if (error) {
-    console.error("[admin/scheduling-mode] update error:", error.message);
+    logger.error("[admin/scheduling-mode] update error", { message: error.message });
     return NextResponse.json({ error: "Failed to update scheduling mode" }, { status: 500 });
   }
 

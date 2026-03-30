@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getFacilitySlug } from "@/lib/facility";
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
+import { logger } from "@/lib/logger";
 
 async function resolveOrg() {
   const slug = await getFacilitySlug();
@@ -72,7 +73,7 @@ export async function GET() {
         !!paymentSettings?.stripe_onboarding_complete,
     });
   } catch (err) {
-    console.error("[membership-tier] GET error:", err);
+    logger.error("[membership-tier] GET error", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }
@@ -340,7 +341,7 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error("[membership-tier] PUT error:", err);
+    logger.error("[membership-tier] PUT error", err);
 
     // Surface Stripe errors clearly
     if (err && typeof err === "object" && "type" in err) {

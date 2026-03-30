@@ -60,8 +60,21 @@ function LoginForm() {
     if (error) {
       setError(error.message);
       setLoading(false);
+      // Audit: failed login attempt
+      fetch("/api/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "login_failed", resourceType: "auth", metadata: { method: "password" } }),
+      }).catch(() => {});
       return;
     }
+
+    // Audit: successful login
+    fetch("/api/audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "login", resourceType: "auth", metadata: { method: "password" } }),
+    }).catch(() => {});
 
     // Full page navigation so middleware refreshes the session cookies
     // for server components to pick up
