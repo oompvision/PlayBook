@@ -152,12 +152,37 @@ export async function POST(request: NextRequest) {
         const periodEnd = lineItem?.period?.end;
 
         if (periodEnd) {
+          const updateData: Record<string, unknown> = {
+            status: "active",
+            current_period_end: new Date(periodEnd * 1000).toISOString(),
+          };
+
+          // Check for pending tier change — retrieve subscription metadata
+          try {
+            const sub = await stripe.subscriptions.retrieve(
+              subscriptionId,
+              {},
+              { stripeAccount: event.account! } as Stripe.RequestOptions
+            );
+            if (sub.metadata?.pending_tier_id) {
+              updateData.tier_id = sub.metadata.pending_tier_id;
+              // Clear the pending flag
+              await stripe.subscriptions.update(
+                subscriptionId,
+                { metadata: { pending_tier_id: "" } },
+                { stripeAccount: event.account! } as Stripe.RequestOptions
+              );
+              logger.info(
+                `[stripe/webhooks/connect] invoice.payment_succeeded: tier changed to ${sub.metadata.pending_tier_id}`
+              );
+            }
+          } catch (tierErr) {
+            logger.error("[stripe/webhooks/connect] Error checking pending tier change", tierErr);
+          }
+
           await supabase
             .from("user_memberships")
-            .update({
-              status: "active",
-              current_period_end: new Date(periodEnd * 1000).toISOString(),
-            })
+            .update(updateData)
             .eq("stripe_subscription_id", subscriptionId);
 
           logger.info(

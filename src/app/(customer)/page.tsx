@@ -254,18 +254,20 @@ export default async function FacilityHomePage({
       const guestWindow = orgMembership.guest_booking_window_days ?? bookableWindowDays;
       const memberWindow = orgMembership.member_booking_window_days ?? bookableWindowDays;
 
-      // Fetch tier for discount info
-      const { data: tier } = await serviceClient
-        .from("membership_tiers")
-        .select("name, discount_type, discount_value, event_discount_type, event_discount_value")
-        .eq("org_id", org.id)
-        .single();
-
       let isMember = false;
+      let userTier: {
+        name: string;
+        discount_type: string;
+        discount_value: number;
+        event_discount_type: string | null;
+        event_discount_value: number;
+        bookable_window_days: number | null;
+      } | null = null;
+
       if (auth) {
         const { data: membership } = await serviceClient
           .from("user_memberships")
-          .select("status, current_period_end, expires_at")
+          .select("status, current_period_end, expires_at, tier_id")
           .eq("org_id", org.id)
           .eq("user_id", auth.user.id)
           .single();
@@ -281,21 +283,73 @@ export default async function FacilityHomePage({
               membership.current_period_end &&
               new Date(membership.current_period_end) > now)
           );
+
+          // Fetch the user's specific tier for discount info
+          if (isMember && membership.tier_id) {
+            const { data: tier } = await serviceClient
+              .from("membership_tiers")
+              .select("name, discount_type, discount_value, event_discount_type, event_discount_value, bookable_window_days")
+              .eq("id", membership.tier_id)
+              .single();
+            userTier = tier;
+          }
         }
       }
 
+      // If not a member or no tier found, get the first tier for upsell display
+      if (!userTier) {
+        const { data: firstTier } = await serviceClient
+          .from("membership_tiers")
+          .select("name, discount_type, discount_value, event_discount_type, event_discount_value, bookable_window_days")
+          .eq("org_id", org.id)
+          .order("sort_order", { ascending: true })
+          .limit(1)
+          .single();
+        userTier = firstTier;
+      }
+
+      const effectiveWindow = isMember
+        ? (userTier?.bookable_window_days ?? memberWindow)
+        : guestWindow;
+
       membershipContext = {
         isMember,
-        effectiveWindowDays: isMember ? memberWindow : guestWindow,
+        effectiveWindowDays: effectiveWindow,
         guestWindowDays: guestWindow,
-        memberWindowDays: memberWindow,
-        discountType: tier ? (tier.discount_type as "flat" | "percent") : null,
-        discountValue: tier ? Number(tier.discount_value) : 0,
-        eventDiscountType: tier ? (tier.event_discount_type as "flat" | "percent" | null) : null,
-        eventDiscountValue: tier ? Number(tier.event_discount_value ?? 0) : 0,
-        tierName: tier?.name ?? null,
+        memberWindowDays: userTier?.bookable_window_days ?? memberWindow,
+        discountType: userTier ? (userTier.discount_type as "flat" | "percent") : null,
+        discountValue: userTier ? Number(userTier.discount_value) : 0,
+        eventDiscountType: userTier ? (userTier.event_discount_type as "flat" | "percent" | null) : null,
+        eventDiscountValue: userTier ? Number(userTier.event_discount_value ?? 0) : 0,
+        tierName: userTier?.name ?? null,
         membershipEnabled: true,
       };
+    }
+  }
+
+  // Fetch credit balance for active members
+  let creditBalanceData: {
+    has_credits: boolean;
+    credits_total: number;
+    credits_used: number;
+    credits_remaining: number;
+    credit_type: "hours" | "value" | null;
+    credit_period: string | null;
+    period_end: string | null;
+  } | null = null;
+
+  if (org && auth && membershipContext.isMember) {
+    const serviceClient = createServiceClient();
+    try {
+      const { data } = await serviceClient.rpc("get_or_create_credit_balance", {
+        p_org_id: org.id,
+        p_user_id: auth.user.id,
+      });
+      if (data?.has_credits) {
+        creditBalanceData = data;
+      }
+    } catch {
+      // Non-fatal — credits just won't show
     }
   }
 
@@ -410,6 +464,7 @@ export default async function FacilityHomePage({
                 locations={locations}
                 locationsEnabled={locationsEnabled}
                 membership={membershipContext}
+                creditBalance={creditBalanceData}
                 eventsOnly
               />
             ) : org && bays && bays.length > 0 ? (
@@ -436,6 +491,7 @@ export default async function FacilityHomePage({
                   locations={locations}
                   locationsEnabled={locationsEnabled}
                   membership={membershipContext}
+                creditBalance={creditBalanceData}
                 />
               ) : (
                 <AvailabilityWidget
@@ -457,6 +513,7 @@ export default async function FacilityHomePage({
                   locations={locations}
                   locationsEnabled={locationsEnabled}
                   membership={membershipContext}
+                creditBalance={creditBalanceData}
                 />
               )
             ) : (
@@ -495,6 +552,7 @@ export default async function FacilityHomePage({
               locations={locations}
               locationsEnabled={locationsEnabled}
               membership={membershipContext}
+                creditBalance={creditBalanceData}
               eventsOnly
             />
           ) : org && bays && bays.length > 0 ? (
@@ -521,6 +579,7 @@ export default async function FacilityHomePage({
                 locations={locations}
                 locationsEnabled={locationsEnabled}
                 membership={membershipContext}
+                creditBalance={creditBalanceData}
               />
             ) : (
               <AvailabilityWidget
@@ -542,6 +601,7 @@ export default async function FacilityHomePage({
                 locations={locations}
                 locationsEnabled={locationsEnabled}
                 membership={membershipContext}
+                creditBalance={creditBalanceData}
               />
             )
           ) : (

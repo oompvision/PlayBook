@@ -11,16 +11,15 @@ import { useMembership } from '../lib/use-membership';
 import { useAuth } from '../lib/auth-context';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
-import { Button } from '../components/Button';
 import { formatPrice } from '../lib/format';
 import { Feather } from '@expo/vector-icons';
 import { CrownIcon } from '../components/TabIcons';
-import { colors, spacing, typography, borderRadius } from '../theme';
+import { colors, spacing, typography } from '../theme';
 
 export function MembershipScreen() {
   const { organization } = useFacility();
   const { user } = useAuth();
-  const { tier, membership, isMember, bookableWindowDays, membershipEnabled, isLoading } =
+  const { tiers, tier, membership, isMember, bookableWindowDays, membershipEnabled, creditBalance, isLoading } =
     useMembership();
 
   if (isLoading) {
@@ -53,7 +52,17 @@ export function MembershipScreen() {
   }
 
   const guestWindow = organization.guest_booking_window_days ?? organization.bookable_window_days ?? 30;
-  const memberWindow = organization.member_booking_window_days ?? guestWindow;
+  const creditType = organization.credit_type;
+
+  function formatCredits(amount: number | null, period: string | null) {
+    if (!amount || !period || !creditType) return null;
+    const periodLabel = period === 'daily' ? '/day' : period === 'weekly' ? '/week' : '/month';
+    if (creditType === 'hours') {
+      const hrs = amount / 60;
+      return `${hrs % 1 === 0 ? hrs : hrs.toFixed(1)} hr${hrs !== 1 ? 's' : ''} free ${periodLabel}`;
+    }
+    return `${formatPrice(amount)} credit ${periodLabel}`;
+  }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -62,7 +71,7 @@ export function MembershipScreen() {
         <View style={styles.statusHeader}>
           <Text style={styles.statusTitle}>Your Status</Text>
           <Badge
-            label={isMember ? 'Member' : 'Guest'}
+            label={isMember ? (tier?.name ?? 'Member') : 'Guest'}
             variant={isMember ? 'success' : 'muted'}
           />
         </View>
@@ -89,46 +98,111 @@ export function MembershipScreen() {
         )}
       </Card>
 
-      {/* Tier Info */}
-      {tier && (
-        <>
-          <Text style={styles.sectionTitle}>{tier.name}</Text>
-          <Card>
-            {tier.benefit_description && (
-              <Text style={styles.benefitDescription}>{tier.benefit_description}</Text>
+      {/* Credit Balance */}
+      {creditBalance?.has_credits && (
+        <Card style={styles.creditCard}>
+          <View style={styles.creditHeader}>
+            <Feather
+              name={creditType === 'hours' ? 'clock' : 'dollar-sign'}
+              size={16}
+              color={colors.primary}
+            />
+            <Text style={styles.creditTitle}>Your Credits</Text>
+          </View>
+          <Text style={styles.creditAmount}>
+            {creditType === 'hours'
+              ? `${(creditBalance.credits_remaining / 60).toFixed(1)} hrs`
+              : formatPrice(creditBalance.credits_remaining)}
+          </Text>
+          <Text style={styles.creditSubtext}>
+            {creditType === 'hours'
+              ? `${(creditBalance.credits_used / 60).toFixed(1)} hrs used of ${(creditBalance.credits_total / 60).toFixed(1)} hrs`
+              : `${formatPrice(creditBalance.credits_used)} used of ${formatPrice(creditBalance.credits_total)}`}
+            {creditBalance.period_end
+              ? ` \u00B7 Resets ${new Date(creditBalance.period_end).toLocaleDateString()}`
+              : ''}
+          </Text>
+        </Card>
+      )}
+
+      {/* Tier Cards */}
+      <Text style={styles.sectionTitle}>
+        {tiers.length > 1 ? 'Membership Plans' : (tier?.name ?? 'Membership')}
+      </Text>
+
+      {tiers.map((t) => {
+        const isCurrentTier = tier?.id === t.id && isMember;
+        const window = t.bookable_window_days ?? (organization.member_booking_window_days ?? guestWindow);
+        const credits = formatCredits(t.credit_amount, t.credit_period);
+
+        return (
+          <Card
+            key={t.id}
+            style={[styles.tierCard, isCurrentTier && styles.tierCardActive]}
+          >
+            <View style={styles.tierHeader}>
+              <Text style={styles.tierName}>{t.name}</Text>
+              {isCurrentTier && (
+                <Badge label="Current" variant="success" />
+              )}
+            </View>
+
+            {t.benefit_description && (
+              <Text style={styles.benefitDescription}>{t.benefit_description}</Text>
             )}
 
-            {/* Benefits List */}
             <View style={styles.benefitsList}>
-              {/* Booking Window */}
               <View style={styles.benefitRow}>
-                <Feather name="calendar" size={20} color={colors.mutedForeground} style={styles.benefitIcon} />
-                <View style={styles.benefitContent}>
-                  <Text style={styles.benefitLabel}>Book further ahead</Text>
-                  <Text style={styles.benefitValue}>
-                    {memberWindow} days vs {guestWindow} days for guests
-                  </Text>
-                </View>
+                <Feather name="calendar" size={16} color={colors.mutedForeground} />
+                <Text style={styles.benefitValue}>
+                  Book {window} days ahead (guests: {guestWindow})
+                </Text>
               </View>
 
-              {/* Discount */}
-              {tier.discount_value > 0 && (
+              {t.discount_value > 0 && (
                 <View style={styles.benefitRow}>
-                  <CrownIcon size={20} color="#16a34a" />
-                  <View style={styles.benefitContent}>
-                    <Text style={styles.benefitLabel}>Booking discount</Text>
-                    <Text style={styles.benefitValue}>
-                      {tier.discount_type === 'percent'
-                        ? `${tier.discount_value}% off all bookings`
-                        : `${formatPrice(tier.discount_value * 100)} off per booking`}
-                    </Text>
-                  </View>
+                  <CrownIcon size={16} color="#16a34a" />
+                  <Text style={styles.benefitValue}>
+                    {t.discount_type === 'percent'
+                      ? `${t.discount_value}% off bookings`
+                      : `${formatPrice(t.discount_value * 100)} off per booking`}
+                  </Text>
+                </View>
+              )}
+
+              {credits && (
+                <View style={styles.benefitRow}>
+                  <Feather
+                    name={creditType === 'hours' ? 'clock' : 'dollar-sign'}
+                    size={16}
+                    color={colors.mutedForeground}
+                  />
+                  <Text style={styles.benefitValue}>{credits}</Text>
                 </View>
               )}
             </View>
+
+            {/* Pricing */}
+            {(t.price_monthly_cents || t.price_yearly_cents) && (
+              <View style={styles.tierPricing}>
+                {t.price_monthly_cents && (
+                  <Text style={styles.tierPrice}>
+                    {formatPrice(t.price_monthly_cents)}/mo
+                  </Text>
+                )}
+                {t.price_monthly_cents && t.price_yearly_cents && (
+                  <Text style={styles.tierPriceDivider}> or </Text>
+                )}
+                {t.price_yearly_cents && (
+                  <Text style={styles.tierPrice}>
+                    {formatPrice(t.price_yearly_cents)}/yr
+                  </Text>
+                )}
+              </View>
+            )}
           </Card>
-        </>
-      )}
+        );
+      })}
 
       {/* Booking Window Info */}
       <Text style={styles.sectionTitle}>Your Booking Window</Text>
@@ -137,47 +211,10 @@ export function MembershipScreen() {
           <Text style={styles.windowLabel}>You can book</Text>
           <Text style={styles.windowValue}>{bookableWindowDays} days ahead</Text>
         </View>
-        {!isMember && memberWindow > guestWindow && (
-          <View style={styles.windowHint}>
-            <Text style={styles.windowHintText}>
-              Members can book up to {memberWindow} days ahead
-            </Text>
-          </View>
-        )}
       </Card>
 
-      {/* Pricing */}
-      {tier && !isMember && (tier.price_monthly_cents || tier.price_yearly_cents) && (
-        <>
-          <Text style={styles.sectionTitle}>Pricing</Text>
-          <View style={styles.pricingRow}>
-            {tier.price_monthly_cents && (
-              <Card style={styles.pricingCard}>
-                <Text style={styles.pricingAmount}>
-                  {formatPrice(tier.price_monthly_cents)}
-                </Text>
-                <Text style={styles.pricingInterval}>per month</Text>
-              </Card>
-            )}
-            {tier.price_yearly_cents && (
-              <Card style={styles.pricingCard}>
-                <Text style={styles.pricingAmount}>
-                  {formatPrice(tier.price_yearly_cents)}
-                </Text>
-                <Text style={styles.pricingInterval}>per year</Text>
-                {tier.price_monthly_cents && (
-                  <Text style={styles.pricingSavings}>
-                    Save {formatPrice(tier.price_monthly_cents * 12 - tier.price_yearly_cents)}/yr
-                  </Text>
-                )}
-              </Card>
-            )}
-          </View>
-        </>
-      )}
-
       {/* CTA for non-members */}
-      {!isMember && tier && user && (
+      {!isMember && tiers.length > 0 && user && (
         <Card style={styles.ctaCard}>
           <Text style={styles.ctaText}>
             Membership purchases are available on the web at{' '}
@@ -250,39 +287,88 @@ const styles = StyleSheet.create({
     color: colors.mutedForeground,
     marginTop: spacing.xs,
   },
+  creditCard: {
+    marginBottom: spacing.lg,
+    backgroundColor: '#eff6ff',
+    borderColor: '#bfdbfe',
+  },
+  creditHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  creditTitle: {
+    ...typography.label,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+  creditAmount: {
+    ...typography.h2,
+    color: colors.foreground,
+  },
+  creditSubtext: {
+    ...typography.caption,
+    color: colors.mutedForeground,
+    marginTop: spacing.xs,
+  },
   sectionTitle: {
     ...typography.h3,
     color: colors.foreground,
     marginBottom: spacing.md,
     marginTop: spacing['2xl'],
   },
-  benefitDescription: {
-    ...typography.body,
+  tierCard: {
+    marginBottom: spacing.md,
+  },
+  tierCardActive: {
+    borderColor: '#22c55e',
+    borderWidth: 2,
+  },
+  tierHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  tierName: {
+    ...typography.h3,
     color: colors.foreground,
-    marginBottom: spacing.lg,
+  },
+  benefitDescription: {
+    ...typography.bodySmall,
+    color: colors.mutedForeground,
+    marginBottom: spacing.md,
   },
   benefitsList: {
-    gap: spacing.lg,
+    gap: spacing.sm,
   },
   benefitRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  benefitIcon: {
-    marginTop: 2,
-  },
-  benefitContent: {
-    flex: 1,
-  },
-  benefitLabel: {
-    ...typography.label,
-    color: colors.foreground,
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   benefitValue: {
     ...typography.bodySmall,
+    color: colors.foreground,
+    flex: 1,
+  },
+  tierPricing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  tierPrice: {
+    ...typography.label,
+    color: colors.foreground,
+    fontWeight: '700',
+  },
+  tierPriceDivider: {
+    ...typography.bodySmall,
     color: colors.mutedForeground,
-    marginTop: 2,
   },
   windowRow: {
     flexDirection: 'row',
@@ -296,39 +382,6 @@ const styles = StyleSheet.create({
   windowValue: {
     ...typography.h3,
     color: colors.foreground,
-  },
-  windowHint: {
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  windowHintText: {
-    ...typography.bodySmall,
-    color: colors.mutedForeground,
-  },
-  pricingRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  pricingCard: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  pricingAmount: {
-    ...typography.h2,
-    color: colors.foreground,
-  },
-  pricingInterval: {
-    ...typography.bodySmall,
-    color: colors.mutedForeground,
-    marginTop: spacing.xs,
-  },
-  pricingSavings: {
-    ...typography.caption,
-    color: '#166534',
-    marginTop: spacing.sm,
-    fontWeight: '600',
   },
   ctaCard: {
     marginTop: spacing['2xl'],

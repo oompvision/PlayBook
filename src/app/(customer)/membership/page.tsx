@@ -20,7 +20,7 @@ export default async function MembershipRoute({
   const { data: org } = await supabase
     .from("organizations")
     .select(
-      "id, name, slug, membership_tiers_enabled, guest_booking_window_days, member_booking_window_days, bookable_window_days"
+      "id, name, slug, membership_tiers_enabled, guest_booking_window_days, member_booking_window_days, bookable_window_days, credit_type"
     )
     .eq("slug", slug)
     .single();
@@ -29,16 +29,16 @@ export default async function MembershipRoute({
     redirect("/");
   }
 
-  // Fetch tier info (public read via RLS)
-  const { data: tier } = await supabase
+  // Fetch all tiers (public read via RLS)
+  const { data: tiers } = await supabase
     .from("membership_tiers")
     .select(
-      "id, name, benefit_description, discount_type, discount_value, price_monthly_cents, price_yearly_cents"
+      "id, sort_order, name, benefit_description, discount_type, discount_value, price_monthly_cents, price_yearly_cents, bookable_window_days, credit_amount, credit_period"
     )
     .eq("org_id", org.id)
-    .single();
+    .order("sort_order", { ascending: true });
 
-  if (!tier) {
+  if (!tiers || tiers.length === 0) {
     redirect("/");
   }
 
@@ -46,11 +46,9 @@ export default async function MembershipRoute({
   const auth = await getAuthUser();
 
   // If returning from Stripe checkout with session_id, verify and upsert membership
-  // immediately so the user sees their status without waiting for the async webhook.
   if (auth && searchParams.success === "true" && searchParams.session_id) {
     const serviceClient = createServiceClient();
     try {
-      // Get the connected Stripe account for this org
       const { data: paymentSettings } = await serviceClient
         .from("org_payment_settings")
         .select("stripe_account_id")
@@ -84,11 +82,14 @@ export default async function MembershipRoute({
             ? new Date(periodEndTs * 1000).toISOString()
             : null;
 
+          // Get the tier_id from subscription metadata
+          const tierId = sub.metadata?.tier_id || tiers[0].id;
+
           await serviceClient.from("user_memberships").upsert(
             {
               org_id: org.id,
               user_id: auth.user.id,
-              tier_id: tier.id,
+              tier_id: tierId,
               status: "active",
               source: "stripe",
               stripe_subscription_id: sub.id,
@@ -101,7 +102,6 @@ export default async function MembershipRoute({
         }
       }
     } catch (err) {
-      // Non-fatal — the webhook will handle it as a fallback
       console.error("[membership] Session verification failed:", err);
     }
   }
@@ -110,6 +110,7 @@ export default async function MembershipRoute({
   let membership: {
     status: string;
     source: string;
+    tier_id: string;
     current_period_end: string | null;
     expires_at: string | null;
     cancelled_at: string | null;
@@ -117,12 +118,11 @@ export default async function MembershipRoute({
   } | null = null;
 
   if (auth) {
-    // Use service client to reliably read membership (customer RLS only allows own reads)
     const serviceClient = createServiceClient();
     const { data } = await serviceClient
       .from("user_memberships")
       .select(
-        "status, source, current_period_end, expires_at, cancelled_at, stripe_subscription_id"
+        "status, source, tier_id, current_period_end, expires_at, cancelled_at, stripe_subscription_id"
       )
       .eq("org_id", org.id)
       .eq("user_id", auth.user.id)
@@ -146,23 +146,49 @@ export default async function MembershipRoute({
       )
     : false;
 
+  // Fetch credit balance if member
+  let creditBalance: {
+    has_credits: boolean;
+    credits_total: number;
+    credits_used: number;
+    credits_remaining: number;
+    credit_type: string | null;
+    credit_period: string | null;
+    period_end: string | null;
+  } | null = null;
+
+  if (auth && hasActivePerks) {
+    const serviceClient = createServiceClient();
+    const { data } = await serviceClient.rpc("get_or_create_credit_balance", {
+      p_org_id: org.id,
+      p_user_id: auth.user.id,
+    });
+    creditBalance = data;
+  }
+
   return (
     <div className="flex-1 py-6">
-      <div className="mx-auto max-w-3xl px-4 sm:px-6">
+      <div className="mx-auto max-w-4xl px-4 sm:px-6">
         <MembershipPage
           orgName={org.name}
-          tier={{
-            name: tier.name,
-            benefitDescription: tier.benefit_description,
-            discountType: tier.discount_type as "flat" | "percent",
-            discountValue: Number(tier.discount_value),
-            priceMonthly: tier.price_monthly_cents,
-            priceYearly: tier.price_yearly_cents,
-          }}
+          tiers={tiers.map((t) => ({
+            id: t.id,
+            sortOrder: t.sort_order ?? 1,
+            name: t.name,
+            benefitDescription: t.benefit_description,
+            discountType: t.discount_type as "flat" | "percent",
+            discountValue: Number(t.discount_value),
+            priceMonthly: t.price_monthly_cents,
+            priceYearly: t.price_yearly_cents,
+            bookableWindowDays: t.bookable_window_days,
+            creditAmount: t.credit_amount,
+            creditPeriod: t.credit_period as "daily" | "weekly" | "monthly" | null,
+          }))}
+          creditType={(org.credit_type as "hours" | "value" | null) ?? null}
           guestWindow={
             org.guest_booking_window_days ?? org.bookable_window_days ?? 30
           }
-          memberWindow={
+          defaultMemberWindow={
             org.member_booking_window_days ?? org.bookable_window_days ?? 30
           }
           isAuthenticated={!!auth}
@@ -171,6 +197,7 @@ export default async function MembershipRoute({
               ? {
                   status: membership.status,
                   source: membership.source,
+                  tierId: membership.tier_id,
                   currentPeriodEnd: membership.current_period_end,
                   expiresAt: membership.expires_at,
                   cancelledAt: membership.cancelled_at,
@@ -178,6 +205,7 @@ export default async function MembershipRoute({
                 }
               : null
           }
+          creditBalance={creditBalance}
           showSuccess={searchParams.success === "true"}
           showCancelled={searchParams.cancelled === "true"}
         />

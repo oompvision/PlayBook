@@ -31,6 +31,8 @@ export type MemberEntry = {
   memberSince: string | null;
   registeredAt: string;
   stripeSubscriptionId: string | null;
+  tierName: string | null;
+  tierId: string | null;
 };
 
 export default async function MembersPage({
@@ -67,12 +69,17 @@ export default async function MembersPage({
   const service = createServiceClient();
   const search = params.q?.trim();
 
-  // Fetch membership tier for this org
-  const { data: tier } = await supabase
+  // Fetch all membership tiers for this org
+  const { data: allTiers } = await supabase
     .from("membership_tiers")
-    .select("id, name, price_monthly_cents, price_yearly_cents")
+    .select("id, name, sort_order, price_monthly_cents, price_yearly_cents")
     .eq("org_id", org.id)
-    .single();
+    .order("sort_order", { ascending: true });
+
+  const tier = allTiers?.[0] ?? null;
+  const tierMap = new Map(
+    (allTiers || []).map((t) => [t.id, t])
+  );
 
   // Fetch ALL registered customers for the org
   let profileQuery = supabase
@@ -94,7 +101,7 @@ export default async function MembersPage({
   // Fetch memberships for all customers in this org
   const { data: memberships } = await service
     .from("user_memberships")
-    .select("id, user_id, status, source, stripe_subscription_id, current_period_end, expires_at, created_at")
+    .select("id, user_id, tier_id, status, source, stripe_subscription_id, current_period_end, expires_at, created_at")
     .eq("org_id", org.id)
     .in("user_id", allCustomerIds);
 
@@ -174,6 +181,8 @@ export default async function MembersPage({
       memberSince: membership?.created_at || null,
       registeredAt: c.created_at,
       stripeSubscriptionId: membership?.stripe_subscription_id || null,
+      tierName: membership?.tier_id ? (tierMap.get(membership.tier_id)?.name ?? null) : null,
+      tierId: membership?.tier_id || null,
     };
   });
 
@@ -324,6 +333,7 @@ export default async function MembersPage({
             orgId={org.id}
             locationsEnabled={org.locations_enabled ?? false}
             tierName={tier?.name || null}
+            tiers={(allTiers || []).map((t) => ({ id: t.id, name: t.name, sort_order: t.sort_order }))}
           />
         )}
       </div>

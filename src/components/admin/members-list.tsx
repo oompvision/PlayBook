@@ -40,7 +40,7 @@ function formatBillingInterval(interval: MemberEntry["billingInterval"]): string
     case "monthly": return "Monthly";
     case "yearly": return "Yearly";
     case "admin_granted": return "Granted";
-    default: return "—";
+    default: return "\u2014";
   }
 }
 
@@ -80,21 +80,26 @@ type Props = {
   orgId: string;
   locationsEnabled: boolean;
   tierName: string | null;
+  tiers: Array<{ id: string; name: string; sort_order: number }>;
 };
 
-export function MembersList({ entries, orgId, locationsEnabled, tierName }: Props) {
+export function MembersList({ entries, orgId, locationsEnabled, tierName, tiers }: Props) {
   const router = useRouter();
   const [selected, setSelected] = useState<MemberEntry | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
+  const [selectedGrantTierId, setSelectedGrantTierId] = useState<string>(
+    tiers[0]?.id ?? ""
+  );
 
   function openModal(entry: MemberEntry) {
     setSelected(entry);
     setModalOpen(true);
     setActionError(null);
     setShowRevokeConfirm(false);
+    setSelectedGrantTierId(tiers[0]?.id ?? "");
   }
 
   function closeModal() {
@@ -112,7 +117,11 @@ export function MembersList({ entries, orgId, locationsEnabled, tierName }: Prop
       const res = await fetch("/api/admin/members", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ org_id: orgId, user_id: selected.userId }),
+        body: JSON.stringify({
+          org_id: orgId,
+          user_id: selected.userId,
+          tier_id: selectedGrantTierId || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Grant failed");
@@ -173,7 +182,7 @@ export function MembersList({ entries, orgId, locationsEnabled, tierName }: Prop
                   </th>
                 )}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                  Billing
+                  Tier
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">
                   Status
@@ -215,7 +224,7 @@ export function MembersList({ entries, orgId, locationsEnabled, tierName }: Prop
                   <td className="px-6 py-4">
                     <span className="text-sm text-gray-800 dark:text-white/90">
                       {entry.phone || (
-                        <span className="text-gray-400 dark:text-gray-500">—</span>
+                        <span className="text-gray-400 dark:text-gray-500">&mdash;</span>
                       )}
                     </span>
                   </td>
@@ -223,14 +232,14 @@ export function MembersList({ entries, orgId, locationsEnabled, tierName }: Prop
                     <td className="px-6 py-4">
                       <span className="text-sm text-gray-500 dark:text-gray-400">
                         {entry.defaultLocation || (
-                          <span className="text-gray-400 dark:text-gray-500">—</span>
+                          <span className="text-gray-400 dark:text-gray-500">&mdash;</span>
                         )}
                       </span>
                     </td>
                   )}
                   <td className="px-6 py-4">
                     <span className="text-sm text-gray-800 dark:text-white/90">
-                      {formatBillingInterval(entry.billingInterval)}
+                      {entry.tierName || formatBillingInterval(entry.billingInterval)}
                     </span>
                   </td>
                   <td className="px-6 py-4">
@@ -245,7 +254,7 @@ export function MembersList({ entries, orgId, locationsEnabled, tierName }: Prop
                             year: "numeric",
                           })
                         : (
-                          <span className="text-gray-400 dark:text-gray-500">—</span>
+                          <span className="text-gray-400 dark:text-gray-500">&mdash;</span>
                         )}
                     </span>
                   </td>
@@ -279,12 +288,12 @@ export function MembersList({ entries, orgId, locationsEnabled, tierName }: Prop
                 </div>
                 <p className="truncate text-xs text-gray-500 dark:text-gray-400">
                   {entry.email || "No email"}
-                  {entry.phone ? ` · ${entry.phone}` : ""}
+                  {entry.phone ? ` \u00B7 ${entry.phone}` : ""}
                 </p>
                 <p className="text-xs text-gray-400 dark:text-gray-500">
-                  {formatBillingInterval(entry.billingInterval)}
+                  {entry.tierName || formatBillingInterval(entry.billingInterval)}
                   {locationsEnabled && entry.defaultLocation
-                    ? ` · ${entry.defaultLocation}`
+                    ? ` \u00B7 ${entry.defaultLocation}`
                     : ""}
                 </p>
               </div>
@@ -346,7 +355,7 @@ export function MembersList({ entries, orgId, locationsEnabled, tierName }: Prop
                 <CreditCard className="h-4 w-4 shrink-0 text-gray-400" />
                 <span className="text-gray-700 dark:text-gray-300">
                   {isMember
-                    ? `${tierName || "Membership"} · ${formatBillingInterval(selected.billingInterval)}`
+                    ? `${selected.tierName || tierName || "Membership"} \u00B7 ${formatBillingInterval(selected.billingInterval)}`
                     : "No membership"
                   }
                 </span>
@@ -424,18 +433,39 @@ export function MembersList({ entries, orgId, locationsEnabled, tierName }: Prop
                   )}
                 </>
               ) : (
-                <button
-                  onClick={handleGrant}
-                  disabled={actionLoading}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {actionLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <UserPlus className="h-4 w-4" />
+                <>
+                  {/* Tier selection for grant */}
+                  {tiers.length > 1 && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                        Select Tier
+                      </label>
+                      <select
+                        value={selectedGrantTierId}
+                        onChange={(e) => setSelectedGrantTierId(e.target.value)}
+                        className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-3 focus:ring-blue-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90"
+                      >
+                        {tiers.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   )}
-                  Grant Membership
-                </button>
+                  <button
+                    onClick={handleGrant}
+                    disabled={actionLoading}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {actionLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <UserPlus className="h-4 w-4" />
+                    )}
+                    Grant Membership
+                  </button>
+                </>
               )}
 
               <button

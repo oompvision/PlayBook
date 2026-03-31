@@ -55,4 +55,5 @@ export const autoRefundSchema = z.object({
 
 export const membershipCheckoutSchema = z.object({
   interval: z.enum(["month", "year"]),
+  tier_id: z.string().uuid(),
 });
