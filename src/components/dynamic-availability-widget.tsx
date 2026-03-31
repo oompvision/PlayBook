@@ -9,6 +9,7 @@ import {
   type CheckoutFormHandle,
 } from "@/components/checkout-form";
 import { createClient } from "@/lib/supabase/client";
+import { validatePassword } from "@/lib/password-validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -943,6 +944,13 @@ export function DynamicAvailabilityWidget(
   // Inline sign-up handler
   async function handlePanelSignUp(e: React.FormEvent) {
     e.preventDefault();
+
+    const pwCheck = validatePassword(signUpPassword);
+    if (!pwCheck.valid) {
+      setSignUpError("Password requirements: " + pwCheck.errors.join(", "));
+      return;
+    }
+
     setSignUpLoading(true);
     setSignUpError("");
 
@@ -2246,10 +2254,10 @@ export function DynamicAvailabilityWidget(
                                 <Input
                                   id="dynamic-panel-signup-password"
                                   type="password"
-                                  placeholder="At least 6 characters"
+                                  placeholder="At least 8 characters"
                                   value={signUpPassword}
                                   onChange={(e) => setSignUpPassword(e.target.value)}
-                                  minLength={6}
+                                  minLength={8}
                                   required
                                 />
                               </div>

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatPrice } from "@/lib/utils";
+import { validatePassword } from "@/lib/password-validation";
 import {
   StripeCheckoutWrapper,
   CheckoutForm,
@@ -1112,6 +1113,13 @@ export function AvailabilityWidget({
   // Inline sign-up handler
   async function handlePanelSignUp(e: React.FormEvent) {
     e.preventDefault();
+
+    const pwCheck = validatePassword(signUpPassword);
+    if (!pwCheck.valid) {
+      setSignUpError("Password requirements: " + pwCheck.errors.join(", "));
+      return;
+    }
+
     setSignUpLoading(true);
     setSignUpError("");
 
@@ -2913,10 +2921,10 @@ export function AvailabilityWidget({
                                 <Input
                                   id="panel-signup-password"
                                   type="password"
-                                  placeholder="At least 6 characters"
+                                  placeholder="At least 8 characters"
                                   value={signUpPassword}
                                   onChange={(e) => setSignUpPassword(e.target.value)}
-                                  minLength={6}
+                                  minLength={8}
                                   required
                                 />
                               </div>
