@@ -39,27 +39,29 @@ export function AdminLoginForm() {
     setError("");
     setLockoutMessage("");
 
-    const supabase = createClient();
+    // Check lockout via server endpoint (uses service client)
+    try {
+      const lockRes = await fetch(`/api/audit?email=${encodeURIComponent(email)}`);
+      const lockCheck = await lockRes.json();
 
-    // Check lockout before attempting login
-    const { data: lockCheck } = await supabase.rpc("check_login_allowed", {
-      p_email: email,
-    });
-
-    if (lockCheck && !lockCheck.allowed) {
-      const lockedUntil = lockCheck.locked_until
-        ? new Date(lockCheck.locked_until)
-        : null;
-      const minutesLeft = lockedUntil
-        ? Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 60000))
-        : 15;
-      setLockoutMessage(
-        `Too many failed login attempts. Please try again in ${minutesLeft} minute${minutesLeft !== 1 ? "s" : ""}.`
-      );
-      setLoading(false);
-      return;
+      if (lockCheck && !lockCheck.allowed) {
+        const lockedUntil = lockCheck.locked_until
+          ? new Date(lockCheck.locked_until)
+          : null;
+        const minutesLeft = lockedUntil
+          ? Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 60000))
+          : 15;
+        setLockoutMessage(
+          `Too many failed login attempts. Please try again in ${minutesLeft} minute${minutesLeft !== 1 ? "s" : ""}.`
+        );
+        setLoading(false);
+        return;
+      }
+    } catch {
+      // If lockout check fails, allow login attempt
     }
 
+    const supabase = createClient();
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -68,21 +70,21 @@ export function AdminLoginForm() {
     if (signInError) {
       setError(signInError.message);
       setLoading(false);
-      // Record failed attempt
-      supabase.rpc("record_login_attempt", {
-        p_email: email,
-        p_ip: null,
-        p_success: false,
-      }).then(() => {});
+      // Record failed attempt via server endpoint
+      fetch("/api/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "login_failed", resourceType: "auth", email, metadata: { method: "password" } }),
+      }).catch(() => {});
       return;
     }
 
-    // Record successful login
-    supabase.rpc("record_login_attempt", {
-      p_email: email,
-      p_ip: null,
-      p_success: true,
-    }).then(() => {});
+    // Record successful login (clears failed attempts)
+    fetch("/api/audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "login", resourceType: "auth", email, metadata: { method: "password" } }),
+    }).catch(() => {});
 
     // Check role
     const { data: profile } = await supabase.rpc("get_my_profile");
