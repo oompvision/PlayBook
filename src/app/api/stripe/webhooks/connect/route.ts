@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { createServiceClient } from "@/lib/supabase/service";
 import Stripe from "stripe";
+import { logAudit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/stripe/webhooks/connect
@@ -35,7 +37,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("[stripe/webhooks/connect] Signature verification failed:", message);
+    logger.error("[stripe/webhooks/connect] Signature verification failed", { message });
     return NextResponse.json(
       { error: `Webhook signature verification failed: ${message}` },
       { status: 400 }
@@ -56,9 +58,16 @@ export async function POST(request: NextRequest) {
           .update({ stripe_onboarding_complete: isComplete })
           .eq("stripe_account_id", account.id);
 
-        console.log(
+        logger.info(
           `[stripe/webhooks/connect] account.updated: ${account.id} → onboarding_complete=${isComplete}`
         );
+
+        logAudit({
+          action: "update",
+          resourceType: "stripe_account",
+          resourceId: account.id,
+          metadata: { event_type: "account.updated", onboarding_complete: isComplete },
+        });
         break;
       }
 
@@ -81,7 +90,7 @@ export async function POST(request: NextRequest) {
         const { org_id, user_id, tier_id } = subscription.metadata;
 
         if (!org_id || !user_id || !tier_id) {
-          console.error(
+          logger.error(
             "[stripe/webhooks/connect] checkout.session.completed: missing metadata",
             subscription.metadata
           );
@@ -111,9 +120,18 @@ export async function POST(request: NextRequest) {
           { onConflict: "org_id,user_id" }
         );
 
-        console.log(
+        logger.info(
           `[stripe/webhooks/connect] checkout.session.completed: user=${user_id} org=${org_id} → active`
         );
+
+        logAudit({
+          orgId: org_id,
+          userId: user_id,
+          action: "create",
+          resourceType: "membership",
+          resourceId: subscription.id,
+          metadata: { event_type: "checkout.session.completed", tier_id },
+        });
         break;
       }
 
@@ -142,8 +160,8 @@ export async function POST(request: NextRequest) {
             })
             .eq("stripe_subscription_id", subscriptionId);
 
-          console.log(
-            `[stripe/webhooks/connect] invoice.payment_succeeded: sub=${subscriptionId} → active, period_end=${new Date(periodEnd * 1000).toISOString()}`
+          logger.info(
+            `[stripe/webhooks/connect] invoice.payment_succeeded: sub=${subscriptionId} → active`
           );
         }
         break;
@@ -165,7 +183,7 @@ export async function POST(request: NextRequest) {
           .update({ status: "past_due" })
           .eq("stripe_subscription_id", subscriptionId);
 
-        console.log(
+        logger.warn(
           `[stripe/webhooks/connect] invoice.payment_failed: sub=${subscriptionId} → past_due`
         );
         break;
@@ -182,9 +200,16 @@ export async function POST(request: NextRequest) {
           })
           .eq("stripe_subscription_id", subscription.id);
 
-        console.log(
+        logger.info(
           `[stripe/webhooks/connect] customer.subscription.deleted: sub=${subscription.id} → cancelled`
         );
+
+        logAudit({
+          action: "update",
+          resourceType: "membership",
+          resourceId: subscription.id,
+          metadata: { event_type: "customer.subscription.deleted", status: "cancelled" },
+        });
         break;
       }
 
@@ -214,21 +239,21 @@ export async function POST(request: NextRequest) {
           .update(updateData)
           .eq("stripe_subscription_id", subscription.id);
 
-        console.log(
+        logger.info(
           `[stripe/webhooks/connect] customer.subscription.updated: sub=${subscription.id}, cancel_at_period_end=${subscription.cancel_at_period_end}`
         );
         break;
       }
 
       default:
-        console.log(
+        logger.info(
           `[stripe/webhooks/connect] Unhandled event type: ${event.type}`
         );
     }
 
     return NextResponse.json({ received: true });
   } catch (err) {
-    console.error("[stripe/webhooks/connect] Processing error:", err);
+    logger.error("[stripe/webhooks/connect] Processing error", err);
     return NextResponse.json({ error: "Webhook processing failed" }, { status: 500 });
   }
 }

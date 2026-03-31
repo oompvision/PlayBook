@@ -13,6 +13,9 @@ import {
   type BayInfo,
   type RateOverride,
 } from "@/lib/availability-engine";
+import { sanitizeForAI } from "@/lib/pii-sanitizer";
+import { logAudit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 
 function getGenAI() {
   return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
@@ -737,7 +740,7 @@ async function executeCreateBookingDynamic(
   });
 
   if (error) {
-    console.error("[chat] create_dynamic_booking error:", error.message);
+    logger.error("[chat] create_dynamic_booking error", { message: error.message });
     return { error: "Booking could not be completed. Please try again." };
   }
 
@@ -745,6 +748,16 @@ async function executeCreateBookingDynamic(
   const totalPrice = `$${(priceCents / 100).toFixed(2)}`;
   const startFormatted = formatTimeInZone(args.start_time, org.timezone);
   const endFormatted = formatTimeInZone(args.end_time, org.timezone);
+
+  // Audit log: booking created via AI chat
+  logAudit({
+    orgId: org.id,
+    userId: customerId,
+    action: "create",
+    resourceType: "booking",
+    resourceId: data?.booking_id,
+    metadata: { source: "ai_chat", confirmation_code: confirmationCode },
+  });
 
   // Fire booking notifications (non-blocking)
   const chatDateStr = new Date(args.date + "T12:00:00").toLocaleDateString("en-US", {
@@ -940,7 +953,7 @@ async function executeCreateBookingSlotBased(
     });
 
     if (error) {
-      console.error("[chat] create_booking error:", error.message);
+      logger.error("[chat] create_booking error", { message: error.message });
       return { error: "Booking could not be completed. Please try again." };
     }
 
@@ -954,6 +967,17 @@ async function executeCreateBookingSlotBased(
         end_time: formatTimeInZone(b.end_time, org.timezone),
       });
     }
+  }
+
+  // Audit log: booking created via AI chat (slot-based)
+  for (const b of results) {
+    logAudit({
+      orgId: org.id,
+      userId: customerId,
+      action: "create",
+      resourceType: "booking",
+      metadata: { source: "ai_chat", confirmation_code: b.confirmation_code },
+    });
   }
 
   // Fire booking notifications (non-blocking, server-side)
@@ -1036,9 +1060,19 @@ async function executeCancelBooking(
   });
 
   if (error) {
-    console.error("[chat] cancel_booking error:", error.message);
+    logger.error("[chat] cancel_booking error", { message: error.message });
     return { error: "Cancellation could not be completed. Please try again." };
   }
+
+  // Audit log: booking cancelled via AI chat
+  logAudit({
+    orgId: org.id,
+    userId: customerId,
+    action: "update",
+    resourceType: "booking",
+    resourceId: booking.id,
+    metadata: { source: "ai_chat", confirmation_code: args.confirmation_code, status: "cancelled" },
+  });
 
   // Fire cancellation notifications (non-blocking)
   const cancelMeta = { confirmation_code: args.confirmation_code };
@@ -1308,7 +1342,7 @@ async function executeRegisterForEvent(
   });
 
   if (error) {
-    console.error("[chat] register_for_event error:", error.message);
+    logger.error("[chat] register_for_event error", { message: error.message });
     return { error: "Registration could not be completed. Please try again." };
   }
 
@@ -1348,7 +1382,7 @@ export async function POST(request: Request) {
   }
 
   if (!process.env.GEMINI_API_KEY) {
-    console.error("GEMINI_API_KEY environment variable is not set");
+    logger.error("GEMINI_API_KEY environment variable is not set");
     return Response.json(
       { error: "Chat is not configured yet. Please add your GEMINI_API_KEY." },
       { status: 503 }
@@ -1803,7 +1837,7 @@ Quick reply buttons:
         responseParts.push({
           functionResponse: {
             name: call.name!,
-            response: result,
+            response: sanitizeForAI(result),
           },
         } as Part);
       }
@@ -1860,7 +1894,7 @@ Quick reply buttons:
       },
     });
   } catch (error) {
-    console.error("Chat API error:", error);
+    logger.error("Chat API error", error);
     const message =
       error instanceof Error ? error.message : "Unknown error";
     // Log the full error server-side but return generic message to client

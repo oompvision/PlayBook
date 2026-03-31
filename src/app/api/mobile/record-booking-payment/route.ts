@@ -3,6 +3,9 @@ import { getMobileAuth } from "@/lib/mobile-auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
+import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { mobileRecordPaymentSchema } from "@/lib/schemas/mobile";
 
 /**
  * POST /api/mobile/record-booking-payment
@@ -18,25 +21,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = (await request.json()) as {
-      org_id: string;
-      booking_id?: string;
-      event_registration_id?: string;
-      intent_id: string;
-      intent_type: "payment" | "setup";
-      stripe_customer_id: string;
-      stripe_payment_method_id?: string;
-      amount_cents: number;
-      cancellation_policy_text?: string;
-      policy_agreed_at?: string;
-    };
-
-    if (!body.org_id || !body.intent_id || !body.intent_type) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
-    }
+    const parsed = await validateBody(request, mobileRecordPaymentSchema);
+    if (parsed.error) return parsed.error;
+    const body = parsed.data;
 
     if (!body.booking_id && !body.event_registration_id) {
       return NextResponse.json(
@@ -186,7 +173,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (insertError) {
-      console.error("[mobile/record-booking-payment] insert error:", insertError);
+      logger.error("[mobile/record-booking-payment] insert error", insertError);
       return NextResponse.json(
         { error: `Failed to record payment: ${insertError.message}` },
         { status: 500 }
@@ -203,7 +190,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(payment);
   } catch (err) {
-    console.error("[mobile/record-booking-payment] error:", err);
+    logger.error("[mobile/record-booking-payment] error", err);
 
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

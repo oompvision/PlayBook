@@ -4,6 +4,9 @@ import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
+import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { modifyBookingPaymentSchema } from "@/lib/schemas/stripe";
 
 /**
  * POST /api/stripe/modify-booking-payment
@@ -25,18 +28,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = (await request.json()) as {
-      old_booking_id: string;
-      new_booking_id: string;
-      new_amount_cents: number;
-    };
-
-    if (!body.old_booking_id || !body.new_booking_id) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
-    }
+    const parsed = await validateBody(request, modifyBookingPaymentSchema);
+    if (parsed.error) return parsed.error;
+    const body = parsed.data;
 
     // Resolve org
     const slug = await getFacilitySlug();
@@ -140,7 +134,7 @@ export async function POST(request: NextRequest) {
       });
     }
   } catch (err) {
-    console.error("[modify-booking-payment] error:", err);
+    logger.error("[modify-booking-payment] error", err);
 
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

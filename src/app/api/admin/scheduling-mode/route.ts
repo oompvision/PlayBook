@@ -3,6 +3,9 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { requireAdmin } from "@/lib/auth";
 import { getFacilitySlug } from "@/lib/facility";
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { schedulingModeSchema } from "@/lib/schemas/admin";
 
 export async function PUT(request: NextRequest) {
   const slug = await getFacilitySlug();
@@ -23,26 +26,9 @@ export async function PUT(request: NextRequest) {
 
   await requireAdmin(org.id);
 
-  const body = await request.json();
-  const { scheduling_type, bookable_window_days } = body;
-
-  if (!["slot_based", "dynamic", "events_only"].includes(scheduling_type)) {
-    return NextResponse.json(
-      { error: "Invalid scheduling_type" },
-      { status: 400 }
-    );
-  }
-
-  if (
-    typeof bookable_window_days !== "number" ||
-    bookable_window_days < 1 ||
-    bookable_window_days > 365
-  ) {
-    return NextResponse.json(
-      { error: "bookable_window_days must be between 1 and 365" },
-      { status: 400 }
-    );
-  }
+  const parsed = await validateBody(request, schedulingModeSchema);
+  if (parsed.error) return parsed.error;
+  const { scheduling_type, bookable_window_days } = parsed.data;
 
   // Use service role client to bypass RLS — auth is already verified above
   const service = createServiceClient();
@@ -52,7 +38,7 @@ export async function PUT(request: NextRequest) {
     .eq("id", org.id);
 
   if (error) {
-    console.error("[admin/scheduling-mode] update error:", error.message);
+    logger.error("[admin/scheduling-mode] update error", { message: error.message });
     return NextResponse.json({ error: "Failed to update scheduling mode" }, { status: 500 });
   }
 

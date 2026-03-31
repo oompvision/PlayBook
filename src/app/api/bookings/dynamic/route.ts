@@ -12,6 +12,8 @@ import {
 import { createNotification, notifyOrgAdmins } from "@/lib/notifications";
 import { formatTimeInZone } from "@/lib/utils";
 import { z } from "zod/v4";
+import { logAudit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 
 const bookingSchema = z.object({
   org_id: z.string().uuid(),
@@ -175,9 +177,19 @@ export async function POST(request: NextRequest) {
   });
 
   if (error) {
-    console.error("[bookings/dynamic] create_dynamic_booking error:", error.message);
+    logger.error("[bookings/dynamic] create_dynamic_booking error", { message: error.message });
     return NextResponse.json({ error: "Booking could not be completed. Please try again." }, { status: 409 });
   }
+
+  // Audit log: booking created via API
+  logAudit({
+    orgId: org_id,
+    userId: auth.profile.id,
+    action: "create",
+    resourceType: "booking",
+    resourceId: data?.booking_id,
+    metadata: { source: "api", confirmation_code: data?.confirmation_code },
+  });
 
   // Get the bay name for the response
   const { data: bayData } = await supabase
@@ -203,7 +215,7 @@ export async function POST(request: NextRequest) {
     endTime: end_time,
     totalPriceCents: price_cents,
   }).catch((err) => {
-    console.error("[bookings/dynamic] Notification error:", err);
+    logger.error("[bookings/dynamic] Notification error", err);
   });
 
   return NextResponse.json({

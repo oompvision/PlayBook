@@ -3,6 +3,9 @@ import { getFacilitySlug } from "@/lib/facility";
 import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
+import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { membershipCheckoutSchema } from "@/lib/schemas/stripe";
 
 /**
  * POST /api/stripe/membership-checkout
@@ -19,16 +22,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { interval } = (await request.json()) as {
-      interval: "month" | "year";
-    };
-
-    if (!interval || !["month", "year"].includes(interval)) {
-      return NextResponse.json(
-        { error: "interval must be 'month' or 'year'" },
-        { status: 400 }
-      );
-    }
+    const parsed = await validateBody(request, membershipCheckoutSchema);
+    if (parsed.error) return parsed.error;
+    const { interval } = parsed.data;
 
     // 2. Resolve org from facility slug
     const slug = await getFacilitySlug();
@@ -199,7 +195,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ url: session.url });
   } catch (err) {
-    console.error("[membership-checkout] Error:", err);
+    logger.error("[membership-checkout] Error", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

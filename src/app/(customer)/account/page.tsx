@@ -13,7 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Check, MapPin } from "lucide-react";
+import { Check, MapPin, AlertTriangle } from "lucide-react";
 
 type ProfileData = {
   id: string;
@@ -50,6 +50,11 @@ export default function AccountPage() {
   const [savedLocationId, setSavedLocationId] = useState("");
   const [locationSaving, setLocationSaving] = useState(false);
   const [locationSuccess, setLocationSuccess] = useState(false);
+
+  // Delete account state
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     async function loadProfile() {
@@ -177,6 +182,24 @@ export default function AccountPage() {
       setTimeout(() => setLocationSuccess(false), 3000);
     }
     setLocationSaving(false);
+  }
+
+  async function handleDeleteAccount() {
+    if (deleteConfirmation !== "DELETE") return;
+    setDeleting(true);
+    setDeleteError("");
+
+    const res = await fetch("/api/auth/delete-account", { method: "POST" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setDeleteError(data.error || "Failed to delete account.");
+      setDeleting(false);
+      return;
+    }
+
+    // Sign out and redirect
+    await supabase.auth.signOut();
+    window.location.href = "/";
   }
 
   if (loading) {
@@ -315,6 +338,45 @@ export default function AccountPage() {
             </CardContent>
           </Card>
         )}
+        {/* Delete Account */}
+        <Card className="mt-8 border-red-200 dark:border-red-900">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              <CardTitle className="text-lg text-red-600 dark:text-red-400">
+                Delete Account
+              </CardTitle>
+            </div>
+            <CardDescription>
+              Permanently delete your account and personal data. Your booking
+              history will be preserved anonymously for record-keeping.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {deleteError && (
+              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                {deleteError}
+              </div>
+            )}
+            <p className="text-sm text-muted-foreground">
+              Type <span className="font-mono font-semibold">DELETE</span> to
+              confirm. This action cannot be undone.
+            </p>
+            <Input
+              placeholder='Type "DELETE" to confirm'
+              value={deleteConfirmation}
+              onChange={(e) => setDeleteConfirmation(e.target.value)}
+            />
+            <Button
+              variant="destructive"
+              className="w-full"
+              disabled={deleteConfirmation !== "DELETE" || deleting}
+              onClick={handleDeleteAccount}
+            >
+              {deleting ? "Deleting..." : "Permanently Delete My Account"}
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

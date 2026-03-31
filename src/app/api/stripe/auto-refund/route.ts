@@ -3,6 +3,9 @@ import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
+import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { autoRefundSchema } from "@/lib/schemas/stripe";
 
 /**
  * POST /api/stripe/auto-refund
@@ -19,14 +22,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { booking_id } = (await request.json()) as { booking_id: string };
-
-    if (!booking_id) {
-      return NextResponse.json(
-        { error: "Missing booking_id" },
-        { status: 400 }
-      );
-    }
+    const parsed = await validateBody(request, autoRefundSchema);
+    if (parsed.error) return parsed.error;
+    const { booking_id } = parsed.data;
 
     const supabase = createServiceClient();
 
@@ -148,7 +146,7 @@ export async function POST(request: NextRequest) {
       refunded_amount_cents: refundAmount,
     });
   } catch (err) {
-    console.error("[auto-refund] error:", err);
+    logger.error("[auto-refund] error", err);
 
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

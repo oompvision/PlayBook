@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getFacilitySlug } from "@/lib/facility";
 import { createServiceClient } from "@/lib/supabase/service";
+import { logger } from "@/lib/logger";
 
 /**
  * GET /api/org/payment-mode
@@ -65,7 +66,7 @@ export async function GET() {
       no_show_fee_type: settings.no_show_fee_type,
     });
   } catch (err) {
-    console.error("[payment-mode] GET error:", err);
+    logger.error("[payment-mode] GET error", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

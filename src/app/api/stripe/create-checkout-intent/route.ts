@@ -4,6 +4,10 @@ import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
+import { logAudit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { checkoutIntentSchema } from "@/lib/schemas/stripe";
 
 /**
  * POST /api/stripe/create-checkout-intent
@@ -18,18 +22,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { slot_ids, location_id, discount_cents: rawDiscount } = (await request.json()) as {
-      slot_ids: string[];
-      location_id?: string | null;
-      discount_cents?: number;
-    };
-
-    if (!slot_ids || slot_ids.length === 0) {
-      return NextResponse.json(
-        { error: "slot_ids is required" },
-        { status: 400 }
-      );
-    }
+    const parsed = await validateBody(request, checkoutIntentSchema);
+    if (parsed.error) return parsed.error;
+    const { slot_ids, location_id, discount_cents: rawDiscount } = parsed.data;
 
     // 2. Resolve org from facility slug
     const slug = await getFacilitySlug();
@@ -179,7 +174,7 @@ export async function POST(request: NextRequest) {
       customerSessionClientSecret = customerSession.client_secret;
     } catch (csErr) {
       // Non-fatal — fall back to no saved cards
-      console.warn("[create-checkout-intent] CustomerSession creation failed:", csErr);
+      logger.warn("[create-checkout-intent] CustomerSession creation failed", csErr);
     }
 
     // 8. Create intent based on payment mode
@@ -216,6 +211,16 @@ export async function POST(request: NextRequest) {
         },
         { stripeAccount: stripeAccountId }
       );
+
+      // Audit log: payment intent created
+      logAudit({
+        orgId: org.id,
+        userId: auth.profile.id,
+        action: "create",
+        resourceType: "payment_intent",
+        resourceId: paymentIntent.id,
+        metadata: { amount_cents: totalCents, slot_count: slot_ids.length },
+      });
 
       return NextResponse.json({
         client_secret: paymentIntent.client_secret,
@@ -267,7 +272,7 @@ export async function POST(request: NextRequest) {
       });
     }
   } catch (err) {
-    console.error("[create-checkout-intent] error:", err);
+    logger.error("[create-checkout-intent] error", err);
 
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

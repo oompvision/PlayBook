@@ -4,6 +4,9 @@ import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
+import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { checkoutIntentDynamicSchema } from "@/lib/schemas/stripe";
 
 /**
  * POST /api/stripe/create-checkout-intent-dynamic
@@ -19,18 +22,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { price_cents, location_id, discount_cents: rawDiscount } = (await request.json()) as {
-      price_cents: number;
-      location_id?: string | null;
-      discount_cents?: number;
-    };
-
-    if (!price_cents || price_cents <= 0) {
-      return NextResponse.json(
-        { error: "Valid price_cents is required" },
-        { status: 400 }
-      );
-    }
+    const parsed = await validateBody(request, checkoutIntentDynamicSchema);
+    if (parsed.error) return parsed.error;
+    const { price_cents, location_id, discount_cents: rawDiscount } = parsed.data;
 
     // Apply membership discount (clamped to not exceed price)
     const discountCents = Math.max(0, Math.min(rawDiscount || 0, price_cents));
@@ -156,7 +150,7 @@ export async function POST(request: NextRequest) {
       customerSessionClientSecret = customerSession.client_secret;
     } catch (csErr) {
       // Non-fatal — fall back to no saved cards
-      console.warn("[create-checkout-intent-dynamic] CustomerSession creation failed:", csErr);
+      logger.warn("[create-checkout-intent-dynamic] CustomerSession creation failed", csErr);
     }
 
     // 7. Create intent based on payment mode
@@ -243,7 +237,7 @@ export async function POST(request: NextRequest) {
       });
     }
   } catch (err: unknown) {
-    console.error("[create-checkout-intent-dynamic] error:", err);
+    logger.error("[create-checkout-intent-dynamic] error", err);
 
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

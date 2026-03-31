@@ -4,6 +4,9 @@ import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
+import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { refundSchema } from "@/lib/schemas/stripe";
 
 /**
  * POST /api/stripe/refund
@@ -32,20 +35,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const body = (await request.json()) as {
-      booking_id: string;
-      refund_type: "full" | "partial";
-      amount_cents?: number;
-      amount_percent?: number;
-      note?: string;
-    };
-
-    if (!body.booking_id || !body.refund_type) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
-    }
+    const parsed = await validateBody(request, refundSchema);
+    if (parsed.error) return parsed.error;
+    const body = parsed.data;
 
     // Resolve org
     const slug = await getFacilitySlug();
@@ -194,7 +186,7 @@ export async function POST(request: NextRequest) {
       status: isFullyRefunded ? "refunded" : "partially_refunded",
     });
   } catch (err) {
-    console.error("[refund] error:", err);
+    logger.error("[refund] error", err);
 
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

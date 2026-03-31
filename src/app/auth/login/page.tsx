@@ -39,6 +39,7 @@ function LoginForm() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [lockoutMessage, setLockoutMessage] = useState("");
 
   function switchMode(newMode: Mode) {
     setMode(newMode);
@@ -50,6 +51,29 @@ function LoginForm() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setLockoutMessage("");
+
+    // Check lockout via server endpoint (uses service client)
+    try {
+      const lockRes = await fetch(`/api/audit?email=${encodeURIComponent(email)}`);
+      const lockCheck = await lockRes.json();
+
+      if (lockCheck && !lockCheck.allowed) {
+        const lockedUntil = lockCheck.locked_until
+          ? new Date(lockCheck.locked_until)
+          : null;
+        const minutesLeft = lockedUntil
+          ? Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 60000))
+          : 15;
+        setLockoutMessage(
+          `Too many failed login attempts. Please try again in ${minutesLeft} minute${minutesLeft !== 1 ? "s" : ""}.`
+        );
+        setLoading(false);
+        return;
+      }
+    } catch {
+      // If lockout check fails, allow login attempt
+    }
 
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({
@@ -60,8 +84,21 @@ function LoginForm() {
     if (error) {
       setError(error.message);
       setLoading(false);
+      // Record failed attempt via server endpoint
+      fetch("/api/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "login_failed", resourceType: "auth", email, metadata: { method: "password" } }),
+      }).catch(() => {});
       return;
     }
+
+    // Record successful login (clears failed attempts)
+    fetch("/api/audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "login", resourceType: "auth", email, metadata: { method: "password" } }),
+    }).catch(() => {});
 
     // Full page navigation so middleware refreshes the session cookies
     // for server components to pick up
@@ -180,6 +217,11 @@ function LoginForm() {
             {message && (
               <div className="rounded-md bg-green-50 p-3 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
                 {message}
+              </div>
+            )}
+            {lockoutMessage && (
+              <div className="rounded-md bg-yellow-50 p-3 text-sm text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400">
+                {lockoutMessage}
               </div>
             )}
             {error && (

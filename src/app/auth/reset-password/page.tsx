@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { validatePassword } from "@/lib/password-validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,8 +55,9 @@ export default function ResetPasswordPage() {
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+    const pwCheck = validatePassword(password);
+    if (!pwCheck.valid) {
+      setError("Password requirements: " + pwCheck.errors.join(", "));
       return;
     }
 
@@ -115,7 +117,7 @@ export default function ResetPasswordPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  minLength={6}
+                  minLength={8}
                 />
               </div>
               <div className="space-y-2">
@@ -126,7 +128,7 @@ export default function ResetPasswordPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
-                  minLength={6}
+                  minLength={8}
                 />
               </div>
             </CardContent>

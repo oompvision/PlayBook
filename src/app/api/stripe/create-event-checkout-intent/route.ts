@@ -4,6 +4,9 @@ import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
+import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { eventCheckoutIntentSchema } from "@/lib/schemas/stripe";
 
 /**
  * POST /api/stripe/create-event-checkout-intent
@@ -18,18 +21,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { event_id, registration_id, discount_cents: rawDiscount } = (await request.json()) as {
-      event_id: string;
-      registration_id: string;
-      discount_cents?: number;
-    };
-
-    if (!event_id || !registration_id) {
-      return NextResponse.json(
-        { error: "event_id and registration_id are required" },
-        { status: 400 }
-      );
-    }
+    const parsed = await validateBody(request, eventCheckoutIntentSchema);
+    if (parsed.error) return parsed.error;
+    const { event_id, registration_id, discount_cents: rawDiscount } = parsed.data;
 
     // 2. Resolve org from facility slug
     const slug = await getFacilitySlug();
@@ -247,7 +241,7 @@ export async function POST(request: NextRequest) {
       });
     }
   } catch (err) {
-    console.error("[create-event-checkout-intent] error:", err);
+    logger.error("[create-event-checkout-intent] error", err);
 
     if (err instanceof Stripe.errors.StripeError) {
       return NextResponse.json(

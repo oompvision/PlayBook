@@ -9,6 +9,7 @@ import {
   type CheckoutFormHandle,
 } from "@/components/checkout-form";
 import { createClient } from "@/lib/supabase/client";
+import { validatePassword } from "@/lib/password-validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -923,6 +924,19 @@ export function DynamicAvailabilityWidget(
     setSignInLoading(true);
     setSignInError("");
 
+    // Check lockout via server endpoint
+    try {
+      const lockRes = await fetch(`/api/audit?email=${encodeURIComponent(signInEmail)}`);
+      const lockCheck = await lockRes.json();
+      if (lockCheck && !lockCheck.allowed) {
+        const lockedUntil = lockCheck.locked_until ? new Date(lockCheck.locked_until) : null;
+        const mins = lockedUntil ? Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 60000)) : 15;
+        setSignInError(`Too many failed attempts. Try again in ${mins} minute${mins !== 1 ? "s" : ""}.`);
+        setSignInLoading(false);
+        return;
+      }
+    } catch {}
+
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({
       email: signInEmail,
@@ -932,8 +946,19 @@ export function DynamicAvailabilityWidget(
     if (error) {
       setSignInError(error.message);
       setSignInLoading(false);
+      fetch("/api/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "login_failed", resourceType: "auth", email: signInEmail }),
+      }).catch(() => {});
       return;
     }
+
+    fetch("/api/audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "login", resourceType: "auth", email: signInEmail }),
+    }).catch(() => {});
 
     // Save selection to localStorage, reload to refresh session cookies
     saveSelectionToStorage();
@@ -943,6 +968,13 @@ export function DynamicAvailabilityWidget(
   // Inline sign-up handler
   async function handlePanelSignUp(e: React.FormEvent) {
     e.preventDefault();
+
+    const pwCheck = validatePassword(signUpPassword);
+    if (!pwCheck.valid) {
+      setSignUpError("Password requirements: " + pwCheck.errors.join(", "));
+      return;
+    }
+
     setSignUpLoading(true);
     setSignUpError("");
 
@@ -2246,10 +2278,10 @@ export function DynamicAvailabilityWidget(
                                 <Input
                                   id="dynamic-panel-signup-password"
                                   type="password"
-                                  placeholder="At least 6 characters"
+                                  placeholder="At least 8 characters"
                                   value={signUpPassword}
                                   onChange={(e) => setSignUpPassword(e.target.value)}
-                                  minLength={6}
+                                  minLength={8}
                                   required
                                 />
                               </div>

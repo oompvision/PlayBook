@@ -6,8 +6,9 @@ import {
   sendGuestEmail,
 } from "@/lib/notifications";
 import { formatTimeInZone } from "@/lib/utils";
-
-type BookingAction = "confirmed" | "canceled" | "modified";
+import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { bookingNotificationSchema } from "@/lib/schemas/notifications";
 
 /**
  * POST /api/notifications/booking
@@ -16,20 +17,10 @@ type BookingAction = "confirmed" | "canceled" | "modified";
  */
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as {
-      action: BookingAction;
-      bookingId?: string;
-      confirmationCode?: string;
-      orgId: string;
-      oldConfirmationCode?: string;
-    };
-
+    const parsed = await validateBody(request, bookingNotificationSchema);
+    if (parsed.error) return parsed.error;
     const { action, bookingId, confirmationCode, orgId, oldConfirmationCode } =
-      body;
-
-    if (!action || !orgId) {
-      return NextResponse.json({ error: "Missing action or orgId" }, { status: 400 });
-    }
+      parsed.data;
 
     const supabase = createServiceClient();
 
@@ -260,7 +251,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error("[notifications/booking] Error:", err);
+    logger.error("[notifications/booking] Error", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

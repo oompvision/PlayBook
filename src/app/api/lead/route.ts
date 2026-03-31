@@ -1,6 +1,7 @@
 import { Resend } from "resend";
 import { NextResponse } from "next/server";
 import { z } from "zod/v4";
+import { logger } from "@/lib/logger";
 
 const leadSchema = z.object({
   type: z.enum(["contact", "demo"]),
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
     const { type, name, email, phone, company, facilityType, locations, message } = parsed.data;
 
     if (!resend) {
-      console.error("[lead] Resend not configured (RESEND_API_KEY missing)");
+      logger.error("[lead] Resend not configured (RESEND_API_KEY missing)");
       return NextResponse.json({ error: "Email service not configured" }, { status: 500 });
     }
 
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error("[lead] Failed to process lead:", err);
+    logger.error("[lead] Failed to process lead", err);
     return NextResponse.json({ error: "Failed to send" }, { status: 500 });
   }
 }

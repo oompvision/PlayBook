@@ -2,6 +2,9 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { requireAdmin } from "@/lib/auth";
 import { getStripe } from "@/lib/stripe";
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
+import { validateBody } from "@/lib/validation";
+import { grantMembershipSchema, revokeMembershipSchema } from "@/lib/schemas/admin";
 
 /**
  * POST /api/admin/members
@@ -10,15 +13,9 @@ import { NextRequest, NextResponse } from "next/server";
  * Body: { org_id, user_id }
  */
 export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const { org_id, user_id } = body;
-
-  if (!org_id || !user_id) {
-    return NextResponse.json(
-      { error: "org_id and user_id are required" },
-      { status: 400 }
-    );
-  }
+  const parsed = await validateBody(request, grantMembershipSchema);
+  if (parsed.error) return parsed.error;
+  const { org_id, user_id } = parsed.data;
 
   await requireAdmin(org_id);
 
@@ -70,7 +67,7 @@ export async function POST(request: NextRequest) {
       .eq("id", existing.id);
 
     if (error) {
-      console.error("[admin/members] update membership error:", error.message);
+      logger.error("[admin/members] update membership error", { message: error.message });
       return NextResponse.json({ error: "Failed to grant membership" }, { status: 500 });
     }
   } else {
@@ -83,7 +80,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
-      console.error("[admin/members] insert membership error:", error.message);
+      logger.error("[admin/members] insert membership error", { message: error.message });
       return NextResponse.json({ error: "Failed to grant membership" }, { status: 500 });
     }
   }
@@ -98,15 +95,9 @@ export async function POST(request: NextRequest) {
  * Body: { membership_id, org_id }
  */
 export async function DELETE(request: NextRequest) {
-  const body = await request.json();
-  const { membership_id, org_id } = body;
-
-  if (!membership_id || !org_id) {
-    return NextResponse.json(
-      { error: "membership_id and org_id are required" },
-      { status: 400 }
-    );
-  }
+  const parsed = await validateBody(request, revokeMembershipSchema);
+  if (parsed.error) return parsed.error;
+  const { membership_id, org_id } = parsed.data;
 
   await requireAdmin(org_id);
 
@@ -144,7 +135,7 @@ export async function DELETE(request: NextRequest) {
           : {}),
       });
     } catch (stripeError) {
-      console.error("Failed to cancel Stripe subscription:", stripeError);
+      logger.error("Failed to cancel Stripe subscription", stripeError);
       // Continue with local revocation even if Stripe cancel fails
       // The webhook will eventually reconcile
     }
@@ -157,7 +148,7 @@ export async function DELETE(request: NextRequest) {
     .eq("id", membership_id);
 
   if (error) {
-    console.error("[admin/members] delete membership error:", error.message);
+    logger.error("[admin/members] delete membership error", { message: error.message });
     return NextResponse.json({ error: "Failed to revoke membership" }, { status: 500 });
   }
 

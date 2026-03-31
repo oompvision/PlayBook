@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatPrice } from "@/lib/utils";
+import { validatePassword } from "@/lib/password-validation";
 import {
   StripeCheckoutWrapper,
   CheckoutForm,
@@ -1092,6 +1093,19 @@ export function AvailabilityWidget({
     setSignInLoading(true);
     setSignInError("");
 
+    // Check lockout via server endpoint
+    try {
+      const lockRes = await fetch(`/api/audit?email=${encodeURIComponent(signInEmail)}`);
+      const lockCheck = await lockRes.json();
+      if (lockCheck && !lockCheck.allowed) {
+        const lockedUntil = lockCheck.locked_until ? new Date(lockCheck.locked_until) : null;
+        const mins = lockedUntil ? Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 60000)) : 15;
+        setSignInError(`Too many failed attempts. Try again in ${mins} minute${mins !== 1 ? "s" : ""}.`);
+        setSignInLoading(false);
+        return;
+      }
+    } catch {}
+
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({
       email: signInEmail,
@@ -1101,8 +1115,19 @@ export function AvailabilityWidget({
     if (error) {
       setSignInError(error.message);
       setSignInLoading(false);
+      fetch("/api/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "login_failed", resourceType: "auth", email: signInEmail }),
+      }).catch(() => {});
       return;
     }
+
+    fetch("/api/audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "login", resourceType: "auth", email: signInEmail }),
+    }).catch(() => {});
 
     // Save selection to localStorage, reload to refresh session cookies
     saveSelectionToStorage();
@@ -1112,6 +1137,13 @@ export function AvailabilityWidget({
   // Inline sign-up handler
   async function handlePanelSignUp(e: React.FormEvent) {
     e.preventDefault();
+
+    const pwCheck = validatePassword(signUpPassword);
+    if (!pwCheck.valid) {
+      setSignUpError("Password requirements: " + pwCheck.errors.join(", "));
+      return;
+    }
+
     setSignUpLoading(true);
     setSignUpError("");
 
@@ -2913,10 +2945,10 @@ export function AvailabilityWidget({
                                 <Input
                                   id="panel-signup-password"
                                   type="password"
-                                  placeholder="At least 6 characters"
+                                  placeholder="At least 8 characters"
                                   value={signUpPassword}
                                   onChange={(e) => setSignUpPassword(e.target.value)}
-                                  minLength={6}
+                                  minLength={8}
                                   required
                                 />
                               </div>

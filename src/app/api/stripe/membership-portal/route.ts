@@ -3,6 +3,7 @@ import { getFacilitySlug } from "@/lib/facility";
 import { getAuthUser } from "@/lib/auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe } from "@/lib/stripe";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/stripe/membership-portal
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ url: portalSession.url });
   } catch (err) {
-    console.error("[membership-portal] Error:", err);
+    logger.error("[membership-portal] Error", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }
