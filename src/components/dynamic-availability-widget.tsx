@@ -172,6 +172,15 @@ type DynamicAvailabilityWidgetProps = {
   locations?: Array<{ id: string; name: string; is_default: boolean; address: string | null }>;
   locationsEnabled?: boolean;
   membership?: MembershipContext;
+  creditBalance?: {
+    has_credits: boolean;
+    credits_total: number;
+    credits_used: number;
+    credits_remaining: number;
+    credit_type: "hours" | "value" | null;
+    credit_period: string | null;
+    period_end: string | null;
+  } | null;
   mode?: "customer" | "modify";
   originalBooking?: DynamicOriginalBookingInfo;
   modifyRedirectBase?: string;
@@ -302,6 +311,7 @@ export function DynamicAvailabilityWidget(
     locations = [],
     locationsEnabled = false,
     membership,
+    creditBalance,
     mode = "customer",
     originalBooking,
     modifyRedirectBase,
