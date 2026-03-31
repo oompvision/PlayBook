@@ -1093,6 +1093,19 @@ export function AvailabilityWidget({
     setSignInLoading(true);
     setSignInError("");
 
+    // Check lockout via server endpoint
+    try {
+      const lockRes = await fetch(`/api/audit?email=${encodeURIComponent(signInEmail)}`);
+      const lockCheck = await lockRes.json();
+      if (lockCheck && !lockCheck.allowed) {
+        const lockedUntil = lockCheck.locked_until ? new Date(lockCheck.locked_until) : null;
+        const mins = lockedUntil ? Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 60000)) : 15;
+        setSignInError(`Too many failed attempts. Try again in ${mins} minute${mins !== 1 ? "s" : ""}.`);
+        setSignInLoading(false);
+        return;
+      }
+    } catch {}
+
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({
       email: signInEmail,
@@ -1102,8 +1115,19 @@ export function AvailabilityWidget({
     if (error) {
       setSignInError(error.message);
       setSignInLoading(false);
+      fetch("/api/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "login_failed", resourceType: "auth", email: signInEmail }),
+      }).catch(() => {});
       return;
     }
+
+    fetch("/api/audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "login", resourceType: "auth", email: signInEmail }),
+    }).catch(() => {});
 
     // Save selection to localStorage, reload to refresh session cookies
     saveSelectionToStorage();
