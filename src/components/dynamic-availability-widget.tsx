@@ -462,6 +462,8 @@ export function DynamicAvailabilityWidget(
 
   // Sidebar: confirmed bookings + chat
   const pendingBookingAction = useRef<BookingAction | null>(null);
+  // Guard: when true, fetchAvailability will not clear selectedSlot
+  const chatActionJustProcessed = useRef(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [highlightedBookingIds, setHighlightedBookingIds] = useState<Set<string>>(new Set());
@@ -607,7 +609,12 @@ export function DynamicAvailabilityWidget(
     }
 
     setLoadingSlots(true);
-    setSelectedSlot(null);
+    // Don't clear selected slot if a chat action just set it
+    if (chatActionJustProcessed.current) {
+      chatActionJustProcessed.current = false;
+    } else {
+      setSelectedSlot(null);
+    }
 
     try {
       const params = new URLSearchParams({
@@ -1375,7 +1382,8 @@ export function DynamicAvailabilityWidget(
     console.log("[book-link] Match result", { matched: !!matchedSlot, matchedSlot });
 
     if (matchedSlot) {
-      handleSelectSlot(matchedSlot);
+      chatActionJustProcessed.current = true;
+      setSelectedSlot(matchedSlot);
       // Auto-open the booking panel when triggered from chat
       setTimeout(() => {
         setBookingError("");
@@ -1389,18 +1397,18 @@ export function DynamicAvailabilityWidget(
   useEffect(() => {
     if (!pendingBookingAction.current) return;
     if (loadingSlots) return;
-    // Allow processing even with 0 slots to handle bay/duration changes
+    if (availableSlots.length === 0) return;
     const action = pendingBookingAction.current;
     console.log("[book-link] Processing pending action", {
       action,
-      loadingSlots,
       slotsCount: availableSlots.length,
       selectedDuration,
       selectedGroupId,
       selectedBayId,
     });
     processChatBookingAction(action);
-  }, [loadingSlots, availableSlots, selectedDuration, selectedGroupId, selectedBayId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingSlots, availableSlots]);
 
   // ─── Render ─────────────────────────────────────────────
 
