@@ -348,9 +348,9 @@ async function upsertTier(
   tier: TierConfig,
   existing: Record<string, unknown> | null
 ): Promise<{ tierId?: string; error?: string }> {
-  let stripeProductId = (existing?.stripe_product_id as string) ?? null;
-  let stripePriceMonthlyId = (existing?.stripe_price_monthly_id as string) ?? null;
-  let stripePriceYearlyId = (existing?.stripe_price_yearly_id as string) ?? null;
+  let stripeProductId: string | null = (existing?.stripe_product_id as string) ?? null;
+  let stripePriceMonthlyId: string | null = (existing?.stripe_price_monthly_id as string) ?? null;
+  let stripePriceYearlyId: string | null = (existing?.stripe_price_yearly_id as string) ?? null;
 
   // Create Stripe Product if needed
   if (!stripeProductId) {
