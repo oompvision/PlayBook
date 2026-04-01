@@ -53,7 +53,7 @@ type MembershipTiersSettingsProps = {
   tierSubscriberCounts: TierSubscriberCounts;
 };
 
-function makeTierData(tier?: MembershipTiersSettingsProps["initialTiers"][0]): TierData {
+function makeTierData(tier?: MembershipTiersSettingsProps["initialTiers"][0], orgCreditType?: CreditType): TierData {
   if (!tier) {
     return {
       sort_order: 1,
@@ -70,6 +70,15 @@ function makeTierData(tier?: MembershipTiersSettingsProps["initialTiers"][0]): T
       credit_period: "",
     };
   }
+
+  // For value-based credits, DB stores cents — display as dollars
+  let creditAmountDisplay = "";
+  if (tier.credit_amount != null) {
+    creditAmountDisplay = orgCreditType === "value"
+      ? (tier.credit_amount / 100).toFixed(2)
+      : tier.credit_amount.toString();
+  }
+
   return {
     id: tier.id,
     sort_order: tier.sort_order,
@@ -82,7 +91,7 @@ function makeTierData(tier?: MembershipTiersSettingsProps["initialTiers"][0]): T
     price_monthly: tier.price_monthly_cents != null ? (tier.price_monthly_cents / 100).toFixed(2) : "",
     price_yearly: tier.price_yearly_cents != null ? (tier.price_yearly_cents / 100).toFixed(2) : "",
     bookable_window_days: tier.bookable_window_days?.toString() ?? "",
-    credit_amount: tier.credit_amount?.toString() ?? "",
+    credit_amount: creditAmountDisplay,
     credit_period: tier.credit_period ?? "",
   };
 }
@@ -328,22 +337,27 @@ function TierCard({
               <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
                 {creditType === "hours"
                   ? "Grant free play time (in minutes) per period. E.g. 60 = 1 hour."
-                  : "Grant credit value (in dollars) per period. E.g. 50.00 = $50."}
+                  : "Grant credit value per period in dollars. E.g. 50.00 = $50.00."}
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className={labelClass}>
-                    {creditType === "hours" ? "Credit Amount (minutes)" : "Credit Amount ($)"}
+                    {creditType === "hours" ? "Credit Amount (minutes)" : "Credit Amount"}
                   </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step={creditType === "hours" ? "1" : "1"}
-                    value={tier.credit_amount}
-                    onChange={(e) => onChange({ credit_amount: e.target.value })}
-                    placeholder={creditType === "hours" ? "e.g. 60" : "e.g. 5000 (cents)"}
-                    className={inputClass}
-                  />
+                  <div className="relative">
+                    {creditType === "value" && (
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">$</span>
+                    )}
+                    <input
+                      type="number"
+                      min="0"
+                      step={creditType === "hours" ? "1" : "0.01"}
+                      value={tier.credit_amount}
+                      onChange={(e) => onChange({ credit_amount: e.target.value })}
+                      placeholder={creditType === "hours" ? "e.g. 60" : "e.g. 50.00"}
+                      className={`${inputClass} ${creditType === "value" ? "pl-7" : ""}`}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <label className={labelClass}>Credit Period</label>
@@ -425,8 +439,8 @@ export function MembershipTiersSettings({
   // Tiers
   const [tiers, setTiers] = useState<TierData[]>(
     initialTiers.length > 0
-      ? initialTiers.map(makeTierData)
-      : [{ ...makeTierData(), sort_order: 1, tier_name: "Membership" }]
+      ? initialTiers.map((t) => makeTierData(t, initialCreditType))
+      : [{ ...makeTierData(undefined, initialCreditType), sort_order: 1, tier_name: "Membership" }]
   );
   const [expandedIndex, setExpandedIndex] = useState<number | null>(
     tiers.length > 0 ? 0 : null
@@ -546,7 +560,11 @@ export function MembershipTiersSettings({
             bookable_window_days: t.bookable_window_days
               ? parseInt(t.bookable_window_days)
               : null,
-            credit_amount: t.credit_amount ? parseInt(t.credit_amount) : null,
+            credit_amount: t.credit_amount
+              ? (creditType === "value"
+                ? Math.round(parseFloat(t.credit_amount) * 100)
+                : parseInt(t.credit_amount))
+              : null,
             credit_period: t.credit_period || null,
           })),
         }),

@@ -89,7 +89,8 @@ export async function GET() {
     });
   } catch (err) {
     logger.error("[membership-tiers] GET error", err);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "Internal error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -333,7 +334,8 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "Internal error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
