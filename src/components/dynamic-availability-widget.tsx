@@ -1291,6 +1291,15 @@ export function DynamicAvailabilityWidget(
   );
 
   function processChatBookingAction(action: BookingAction) {
+    console.log("[book-link] processChatBookingAction called", {
+      bay_name: action.bay_name,
+      start_time: action.start_time,
+      duration: action.duration,
+      selectedDuration,
+      selectedGroupId,
+      selectedBayId,
+      slotsCount: availableSlots.length,
+    });
     // Pre-select the matching bay/group by name if provided
     if (action.bay_name) {
       const bayNameLower = action.bay_name.toLowerCase().trim();
@@ -1329,6 +1338,17 @@ export function DynamicAvailabilityWidget(
       t.toLowerCase().replace(/\s+/g, "").replace(/^0+/, "").trim();
     const requestedTime = normalizeTime(action.start_time);
 
+    console.log("[book-link] Attempting time match", {
+      requestedTime,
+      rawStartTime: action.start_time,
+      slotsCount: availableSlots.length,
+      firstSlotTimes: availableSlots.slice(0, 3).map((s) => ({
+        iso: s.start_time,
+        formatted: formatTime(s.start_time, timezone),
+        normalized: normalizeTime(formatTime(s.start_time, timezone)),
+      })),
+    });
+
     const matchedSlot = availableSlots.find((s) => {
       // Try normalized formatted time match (handles "4:00PM" vs "4:00 PM" etc.)
       const formatted = normalizeTime(formatTime(s.start_time, timezone));
@@ -1347,6 +1367,8 @@ export function DynamicAvailabilityWidget(
       return false;
     });
 
+    console.log("[book-link] Match result", { matched: !!matchedSlot, matchedSlot });
+
     if (matchedSlot) {
       handleSelectSlot(matchedSlot);
       // Auto-open the booking panel when triggered from chat
@@ -1360,9 +1382,20 @@ export function DynamicAvailabilityWidget(
 
   // Process pending booking action after availability loads
   useEffect(() => {
-    if (!pendingBookingAction.current || loadingSlots || availableSlots.length === 0) return;
-    processChatBookingAction(pendingBookingAction.current);
-  }, [loadingSlots, availableSlots]);
+    if (!pendingBookingAction.current) return;
+    if (loadingSlots) return;
+    // Allow processing even with 0 slots to handle bay/duration changes
+    const action = pendingBookingAction.current;
+    console.log("[book-link] Processing pending action", {
+      action,
+      loadingSlots,
+      slotsCount: availableSlots.length,
+      selectedDuration,
+      selectedGroupId,
+      selectedBayId,
+    });
+    processChatBookingAction(action);
+  }, [loadingSlots, availableSlots, selectedDuration, selectedGroupId, selectedBayId]);
 
   // ─── Render ─────────────────────────────────────────────
 
