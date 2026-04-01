@@ -1334,36 +1334,41 @@ export function DynamicAvailabilityWidget(
     }
 
     // Find matching slot by start_time (flexible time comparison)
+    // The AI may send either "2:00 PM" (12h format) or "2026-04-03T14:00:00-04:00" (ISO)
     const normalizeTime = (t: string) =>
       t.toLowerCase().replace(/\s+/g, "").replace(/^0+/, "").trim();
     const requestedTime = normalizeTime(action.start_time);
 
+    // Check if start_time is an ISO timestamp (contains 'T' and digits)
+    const isISO = /\d{4}-\d{2}-\d{2}T/.test(action.start_time);
+    const requestedDate = isISO ? new Date(action.start_time) : null;
+    const requestedMs = requestedDate ? requestedDate.getTime() : NaN;
+
     console.log("[book-link] Attempting time match", {
       requestedTime,
       rawStartTime: action.start_time,
+      isISO,
+      requestedMs,
       slotsCount: availableSlots.length,
       firstSlotTimes: availableSlots.slice(0, 3).map((s) => ({
         iso: s.start_time,
+        ms: new Date(s.start_time).getTime(),
         formatted: formatTime(s.start_time, timezone),
         normalized: normalizeTime(formatTime(s.start_time, timezone)),
       })),
     });
 
     const matchedSlot = availableSlots.find((s) => {
-      // Try normalized formatted time match (handles "4:00PM" vs "4:00 PM" etc.)
+      // 1. Compare by epoch milliseconds (handles different timezone offset formats)
+      if (!isNaN(requestedMs) && new Date(s.start_time).getTime() === requestedMs) return true;
+      // 2. Try normalized formatted time match (handles "4:00PM" vs "4:00 PM")
       const formatted = normalizeTime(formatTime(s.start_time, timezone));
       if (formatted === requestedTime) return true;
-      // Try ISO timestamp match
-      if (s.start_time === action.start_time) return true;
-      // Try matching just the hour:minute portion against the ISO timestamp
-      const slotDate = new Date(s.start_time);
-      const slotH = slotDate.toLocaleTimeString("en-US", {
-        timeZone: timezone,
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      });
-      if (normalizeTime(slotH) === requestedTime) return true;
+      // 3. If requested is ISO, also format it and compare formatted versions
+      if (requestedDate) {
+        const requestedFormatted = normalizeTime(formatTime(action.start_time, timezone));
+        if (formatted === requestedFormatted) return true;
+      }
       return false;
     });
 
