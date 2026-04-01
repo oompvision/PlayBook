@@ -284,6 +284,36 @@ function formatDurationLong(minutes: number): string {
   return `${hrs % 1 === 0.5 ? hrs : hrs.toFixed(1)} hours`;
 }
 
+// ─── Chat booking link helpers ──────────────────────────────
+
+function findMatchingSlotInList(
+  startTime: string,
+  slots: Array<{ start_time: string; bay_name: string; [k: string]: unknown }>,
+  tz: string
+): typeof slots[number] | undefined {
+  const normalizeTime = (t: string) =>
+    t.toLowerCase().replace(/\s+/g, "").replace(/^0+/, "").trim();
+  const requested = normalizeTime(startTime);
+
+  // Check if start_time is ISO
+  const isISO = /\d{4}-\d{2}-\d{2}T/.test(startTime);
+  const requestedMs = isISO ? new Date(startTime).getTime() : NaN;
+
+  return slots.find((s) => {
+    // 1. Epoch ms comparison (handles different TZ offset formats in ISO strings)
+    if (!isNaN(requestedMs) && new Date(s.start_time).getTime() === requestedMs) return true;
+    // 2. Formatted time comparison
+    const formatted = normalizeTime(formatTime(s.start_time, tz));
+    if (formatted === requested) return true;
+    // 3. Format the ISO request and compare
+    if (isISO) {
+      const requestedFormatted = normalizeTime(formatTime(startTime, tz));
+      if (formatted === requestedFormatted) return true;
+    }
+    return false;
+  });
+}
+
 // ─── Component ──────────────────────────────────────────────
 
 export function DynamicAvailabilityWidget(
@@ -462,8 +492,13 @@ export function DynamicAvailabilityWidget(
 
   // Sidebar: confirmed bookings + chat
   const pendingBookingAction = useRef<BookingAction | null>(null);
-  // Guard: when true, fetchAvailability will not clear selectedSlot
-  const chatActionJustProcessed = useRef(false);
+
+  // Stable helper for matching a slot from a chat booking action
+  const findMatchingSlot = useCallback(
+    (action: BookingAction, slots: AvailableSlot[]) =>
+      findMatchingSlotInList(action.start_time, slots, timezone) as AvailableSlot | undefined,
+    [timezone]
+  );
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [highlightedBookingIds, setHighlightedBookingIds] = useState<Set<string>>(new Set());
@@ -519,13 +554,16 @@ export function DynamicAvailabilityWidget(
       if (duration) action.duration = parseInt(duration, 10);
       if (priceCents) action.price_cents = parseInt(priceCents, 10);
 
+      // Store pending action — fetchAvailability will match the time slot after loading
       pendingBookingAction.current = action;
+
+      // Set date (triggers re-fetch if different)
       if (date !== selectedDate) {
         setSelectedDate(date);
       }
-      if (duration) {
-        setSelectedDuration(parseInt(duration, 10));
-      }
+
+      // Set bay/group/duration prereqs (each may trigger re-fetch)
+      ensureChatActionPrereqs(action);
     }
 
     // Clean up URL params without triggering a page reload
@@ -609,12 +647,7 @@ export function DynamicAvailabilityWidget(
     }
 
     setLoadingSlots(true);
-    // Don't clear selected slot if a chat action just set it
-    if (chatActionJustProcessed.current) {
-      chatActionJustProcessed.current = false;
-    } else {
-      setSelectedSlot(null);
-    }
+    setSelectedSlot(null);
 
     try {
       const params = new URLSearchParams({
@@ -633,10 +666,26 @@ export function DynamicAvailabilityWidget(
       }
 
       const data = await res.json();
-      setAvailableSlots(data.slots || []);
+      const newSlots: AvailableSlot[] = data.slots || [];
+      setAvailableSlots(newSlots);
 
       if (data.available_durations?.length > 0) {
         setDurations(data.available_durations);
+      }
+
+      // Process pending chat booking action NOW, synchronously after slots loaded
+      const action = pendingBookingAction.current;
+      if (action && newSlots.length > 0) {
+        const matched = findMatchingSlot(action, newSlots);
+        if (matched) {
+          console.log("[book-link] Slot matched inside fetch", matched);
+          pendingBookingAction.current = null;
+          setSelectedSlot(matched);
+          setTimeout(() => {
+            setBookingError("");
+            setPanelOpen(true);
+          }, 50);
+        }
       }
     } catch {
       setAvailableSlots([]);
@@ -651,6 +700,7 @@ export function DynamicAvailabilityWidget(
     selectedGroupId,
     bays.length,
     hasMultipleOptions,
+    findMatchingSlot,
   ]);
 
   useEffect(() => {
@@ -1283,132 +1333,66 @@ export function DynamicAvailabilityWidget(
 
   const handleBookingAction = useCallback(
     (action: BookingAction) => {
-      // If date differs, change date and store the action to process after availability loads
+      // Store the action — fetchAvailability handles time matching after slots load
+      pendingBookingAction.current = action;
+
       if (action.date !== selectedDate) {
-        pendingBookingAction.current = action;
         setSelectedDate(action.date);
-        if (action.duration) setSelectedDuration(action.duration);
-        return;
       }
 
-      // Same date — try to find matching slot immediately
-      processChatBookingAction(action);
+      // Set bay/group/duration prereqs
+      ensureChatActionPrereqs(action);
+
+      // If nothing changed (same date/bay/duration), we need to manually trigger matching
+      // since fetchAvailability won't re-run. Try matching against current slots.
+      if (action.date === selectedDate && availableSlots.length > 0) {
+        const matched = findMatchingSlot(action, availableSlots);
+        if (matched) {
+          pendingBookingAction.current = null;
+          setSelectedSlot(matched);
+          setTimeout(() => {
+            setBookingError("");
+            setPanelOpen(true);
+          }, 50);
+        }
+      }
     },
-    [selectedDate, availableSlots, timezone]
+    [selectedDate, availableSlots, findMatchingSlot]
   );
 
-  function processChatBookingAction(action: BookingAction) {
-    console.log("[book-link] processChatBookingAction called", {
-      bay_name: action.bay_name,
-      start_time: action.start_time,
-      duration: action.duration,
-      selectedDuration,
-      selectedGroupId,
-      selectedBayId,
-      slotsCount: availableSlots.length,
-    });
+  // Ensure correct bay/group/duration are selected for a chat booking action.
+  // Time matching is handled by fetchAvailability after slots load.
+  function ensureChatActionPrereqs(action: BookingAction): boolean {
     // Pre-select the matching bay/group by name if provided
     if (action.bay_name) {
       const bayNameLower = action.bay_name.toLowerCase().trim();
-      // Try matching a facility group first
       const matchedGroup = facilityGroups.find(
         (g) => g.name.toLowerCase().trim() === bayNameLower ||
           g.bays.some((b) => b.name.toLowerCase().trim() === bayNameLower)
       );
       if (matchedGroup && matchedGroup.id !== selectedGroupId) {
-        pendingBookingAction.current = action;
         setSelectedGroupId(matchedGroup.id);
         setSelectedBayId(null);
-        return;
+        return false; // Will trigger re-fetch → fetchAvailability will match
       }
-      // Try matching a standalone bay
       const matchedBay = standaloneBays.find(
         (b) => b.name.toLowerCase().trim() === bayNameLower
       );
       if (matchedBay && matchedBay.id !== selectedBayId) {
-        pendingBookingAction.current = action;
         setSelectedBayId(matchedBay.id);
         setSelectedGroupId(null);
-        return;
+        return false;
       }
     }
 
-    // Update duration if provided and different
+    // Update duration if needed
     if (action.duration && action.duration !== selectedDuration) {
-      pendingBookingAction.current = action;
       setSelectedDuration(action.duration);
-      return;
+      return false; // Will trigger re-fetch
     }
 
-    // Find matching slot by start_time (flexible time comparison)
-    // The AI may send either "2:00 PM" (12h format) or "2026-04-03T14:00:00-04:00" (ISO)
-    const normalizeTime = (t: string) =>
-      t.toLowerCase().replace(/\s+/g, "").replace(/^0+/, "").trim();
-    const requestedTime = normalizeTime(action.start_time);
-
-    // Check if start_time is an ISO timestamp (contains 'T' and digits)
-    const isISO = /\d{4}-\d{2}-\d{2}T/.test(action.start_time);
-    const requestedDate = isISO ? new Date(action.start_time) : null;
-    const requestedMs = requestedDate ? requestedDate.getTime() : NaN;
-
-    console.log("[book-link] Attempting time match", {
-      requestedTime,
-      rawStartTime: action.start_time,
-      isISO,
-      requestedMs,
-      slotsCount: availableSlots.length,
-      firstSlotTimes: availableSlots.slice(0, 3).map((s) => ({
-        iso: s.start_time,
-        ms: new Date(s.start_time).getTime(),
-        formatted: formatTime(s.start_time, timezone),
-        normalized: normalizeTime(formatTime(s.start_time, timezone)),
-      })),
-    });
-
-    const matchedSlot = availableSlots.find((s) => {
-      // 1. Compare by epoch milliseconds (handles different timezone offset formats)
-      if (!isNaN(requestedMs) && new Date(s.start_time).getTime() === requestedMs) return true;
-      // 2. Try normalized formatted time match (handles "4:00PM" vs "4:00 PM")
-      const formatted = normalizeTime(formatTime(s.start_time, timezone));
-      if (formatted === requestedTime) return true;
-      // 3. If requested is ISO, also format it and compare formatted versions
-      if (requestedDate) {
-        const requestedFormatted = normalizeTime(formatTime(action.start_time, timezone));
-        if (formatted === requestedFormatted) return true;
-      }
-      return false;
-    });
-
-    console.log("[book-link] Match result", { matched: !!matchedSlot, matchedSlot });
-
-    if (matchedSlot) {
-      chatActionJustProcessed.current = true;
-      setSelectedSlot(matchedSlot);
-      // Auto-open the booking panel when triggered from chat
-      setTimeout(() => {
-        setBookingError("");
-        setPanelOpen(true);
-      }, 100);
-    }
-    pendingBookingAction.current = null;
+    return true; // All prereqs met, fetchAvailability will handle time matching
   }
-
-  // Process pending booking action after availability loads
-  useEffect(() => {
-    if (!pendingBookingAction.current) return;
-    if (loadingSlots) return;
-    if (availableSlots.length === 0) return;
-    const action = pendingBookingAction.current;
-    console.log("[book-link] Processing pending action", {
-      action,
-      slotsCount: availableSlots.length,
-      selectedDuration,
-      selectedGroupId,
-      selectedBayId,
-    });
-    processChatBookingAction(action);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadingSlots, availableSlots]);
 
   // ─── Render ─────────────────────────────────────────────
 
