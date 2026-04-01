@@ -1291,24 +1291,59 @@ export function DynamicAvailabilityWidget(
   );
 
   function processChatBookingAction(action: BookingAction) {
-    // Update duration if provided
+    // Pre-select the matching bay/group by name if provided
+    if (action.bay_name) {
+      const bayNameLower = action.bay_name.toLowerCase().trim();
+      // Try matching a facility group first
+      const matchedGroup = facilityGroups.find(
+        (g) => g.name.toLowerCase().trim() === bayNameLower ||
+          g.bays.some((b) => b.name.toLowerCase().trim() === bayNameLower)
+      );
+      if (matchedGroup && matchedGroup.id !== selectedGroupId) {
+        pendingBookingAction.current = action;
+        setSelectedGroupId(matchedGroup.id);
+        setSelectedBayId(null);
+        return;
+      }
+      // Try matching a standalone bay
+      const matchedBay = standaloneBays.find(
+        (b) => b.name.toLowerCase().trim() === bayNameLower
+      );
+      if (matchedBay && matchedBay.id !== selectedBayId) {
+        pendingBookingAction.current = action;
+        setSelectedBayId(matchedBay.id);
+        setSelectedGroupId(null);
+        return;
+      }
+    }
+
+    // Update duration if provided and different
     if (action.duration && action.duration !== selectedDuration) {
       pendingBookingAction.current = action;
       setSelectedDuration(action.duration);
       return;
     }
 
-    // Find matching slot by start_time (formatted time comparison)
+    // Find matching slot by start_time (flexible time comparison)
     const normalizeTime = (t: string) =>
-      t.toLowerCase().replace(/\s+/g, " ").trim();
+      t.toLowerCase().replace(/\s+/g, "").replace(/^0+/, "").trim();
     const requestedTime = normalizeTime(action.start_time);
 
     const matchedSlot = availableSlots.find((s) => {
-      // Try formatted time match
+      // Try normalized formatted time match (handles "4:00PM" vs "4:00 PM" etc.)
       const formatted = normalizeTime(formatTime(s.start_time, timezone));
       if (formatted === requestedTime) return true;
       // Try ISO timestamp match
       if (s.start_time === action.start_time) return true;
+      // Try matching just the hour:minute portion against the ISO timestamp
+      const slotDate = new Date(s.start_time);
+      const slotH = slotDate.toLocaleTimeString("en-US", {
+        timeZone: timezone,
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
+      if (normalizeTime(slotH) === requestedTime) return true;
       return false;
     });
 

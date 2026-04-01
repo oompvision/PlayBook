@@ -928,13 +928,17 @@ export function AvailabilityWidget({
     const action = pendingBookingAction.current;
     pendingBookingAction.current = null;
 
-    // Find the matching time group by formatted start_time
-    const normalizeTime = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+    // Normalize time: strip all whitespace, lowercase, remove leading zeros for flexible matching
+    // Handles "4:00PM" vs "4:00 PM" vs "04:00 pm" etc.
+    const normalizeTime = (t: string) => t.toLowerCase().replace(/\s+/g, "").replace(/^0+/, "").trim();
     const requestedTime = normalizeTime(action.start_time);
 
     const matchedGroup = timeGroups.find((g) => {
       const formatted = normalizeTime(formatTime(g.start_time, timezone));
-      return formatted === requestedTime;
+      if (formatted === requestedTime) return true;
+      // Also try ISO match
+      if (g.start_time === action.start_time) return true;
+      return false;
     });
 
     if (!matchedGroup) return;
@@ -967,12 +971,14 @@ export function AvailabilityWidget({
         // Trigger the effect by touching a dependency — the effect will run on next render
         // since we just set the ref. Force a re-render by setting loading momentarily.
         // Actually, just process inline since timeGroups are already available:
-        const normalizeTime = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+        const normalizeTime = (t: string) => t.toLowerCase().replace(/\s+/g, "").replace(/^0+/, "").trim();
         const requestedTime = normalizeTime(action.start_time);
 
         const matchedGroup = timeGroups.find((g) => {
           const formatted = normalizeTime(formatTime(g.start_time, timezone));
-          return formatted === requestedTime;
+          if (formatted === requestedTime) return true;
+          if (g.start_time === action.start_time) return true;
+          return false;
         });
 
         if (matchedGroup) {
