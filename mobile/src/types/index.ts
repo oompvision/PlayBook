@@ -15,6 +15,7 @@ export interface Organization {
   membership_tiers_enabled: boolean;
   guest_booking_window_days: number | null;
   member_booking_window_days: number | null;
+  credit_type: 'hours' | 'value' | null;
 }
 
 export interface FacilityGroup {
@@ -178,6 +179,7 @@ export interface EventRegistration {
 export interface MembershipTier {
   id: string;
   org_id: string;
+  sort_order: number;
   name: string;
   benefit_description: string | null;
   discount_type: 'flat' | 'percent';
@@ -186,6 +188,9 @@ export interface MembershipTier {
   event_discount_value: number;
   price_monthly_cents: number | null;
   price_yearly_cents: number | null;
+  bookable_window_days: number | null;
+  credit_amount: number | null;
+  credit_period: 'daily' | 'weekly' | 'monthly' | null;
   created_at: string;
   updated_at: string;
 }

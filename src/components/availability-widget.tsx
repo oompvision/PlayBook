@@ -167,6 +167,16 @@ type AvailabilityWidgetProps = {
     tierName: string | null;
     membershipEnabled: boolean;
   };
+  /** Credit balance info for the current member */
+  creditBalance?: {
+    has_credits: boolean;
+    credits_total: number;
+    credits_used: number;
+    credits_remaining: number;
+    credit_type: "hours" | "value" | null;
+    credit_period: string | null;
+    period_end: string | null;
+  } | null;
 };
 
 type ToastData = {
@@ -332,6 +342,7 @@ export function AvailabilityWidget({
   locationsEnabled = false,
   bookableWindowDays = 30,
   membership,
+  creditBalance,
 }: AvailabilityWidgetProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -354,6 +365,27 @@ export function AvailabilityWidget({
       label = `$${memberDiscount.discountValue.toFixed(2)} member discount`;
     }
     return { discountCents, finalCents: priceCents - discountCents, label };
+  }
+
+  // Credit calculation — applied after discount
+  function calcCredit(afterDiscountCents: number, durationMinutes: number): { creditCents: number; finalCents: number; creditLabel: string } {
+    if (!creditBalance?.has_credits || !creditBalance.credit_type || creditBalance.credits_remaining <= 0) {
+      return { creditCents: 0, finalCents: afterDiscountCents, creditLabel: "" };
+    }
+    let creditCents: number;
+    let creditLabel: string;
+    if (creditBalance.credit_type === "hours") {
+      const minutesCovered = Math.min(creditBalance.credits_remaining, durationMinutes);
+      creditCents = durationMinutes > 0
+        ? Math.min(afterDiscountCents, Math.round((minutesCovered / durationMinutes) * afterDiscountCents))
+        : 0;
+      const hrs = minutesCovered / 60;
+      creditLabel = `${hrs % 1 === 0 ? hrs : hrs.toFixed(1)} hr credit`;
+    } else {
+      creditCents = Math.min(creditBalance.credits_remaining, afterDiscountCents);
+      creditLabel = `$${(creditCents / 100).toFixed(2)} credit`;
+    }
+    return { creditCents, finalCents: Math.max(0, afterDiscountCents - creditCents), creditLabel };
   }
 
   // Compute the max bookable date from today + bookable window
@@ -896,13 +928,17 @@ export function AvailabilityWidget({
     const action = pendingBookingAction.current;
     pendingBookingAction.current = null;
 
-    // Find the matching time group by formatted start_time
-    const normalizeTime = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+    // Normalize time: strip all whitespace, lowercase, remove leading zeros for flexible matching
+    // Handles "4:00PM" vs "4:00 PM" vs "04:00 pm" etc.
+    const normalizeTime = (t: string) => t.toLowerCase().replace(/\s+/g, "").replace(/^0+/, "").trim();
     const requestedTime = normalizeTime(action.start_time);
 
     const matchedGroup = timeGroups.find((g) => {
       const formatted = normalizeTime(formatTime(g.start_time, timezone));
-      return formatted === requestedTime;
+      if (formatted === requestedTime) return true;
+      // Also try ISO match
+      if (g.start_time === action.start_time) return true;
+      return false;
     });
 
     if (!matchedGroup) return;
@@ -935,12 +971,14 @@ export function AvailabilityWidget({
         // Trigger the effect by touching a dependency — the effect will run on next render
         // since we just set the ref. Force a re-render by setting loading momentarily.
         // Actually, just process inline since timeGroups are already available:
-        const normalizeTime = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+        const normalizeTime = (t: string) => t.toLowerCase().replace(/\s+/g, "").replace(/^0+/, "").trim();
         const requestedTime = normalizeTime(action.start_time);
 
         const matchedGroup = timeGroups.find((g) => {
           const formatted = normalizeTime(formatTime(g.start_time, timezone));
-          return formatted === requestedTime;
+          if (formatted === requestedTime) return true;
+          if (g.start_time === action.start_time) return true;
+          return false;
         });
 
         if (matchedGroup) {

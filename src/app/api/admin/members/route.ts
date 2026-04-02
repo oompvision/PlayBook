@@ -15,18 +15,32 @@ import { grantMembershipSchema, revokeMembershipSchema } from "@/lib/schemas/adm
 export async function POST(request: NextRequest) {
   const parsed = await validateBody(request, grantMembershipSchema);
   if (parsed.error) return parsed.error;
-  const { org_id, user_id } = parsed.data;
+  const { org_id, user_id, tier_id } = parsed.data;
 
   await requireAdmin(org_id);
 
   const supabase = createServiceClient();
 
-  // Get the membership tier for this org
-  const { data: tier } = await supabase
-    .from("membership_tiers")
-    .select("id")
-    .eq("org_id", org_id)
-    .single();
+  // Get the membership tier — use specified tier_id or fall back to first tier
+  let tier: { id: string } | null = null;
+  if (tier_id) {
+    const { data } = await supabase
+      .from("membership_tiers")
+      .select("id")
+      .eq("id", tier_id)
+      .eq("org_id", org_id)
+      .single();
+    tier = data;
+  } else {
+    const { data } = await supabase
+      .from("membership_tiers")
+      .select("id")
+      .eq("org_id", org_id)
+      .order("sort_order", { ascending: true })
+      .limit(1)
+      .single();
+    tier = data;
+  }
 
   if (!tier) {
     return NextResponse.json(

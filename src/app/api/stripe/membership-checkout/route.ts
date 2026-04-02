@@ -12,7 +12,7 @@ import { membershipCheckoutSchema } from "@/lib/schemas/stripe";
  * Creates a Stripe Checkout Session for a membership subscription
  * on the org's connected Stripe account.
  *
- * Body: { interval: 'month' | 'year' }
+ * Body: { interval: 'month' | 'year', tier_id: string }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     const parsed = await validateBody(request, membershipCheckoutSchema);
     if (parsed.error) return parsed.error;
-    const { interval } = parsed.data;
+    const { interval, tier_id } = parsed.data;
 
     // 2. Resolve org from facility slug
     const slug = await getFacilitySlug();
@@ -50,18 +50,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Get membership tier
+    // 3. Get the specific membership tier
     const { data: tier } = await supabase
       .from("membership_tiers")
       .select(
         "id, name, stripe_product_id, stripe_price_monthly_id, stripe_price_yearly_id, price_monthly_cents, price_yearly_cents"
       )
+      .eq("id", tier_id)
       .eq("org_id", org.id)
       .single();
 
     if (!tier) {
       return NextResponse.json(
-        { error: "Membership tier not configured" },
+        { error: "Membership tier not found" },
         { status: 400 }
       );
     }
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
 
     if (!stripePriceId) {
       return NextResponse.json(
-        { error: `${interval === "month" ? "Monthly" : "Yearly"} plan is not available` },
+        { error: `${interval === "month" ? "Monthly" : "Yearly"} plan is not available for this tier` },
         { status: 400 }
       );
     }
@@ -96,7 +97,7 @@ export async function POST(request: NextRequest) {
 
       if (isActive) {
         return NextResponse.json(
-          { error: "You already have an active membership" },
+          { error: "You already have an active membership. Use the upgrade/downgrade option to change tiers." },
           { status: 400 }
         );
       }

@@ -83,7 +83,7 @@ const toolDeclarations: FunctionDeclaration[] = [
   {
     name: "create_booking",
     description:
-      "Create a booking for the customer. For slot-based scheduling: provide EITHER slot_ids from a previous get_available_slots call OR the date, bay_name, and start_time. For dynamic scheduling: provide date, bay_name, start_time, and end_time (ISO timestamps from get_available_slots). IMPORTANT: Always confirm the booking details with the customer BEFORE calling this tool.",
+      "Create a booking for the customer. For slot-based scheduling: provide EITHER slot_ids from a previous get_available_slots call OR the date, bay_name, and start_time. For dynamic scheduling: provide date, bay_name, start_time, and end_time (ISO timestamps from get_available_slots). Call this as soon as you have all details — present the summary and create the booking in the same response.",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -191,7 +191,7 @@ const toolDeclarations: FunctionDeclaration[] = [
   {
     name: "start_checkout",
     description:
-      "Generate a confirmation link for the customer to complete their booking with payment. Use this INSTEAD of create_booking when the facility requires payment. Returns a URL that pre-fills the booking form with the correct date, facility, and time slots. The customer clicks the link to review details and enter payment. Call this after the customer confirms the booking details. ALWAYS also call suggest_quick_replies with ['Go to Confirmation', 'Cancel'] alongside this tool.",
+      "Generate a confirmation link for the customer to complete their booking with payment. Use this INSTEAD of create_booking when the facility requires payment. Returns a URL that pre-fills the booking form with the correct date, facility, and time slots. The customer clicks the link to review details and enter payment. Call this AS SOON as you have all the booking details (date, facility, time, price) — do NOT ask the customer to confirm first. Present the summary and the link together in a single message. ALWAYS also call suggest_quick_replies with ['Cancel'] alongside this tool (do NOT include 'Go to Confirmation' — the link is already shown).",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -1607,7 +1607,8 @@ Guidelines:
 - When listing available slots, organize them clearly by facility name and time.${isDynamic ? "\n- When showing dynamic availability, mention the duration being shown and that other durations are available if the customer wants to change it." : ""}
 
 Booking guidelines:
-- BEFORE calling create_booking, you MUST summarize the booking details (facility, date, time, price) and ask the customer to confirm. Only call the tool after they explicitly agree.
+- When you have all the booking details (facility, date, time, price), immediately present a summary AND call the booking tool in the SAME response. Do NOT ask the customer to confirm first — the confirmation/payment step happens on the booking page, not in chat.
+- For create_booking (no payment required): summarize the details and call create_booking in the same message. The customer does NOT need to say "yes" or "confirm" before you call it.
 - BEFORE calling cancel_booking, you MUST confirm the cancellation with the customer. Tell them which booking will be cancelled and that the action cannot be undone.
 - When a booking is created, share the confirmation code with the customer.
 - Use get_my_bookings to look up a customer's existing bookings when they ask.
@@ -1617,7 +1618,7 @@ Payment policy:
 - This facility requires payment to complete a booking (mode: ${paymentMode}).
 - You CANNOT complete bookings directly in chat. Do NOT use create_booking — it will not work.
 - Instead, use the start_checkout tool to generate a confirmation link for the customer.
-- Flow: help the customer find the right time slots → confirm the details (date, bay, time, price) → when they agree, call start_checkout with the date, bay_name, and start_time${isDynamic ? ", end_time, duration, and price_cents" : ""}. The tool will return a confirmation URL.
+- Flow: help the customer find the right time slots → once you have all details (date, bay, time, price), immediately call start_checkout with the date, bay_name, and start_time${isDynamic ? ", end_time, duration, and price_cents" : ""} AND present the booking summary in the same message. Do NOT ask the customer to confirm first — they will review and pay on the booking page.
 - After calling start_checkout, tell the customer their booking is ready for confirmation. Do NOT include any URL or link in your message text — the system automatically generates a clickable "Go to Confirmation" button for the customer.
 - ALWAYS call suggest_quick_replies with ["Cancel"] after calling start_checkout. The "Go to Confirmation" link button is added automatically by the system.
 ` : `
